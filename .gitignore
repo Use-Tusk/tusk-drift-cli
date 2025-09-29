@@ -1,0 +1,73 @@
+# AI coding agent files
+.claude/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Built binaries
+tusk
+tusk-drift-cli
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Coverage reports
+coverage.out
+coverage.html
+
+# Air live reload (if used)
+.air.toml
+tmp/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Debug files
+debug
+__debug_bin*
+
+# Build artifacts
+dist/
+build/
+
+.direnv

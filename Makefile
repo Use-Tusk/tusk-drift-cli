@@ -1,0 +1,82 @@
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOCLEAN=$(GOCMD) clean
+GOTEST=$(GOCMD) test
+GOGET=$(GOCMD) get
+GOMOD=$(GOCMD) mod
+BINARY_NAME=tusk
+BINARY_UNIX=$(BINARY_NAME)_unix
+
+
+.PHONY: all build clean test deps help
+
+all: build
+
+build:
+	@echo "🔨 Building $(BINARY_NAME)..."
+	$(GOBUILD) -o $(BINARY_NAME) -v .
+
+build-ci:
+	@echo "🏗️  CI: Building $(BINARY_NAME) with version info..."
+	$(eval VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev"))
+	$(eval BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ'))
+	$(eval GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown"))
+	$(GOBUILD) -ldflags "-X github.com/Use-Tusk/tusk-drift-cli/internal/version.Version=$(VERSION) -X github.com/Use-Tusk/tusk-drift-cli/internal/version.BuildTime=$(BUILD_TIME) -X github.com/Use-Tusk/tusk-drift-cli/internal/version.GitCommit=$(GIT_COMMIT)" -o $(BINARY_NAME) -v .
+
+test: 
+	@echo "🧪 Running tests..."
+	$(GOTEST) -v .
+
+test-ci:
+	@echo "🧪 CI: Running tests..."
+	$(GOTEST) -v ./...
+
+clean:
+	@echo "🧹 Cleaning..."
+	$(GOCLEAN)
+	rm -f $(BINARY_NAME)
+	rm -f $(BINARY_UNIX)
+
+deps:
+	@echo "📦 Downloading dependencies..."
+	$(GOMOD) download
+	$(GOMOD) tidy
+
+build-linux:
+	@echo "🐧 Building for Linux..."
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BINARY_UNIX) -v .
+
+install-tools:
+	@echo "🔧 Installing development tools..."
+	@command -v buf >/dev/null 2>&1 || { echo "❌ buf not found. Install with: go install github.com/bufbuild/buf/cmd/buf@latest"; exit 1; }
+	@echo "✅ buf is available"
+
+setup: install-tools deps
+	@echo "✅ Development environment ready"
+
+run: build
+	./$(BINARY_NAME)
+
+fmt:
+	@echo "📝 Formatting code..."
+	$(GOCMD) fmt .
+
+lint:
+	@echo "🔍 Linting code..."
+	golangci-lint run
+
+
+help:
+	@echo "Available targets:"
+	@echo "  all          - build (default)"
+	@echo "  build        - Build the binary"
+	@echo "  build-ci     - Build for CI"
+	@echo "  test         - Run tests"
+	@echo "  test-ci      - Run tests for CI"
+	@echo "  clean        - Clean build artifacts"
+	@echo "  deps         - Download dependencies"
+	@echo "  setup        - Setup development environment"
+	@echo "  run          - Build and run"
+	@echo "  fmt          - Format code"
+	@echo "  lint         - Lint code"
+	@echo "  help         - Show this help"

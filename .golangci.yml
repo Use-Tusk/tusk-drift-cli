@@ -1,0 +1,41 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/Use-Tusk/tusk-drift-cli)
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/Use-Tusk/tusk-drift-cli
+  gocritic:
+    disabled-checks:
+      - singleCaseSwitch
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+
+linters:
+  enable-all: false
+  disable-all: true
+  enable:
+    - staticcheck
+    - errcheck
+    - gosimple
+    - govet
+    - unused
+    - ineffassign
+    - gosec
+    - gocritic
+    - revive
+    - gofumpt
+    - ineffassign
+    - misspell
+
+issues:
+  exclude-use-default: false
