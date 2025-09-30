@@ -69,16 +69,24 @@ jobs:
             make lint
 
           testScript: |
+            #!/bin/bash
+            set -e
             export PATH=$PATH:/usr/local/go/bin
 
-            UNIQUE_TEST_FILE={{file}}
-            ORIGINAL_TEST_FILE={{originalFile}}
+            TEST_FILE={{file}}
 
-            # Get the implementation file by removing _test.go and adding .go
-            IMPL_FILE=${ORIGINAL_TEST_FILE%_test.go}.go
+            echo "Running tests for Go file: $TEST_FILE"
 
-            # Run the test with both files
-            go test -count=1 -v ${IMPL_FILE} ${UNIQUE_TEST_FILE}
+            PACKAGE_DIR=$(dirname "$TEST_FILE")
+
+            echo "Extracting test functions from: $TEST_FILE"
+            TEST_FUNCTIONS=$(grep -o "^func Test[A-Za-z0-9_]*" "$TEST_FILE" | cut -d' ' -f2 | paste -sd '|' -)
+
+            echo "Found test functions: $TEST_FUNCTIONS"
+            echo "Running specific tests in package: $PACKAGE_DIR"
+
+            # Run only the specific test functions from this file
+            go test -count=1 -v -run "^($TEST_FUNCTIONS)$" "./$PACKAGE_DIR"
 
           coverageScript: |
             #!/bin/bash
