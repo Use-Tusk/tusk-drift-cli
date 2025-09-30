@@ -36,9 +36,15 @@ if [ -z "$LATEST_VERSION" ]; then
   exit 1
 fi
 
-echo "Installing Tusk Drift CLI $LATEST_VERSION..."
+case "$OS" in
+  linux)  OS_TITLE="Linux" ;;
+  darwin) OS_TITLE="Darwin" ;;
+  *)      OS_TITLE="$OS" ;;
+esac
 
-DOWNLOAD_URL="https://github.com/$REPO/releases/download/${LATEST_VERSION}/tusk-drift-cli_${LATEST_VERSION#v}_${OS^}_${ARCH}.tar.gz"
+VERSION_NUMBER="${LATEST_VERSION#v}"
+
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/${LATEST_VERSION}/tusk-drift-cli_${VERSION_NUMBER}_${OS_TITLE}_${ARCH}.tar.gz"
 
 TMP_DIR=$(mktemp -d)
 cd "$TMP_DIR"
@@ -63,10 +69,11 @@ mv "$BINARY_NAME" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
 # Cleanup
-cd -
+cd - > /dev/null
 rm -rf "$TMP_DIR"
 
-echo "✅ Tusk Drift CLI installed successfully!"
+echo "Tusk Drift CLI $LATEST_VERSION installed successfully!"
+echo ""
 echo "Run 'tusk --help' to get started."
 
 # Check if install dir is in PATH
