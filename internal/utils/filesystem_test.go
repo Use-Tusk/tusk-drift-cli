@@ -1,3 +1,4 @@
+//nolint:gosec
 package utils
 
 import (
@@ -12,7 +13,7 @@ import (
 
 func TestGetTuskDir_PrefersLocalDotDir(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
@@ -24,7 +25,7 @@ func TestGetTuskDir_PrefersLocalDotDir(t *testing.T) {
 
 func TestGetTuskDir_FallsBackToHome(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	home := t.TempDir()
@@ -42,7 +43,7 @@ func TestGetTuskDir_FallsBackToHome(t *testing.T) {
 
 func TestGetTracesAndLogsDir(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
@@ -68,7 +69,7 @@ func TestEnsureDir_CreatesAndIdempotent(t *testing.T) {
 
 func TestFindTraceFile_TracesDirMissing(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp)) // no .tusk/traces
@@ -79,7 +80,7 @@ func TestFindTraceFile_TracesDirMissing(t *testing.T) {
 
 func TestFindTraceFile_ExplicitFilenameRelative(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
@@ -88,7 +89,7 @@ func TestFindTraceFile_ExplicitFilenameRelative(t *testing.T) {
 
 	name := "foo.jsonl"
 	full := filepath.Join(tracesDir, name)
-	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o600))
+	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o644))
 
 	got, err := FindTraceFile("does-not-matter", name)
 	require.NoError(t, err)
@@ -97,7 +98,7 @@ func TestFindTraceFile_ExplicitFilenameRelative(t *testing.T) {
 
 func TestFindTraceFile_ExplicitFilenameAbsolute(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
@@ -105,7 +106,7 @@ func TestFindTraceFile_ExplicitFilenameAbsolute(t *testing.T) {
 	require.NoError(t, os.MkdirAll(tracesDir, 0o750))
 
 	full := filepath.Join(tracesDir, "bar.jsonl")
-	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o600))
+	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o644))
 
 	got, err := FindTraceFile("irrelevant", full)
 	require.NoError(t, err)
@@ -114,7 +115,7 @@ func TestFindTraceFile_ExplicitFilenameAbsolute(t *testing.T) {
 
 func TestFindTraceFile_FindsByTraceIDNested(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
@@ -123,7 +124,7 @@ func TestFindTraceFile_FindsByTraceIDNested(t *testing.T) {
 
 	traceID := "abc123"
 	target := filepath.Join(tracesDir, "2025-01-01_"+traceID+".jsonl")
-	require.NoError(t, os.WriteFile(target, []byte("{}\n"), 0o600))
+	require.NoError(t, os.WriteFile(target, []byte("{}\n"), 0o644))
 
 	got, err := FindTraceFile(traceID, "")
 	require.NoError(t, err)
@@ -135,7 +136,7 @@ func TestFindTraceFile_FindsByTraceIDNested(t *testing.T) {
 
 func TestFindTraceFile_NotFound(t *testing.T) {
 	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	defer func() { _ = os.Chdir(wd) }()
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
