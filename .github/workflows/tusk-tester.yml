@@ -161,3 +161,5 @@ jobs:
                 echo "Error: coverage.out file was not created"
                 exit 1
             fi
+
+          maxConcurrency: 1
