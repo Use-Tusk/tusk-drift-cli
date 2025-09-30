@@ -4,6 +4,7 @@ Tusk Drift is an API test record/replay system that lets you run realistic tests
 
 <div align="center">
 
+![GitHub Release](https://img.shields.io/github/v/release/Use-Tusk/tusk-drift-cli)
 [![Build and test](https://github.com/Use-Tusk/tusk-drift-cli/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/Use-Tusk/tusk-drift-cli/actions/workflows/main.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![X URL](https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2Fusetusk&style=flat&logo=x&label=Tusk&color=BF40BF)](https://x.com/usetusk)
@@ -24,7 +25,23 @@ SDKs:
 
 ## Install
 
-Build locally:
+### Quick install (recommended)
+
+**Linux/macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+```
+
+**Homebrew:**
+
+Coming soon.
+
+### Manual Download
+
+Download pre-built binaries from [GitHub Releases](https://github.com/Use-Tusk/tusk-drift-cli/releases/latest).
+
+### Build from source
 
 ```bash
 # Go 1.25+
@@ -41,7 +58,7 @@ tusk --help
 Initialize a service:
 
 ```bash
-cd <path/to/your/service>
+cd path/to/your/service
 tusk init
 ```
 
