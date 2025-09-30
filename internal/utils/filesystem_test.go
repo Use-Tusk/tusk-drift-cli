@@ -140,7 +140,9 @@ func TestGetTuskRoot_FallsBackToCurrentDir(t *testing.T) {
 }
 
 func TestResolveTuskPath_AbsolutePath(t *testing.T) {
-	absPath := "/absolute/path/to/something"
+	tmp := t.TempDir()
+	absPath := filepath.Join(tmp, "absolute", "path", "to", "something")
+
 	got := ResolveTuskPath(absPath)
 	assert.Equal(t, absPath, got)
 }
