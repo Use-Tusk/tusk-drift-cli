@@ -1,9 +1,9 @@
-//nolint:gosec
 package utils
 
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,7 +28,12 @@ func TestGetTuskDir_FallsBackToHome(t *testing.T) {
 
 	tmp := t.TempDir()
 	home := t.TempDir()
+
+	// Set both HOME and USERPROFILE for cross-platform compatibility
 	t.Setenv("HOME", home)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	}
 
 	require.NoError(t, os.Chdir(tmp)) // No .tusk here
 	got := GetTuskDir()
@@ -78,11 +83,12 @@ func TestFindTraceFile_ExplicitFilenameRelative(t *testing.T) {
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
-	require.NoError(t, os.MkdirAll(filepath.Join(".tusk", "traces"), 0o750))
+	tracesDir := filepath.Join(".tusk", "traces")
+	require.NoError(t, os.MkdirAll(tracesDir, 0o750))
 
 	name := "foo.jsonl"
-	full := filepath.Join(".tusk", "traces", name)
-	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o644))
+	full := filepath.Join(tracesDir, name)
+	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o600))
 
 	got, err := FindTraceFile("does-not-matter", name)
 	require.NoError(t, err)
@@ -95,10 +101,11 @@ func TestFindTraceFile_ExplicitFilenameAbsolute(t *testing.T) {
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
-	require.NoError(t, os.MkdirAll(filepath.Join(".tusk", "traces"), 0o750))
+	tracesDir := filepath.Join(".tusk", "traces")
+	require.NoError(t, os.MkdirAll(tracesDir, 0o750))
 
-	full := filepath.Join(".tusk", "traces", "bar.jsonl")
-	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o644))
+	full := filepath.Join(tracesDir, "bar.jsonl")
+	require.NoError(t, os.WriteFile(full, []byte("{}\n"), 0o600))
 
 	got, err := FindTraceFile("irrelevant", full)
 	require.NoError(t, err)
@@ -111,15 +118,19 @@ func TestFindTraceFile_FindsByTraceIDNested(t *testing.T) {
 
 	tmp := t.TempDir()
 	require.NoError(t, os.Chdir(tmp))
-	require.NoError(t, os.MkdirAll(filepath.Join(".tusk", "traces", "nested", "x"), 0o750))
+	tracesDir := filepath.Join(".tusk", "traces", "nested", "x")
+	require.NoError(t, os.MkdirAll(tracesDir, 0o750))
 
 	traceID := "abc123"
-	target := filepath.Join(".tusk", "traces", "nested", "x", "2025-01-01_"+traceID+".jsonl")
-	require.NoError(t, os.WriteFile(target, []byte("{}\n"), 0o644))
+	target := filepath.Join(tracesDir, "2025-01-01_"+traceID+".jsonl")
+	require.NoError(t, os.WriteFile(target, []byte("{}\n"), 0o600))
 
 	got, err := FindTraceFile(traceID, "")
 	require.NoError(t, err)
-	assert.Equal(t, target, got)
+
+	// Use filepath.Join to normalize for comparison (Windows vs Unix slashes)
+	expectedBase := filepath.Join(".tusk", "traces", "nested", "x", "2025-01-01_"+traceID+".jsonl")
+	assert.Equal(t, expectedBase, got)
 }
 
 func TestFindTraceFile_NotFound(t *testing.T) {
