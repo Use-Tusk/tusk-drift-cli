@@ -10,7 +10,7 @@ var (
 )
 
 // Minimum SDK version this CLI supports
-const MinSDKVersion = "1.0.0"
+const MinSDKVersion = "0.1.0"
 
 func PrintVersion() {
 	fmt.Printf("Tusk CLI (version: %s)\n", Version)
