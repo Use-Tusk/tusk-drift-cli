@@ -62,12 +62,12 @@ jobs:
 
           testFramework: go
 
-          testFileRegex: "^internal/.*_test\.go$"
+          testFileRegex: ^internal/.*_test\.go$
 
           lintScript: |
             make fmt
             make lint
-          
+
           testScript: |
             export PATH=$PATH:/usr/local/go/bin
 
@@ -79,7 +79,7 @@ jobs:
 
             # Run the test with both files
             go test -count=1 -v ${IMPL_FILE} ${UNIQUE_TEST_FILE}
-          
+
           coverageScript: |
             #!/bin/bash
             set -e
@@ -161,4 +161,3 @@ jobs:
                 echo "Error: coverage.out file was not created"
                 exit 1
             fi
-
