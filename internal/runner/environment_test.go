@@ -34,7 +34,7 @@ service:
   id: test-service
   port: 14001
   start:
-    command: "sleep 0.2"
+    command: "` + getMediumSleepCommand() + `"
 `
 				err := os.WriteFile(configPath, []byte(configContent), 0o600)
 				require.NoError(t, err)

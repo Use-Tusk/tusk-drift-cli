@@ -31,3 +31,8 @@ func getLongRunningCommand() string {
 func getSimpleSleepCommand() string {
 	return "sleep 0.1"
 }
+
+// getMediumSleepCommand returns a medium duration sleep for integration tests
+func getMediumSleepCommand() string {
+	return "sleep 0.5"
+}
