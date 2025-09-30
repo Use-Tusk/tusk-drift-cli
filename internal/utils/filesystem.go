@@ -25,17 +25,79 @@ var PossibleTraceDirs = []string{
 	".",
 }
 
+// FindTuskRoot traverses up the directory tree looking for a .tusk directory
+// Returns the directory containing .tusk, or empty string if not found
+func FindTuskRoot() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	// Start from current directory and traverse up
+	currentDir := wd
+	for {
+		tuskPath := filepath.Join(currentDir, TuskDirName)
+		if info, err := os.Stat(tuskPath); err == nil && info.IsDir() {
+			return currentDir
+		}
+
+		// Get parent directory
+		parent := filepath.Dir(currentDir)
+
+		// If we've reached the root or can't go up further, stop
+		if parent == currentDir || parent == "." {
+			break
+		}
+
+		currentDir = parent
+	}
+
+	return ""
+}
+
 // GetTuskDir returns the .tusk directory path (either local or in home directory)
 func GetTuskDir() string {
-	if _, err := os.Stat(TuskDirName); err == nil {
-		return TuskDirName
+	if root := FindTuskRoot(); root != "" {
+		return filepath.Join(root, TuskDirName)
 	}
 
 	if homeDir, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(homeDir, TuskDirName)
+		homeTuskPath := filepath.Join(homeDir, TuskDirName)
+		if _, err := os.Stat(homeTuskPath); err == nil {
+			return homeTuskPath
+		}
 	}
 
+	// Last resort: return relative .tusk path
 	return TuskDirName
+}
+
+// GetTuskRoot returns the root directory containing .tusk, or current directory if not found
+func GetTuskRoot() string {
+	if root := FindTuskRoot(); root != "" {
+		return root
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return wd
+}
+
+// ResolveTuskPath resolves a path relative to the tusk root if it's relative,
+// or returns it as-is if it's already absolute
+func ResolveTuskPath(path string) string {
+	if path == "" {
+		return path
+	}
+
+	if filepath.IsAbs(path) {
+		return path
+	}
+
+	root := GetTuskRoot()
+	return filepath.Join(root, path)
 }
 
 // GetTracesDir returns the traces directory path
@@ -88,9 +150,12 @@ func FindTraceFile(traceID string, filename string) (string, error) {
 	if filename != "" {
 		var fullPath string
 
-		if strings.Contains(filename, tracesDir) {
+		switch {
+		case filepath.IsAbs(filename):
 			fullPath = filename
-		} else {
+		case strings.Contains(filename, tracesDir):
+			fullPath = filename
+		default:
 			fullPath = filepath.Join(tracesDir, filename)
 		}
 

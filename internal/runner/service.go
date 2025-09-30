@@ -11,6 +11,7 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
 func (e *Executor) StartService() error {
@@ -184,12 +185,11 @@ func (e *Executor) setupServiceLogging() error {
 	}
 
 	// Allow tests to override the logs directory
-	logsDir := ".tusk/logs"
+	logsDir := utils.GetLogsDir()
 	if testLogsDir := os.Getenv("TUSK_TEST_LOGS_DIR"); testLogsDir != "" {
 		logsDir = testLogsDir
 	}
 
-	// TODO: allow user to specify this directory in the config
 	if err := os.MkdirAll(logsDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create logs directory: %w", err)
 	}

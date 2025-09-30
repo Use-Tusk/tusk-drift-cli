@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -172,6 +173,10 @@ func parseAndValidate() (*Config, error) {
 		cfg.Traces.Dir = ".tusk/traces"
 	}
 
+	// Resolve directory paths relative to tusk root
+	cfg.Results.Dir = utils.ResolveTuskPath(cfg.Results.Dir)
+	cfg.Traces.Dir = utils.ResolveTuskPath(cfg.Traces.Dir)
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("error validating config: %w", err)
 	}
@@ -200,6 +205,11 @@ func (cfg *Config) Validate() error {
 }
 
 func findConfigFile() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "."
+	}
+
 	possiblePaths := []string{
 		".tusk/config.yaml",
 		".tusk/config.yml",
@@ -207,12 +217,27 @@ func findConfigFile() string {
 		"tusk.yml",
 	}
 
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			return path
+	// Traverse upwards, starting from current directory
+	currentDir := wd
+	for {
+		// Check all possible config paths in current directory
+		for _, relPath := range possiblePaths {
+			fullPath := filepath.Join(currentDir, relPath)
+			if _, err := os.Stat(fullPath); err == nil {
+				return fullPath
+			}
 		}
+
+		parent := filepath.Dir(currentDir)
+
+		if parent == currentDir || parent == "." {
+			break
+		}
+
+		currentDir = parent
 	}
 
+	// Fall back to home directory as a last resort
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		globalConfig := filepath.Join(homeDir, ".tusk", "config.yaml")
