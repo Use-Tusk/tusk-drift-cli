@@ -1,0 +1,164 @@
+# Tusk code review and unit test generation
+# Try out for your repo: https://docs.usetusk.ai/automated-tests/overview
+# GitHub Action: https://github.com/Use-Tusk/test-runner
+
+name: Tusk Test Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      runId:
+        description: "Tusk Run ID"
+        required: true
+      tuskUrl:
+        description: "Tusk server URL"
+        required: true
+      commitSha:
+        description: "Commit SHA to checkout"
+        required: true
+      runnerIndexes:
+        description: "Runner indexes"
+        required: false
+        default: '["1"]'
+
+jobs:
+  test-action:
+    name: Tusk Test Runner
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        runnerIndex: ${{ fromJson(github.event.inputs.runnerIndexes) }}
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commitSha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Start runner
+        id: test-action
+        uses: Use-Tusk/test-runner@v1
+        with:
+          runId: ${{ github.event.inputs.runId }}
+
+          tuskUrl: ${{ github.event.inputs.tuskUrl }}
+
+          commitSha: ${{ github.event.inputs.commitSha }}
+
+          runnerIndex: ${{ matrix.runnerIndex }}
+
+          authToken: ${{ secrets.TUSK_AUTH_TOKEN }}
+
+          testFramework: go
+
+          testFileRegex: "^internal/.*_test\.go$"
+
+          lintScript: |
+            make fmt
+            make lint
+          
+          testScript: |
+            export PATH=$PATH:/usr/local/go/bin
+
+            UNIQUE_TEST_FILE={{file}}
+            ORIGINAL_TEST_FILE={{originalFile}}
+
+            # Get the implementation file by removing _test.go and adding .go
+            IMPL_FILE=${ORIGINAL_TEST_FILE%_test.go}.go
+
+            # Run the test with both files
+            go test -count=1 -v ${IMPL_FILE} ${UNIQUE_TEST_FILE}
+          
+          coverageScript: |
+            #!/bin/bash
+            set -e
+            export PATH=$PATH:/usr/local/go/bin
+
+            TEST_FILE_PATHS="{{testFilePaths}}"
+            TEST_DIRS="{{testDirs}}"
+
+            echo "Coverage script started"
+            echo "TEST_FILE_PATHS: '$TEST_FILE_PATHS'"
+            echo "TEST_DIRS: '$TEST_DIRS'"
+
+            # Clean up any existing coverage files
+            rm -f coverage.out
+
+            # Handle testDirs (directories) - this is the common case
+            if [ -n "$TEST_DIRS" ]; then
+                echo "Running coverage for directories: $TEST_DIRS"
+                
+                # Convert space-separated directories to ./dir/... format for recursive testing
+                FORMATTED_DIRS=""
+                for dir in $TEST_DIRS; do
+                    FORMATTED_DIRS="$FORMATTED_DIRS ./$dir/..."
+                done
+                
+                echo "Formatted directories: $FORMATTED_DIRS"
+                go test -covermode=count -coverprofile=coverage.out $FORMATTED_DIRS
+
+            # Handle testFilePaths (specific test files)
+            elif [ -n "$TEST_FILE_PATHS" ]; then
+                echo "Running coverage for specific test files: $TEST_FILE_PATHS"
+                
+                # Extract test functions and package directories from test files
+                TEST_FUNCTIONS=""
+                TEST_PACKAGE_DIRS=""
+                
+                for test_file_path in $TEST_FILE_PATHS; do
+                    echo "Processing test file: $test_file_path"
+                    
+                    # Extract test functions from this file
+                    if [ -f "$test_file_path" ]; then
+                        FILE_TEST_FUNCTIONS=$(grep -o "^func Test[A-Za-z0-9_]*" "$test_file_path" | cut -d' ' -f2 | paste -sd '|' - || true)
+                        if [ -n "$FILE_TEST_FUNCTIONS" ]; then
+                            if [ -n "$TEST_FUNCTIONS" ]; then
+                                TEST_FUNCTIONS="$TEST_FUNCTIONS|$FILE_TEST_FUNCTIONS"
+                            else
+                                TEST_FUNCTIONS="$FILE_TEST_FUNCTIONS"
+                            fi
+                        fi
+                        
+                        # Add package directory
+                        PACKAGE_DIR="./$(dirname "$test_file_path")"
+                        if [[ ! " $TEST_PACKAGE_DIRS " =~ " $PACKAGE_DIR " ]]; then
+                            TEST_PACKAGE_DIRS="$TEST_PACKAGE_DIRS $PACKAGE_DIR"
+                        fi
+                    else
+                        echo "Warning: Test file not found: $test_file_path"
+                    fi
+                done
+                
+                echo "Test functions pattern: $TEST_FUNCTIONS"
+                echo "Package directories: $TEST_PACKAGE_DIRS"
+                
+                if [ -n "$TEST_FUNCTIONS" ] && [ -n "$TEST_PACKAGE_DIRS" ]; then
+                    go test -covermode=count -coverprofile=coverage.out -run "^($TEST_FUNCTIONS)$" $TEST_PACKAGE_DIRS
+                else
+                    echo "No valid test files or packages found"
+                    exit 1
+                fi
+
+            # Handle empty case - run coverage for entire repository
+            else
+                echo "Running coverage for entire repository (no specific files or dirs provided)"
+                go test -covermode=count -coverprofile=coverage.out ./...
+            fi
+
+            # Verify coverage file was created
+            if [ ! -f coverage.out ]; then
+                echo "Error: coverage.out file was not created"
+                exit 1
+            fi
+

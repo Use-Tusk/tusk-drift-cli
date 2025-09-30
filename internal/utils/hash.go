@@ -12,7 +12,7 @@ func GenerateSchemaAndHash(value any) (schema any, valueHash string, schemaHash 
 	schema = generateJSONSchema(value)
 	valueHash = GenerateDeterministicHash(value)
 	schemaHash = GenerateDeterministicHash(schema)
-	return
+	return schema, valueHash, schemaHash
 }
 
 // GenerateDeterministicHash creates a deterministic hash of any JSON-serializable value

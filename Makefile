@@ -59,7 +59,7 @@ run: build
 
 fmt:
 	@echo "📝 Formatting code..."
-	$(GOCMD) fmt .
+	gofumpt -w .
 
 lint:
 	@echo "🔍 Linting code..."
