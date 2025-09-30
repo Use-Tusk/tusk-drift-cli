@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
@@ -162,10 +161,9 @@ func TestStopEnvironment(t *testing.T) {
 				_ = server.Start()
 				e.server = server
 
-				// Create mock service command
+				// Create mock service command using platform-specific helper
 				ctx := context.Background()
-				cmd := exec.CommandContext(ctx, "/bin/sh", "-c", "sleep 0.1")
-				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				cmd := createTestCommand(ctx, "1")
 				_ = cmd.Start()
 				e.serviceCmd = cmd
 

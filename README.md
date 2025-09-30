@@ -37,6 +37,14 @@ curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/instal
 
 Coming soon.
 
+**Windows:**
+
+Download the latest release from [GitHub Releases](https://github.com/Use-Tusk/tusk-drift-cli/releases/latest):
+
+1. Download `tusk-drift-cli_*_Windows_x86_64.zip`
+2. Extract the ZIP file
+3. Move `tusk.exe` to a directory in your PATH, or add the extracted directory to your PATH
+
 ### Manual Download
 
 Download pre-built binaries from [GitHub Releases](https://github.com/Use-Tusk/tusk-drift-cli/releases/latest).
