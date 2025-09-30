@@ -72,7 +72,7 @@ fmt:
 
 lint:
 	@echo "🔍 Linting code..."
-	golangci-lint run
+	golangci-lint run --allow-parallel-runners
 
 
 help:
