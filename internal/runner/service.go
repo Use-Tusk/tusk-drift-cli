@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
@@ -43,12 +40,10 @@ func (e *Executor) StartService() error {
 	slog.Debug("Starting service", "command", cfg.Service.Start.Command)
 
 	ctx := context.Background()
-	e.serviceCmd = exec.CommandContext(ctx, "/bin/sh", "-c", cfg.Service.Start.Command) // #nosec G204
+	e.serviceCmd = createServiceCommand(ctx, cfg.Service.Start.Command)
 
 	// Set up process group so we can kill all child processes
-	e.serviceCmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setupProcessGroup(e.serviceCmd)
 
 	env := os.Environ()
 
@@ -91,77 +86,11 @@ func (e *Executor) StartService() error {
 
 func (e *Executor) StopService() error {
 	if e.serviceCmd != nil && e.serviceCmd.Process != nil {
-		slog.Debug("Stopping service", "pid", e.serviceCmd.Process.Pid)
-
-		// Kill the entire process group to ensure all child processes are terminated
-		pgid, err := syscall.Getpgid(e.serviceCmd.Process.Pid)
-		if err == nil {
-			slog.Debug("Killing process group", "pgid", pgid)
-			if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil {
-				slog.Warn("Failed to send SIGTERM to process group", "pgid", pgid, "error", err)
-				if err := e.serviceCmd.Process.Signal(os.Interrupt); err != nil {
-					slog.Warn("Failed to send interrupt signal", "pid", e.serviceCmd.Process.Pid, "error", err)
-				}
-			}
-		} else {
-			slog.Warn("Failed to get process group", "pid", e.serviceCmd.Process.Pid, "error", err)
-			if err := e.serviceCmd.Process.Signal(os.Interrupt); err != nil {
-				slog.Warn("Failed to send interrupt signal", "pid", e.serviceCmd.Process.Pid, "error", err)
-			}
+		// Use platform-specific process group killing with 3 second timeout
+		if err := killProcessGroup(e.serviceCmd, 3*time.Second); err != nil {
+			slog.Warn("Process group kill completed with error", "error", err)
 		}
-
-		done := make(chan error, 1)
-		go func() { done <- e.serviceCmd.Wait() }()
-
-		select {
-		case <-done:
-			slog.Debug("Service stopped gracefully")
-		case <-time.After(3 * time.Second):
-			slog.Warn("Service didn't stop gracefully, force killing process group")
-			if pgid, err := syscall.Getpgid(e.serviceCmd.Process.Pid); err == nil {
-				slog.Debug("Force killing process group", "pgid", pgid)
-				if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
-					slog.Warn("Failed to SIGKILL process group", "pgid", pgid, "error", err)
-					_ = e.serviceCmd.Process.Kill()
-				}
-			} else {
-				slog.Warn("Final fallback: killing main process", "pid", e.serviceCmd.Process.Pid)
-				_ = e.serviceCmd.Process.Kill()
-			}
-			_ = e.serviceCmd.Wait()
-		}
-
 		e.serviceCmd = nil
-	}
-
-	// Final safeguard: if the service (or a detached child) is still holding the port, kill by port.
-	if e.servicePort > 0 {
-		// attempt SIGTERM then SIGKILL if needed
-		for attempt := range 2 {
-			exists, _ := e.checkProcessOnPort(e.servicePort)
-			if !exists {
-				break
-			}
-			cmd := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", e.servicePort)) // #nosec G204
-			out, err := cmd.Output()
-			if err == nil {
-				lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if line == "" {
-						continue
-					}
-					if pid, err := strconv.Atoi(line); err == nil {
-						sig := syscall.SIGTERM
-						if attempt == 1 {
-							sig = syscall.SIGKILL
-						}
-						_ = syscall.Kill(pid, sig)
-					}
-				}
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
 	}
 
 	// Clean up log files
@@ -180,32 +109,22 @@ func (e *Executor) GetServiceLogPath() string {
 
 // checkProcessOnPort checks if any process is listening on the specified port
 // Returns true if a process is found, false otherwise
+// This uses a cross-platform approach: trying to bind to the port
 func (e *Executor) checkProcessOnPort(port int) (bool, error) {
 	slog.Debug("Checking for existing processes on port", "port", port)
 
-	cmd := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port)) // #nosec G204
-	output, err := cmd.Output()
+	// Try to listen on the port
+	addr := fmt.Sprintf(":%d", port)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		// No processes found on port (lsof returns non-zero exit code when no matches)
-		slog.Debug("No existing processes found on port", "port", port)
-		return false, nil
+		// Port is in use
+		slog.Debug("Port is already in use", "port", port)
+		return true, nil
 	}
 
-	// Parse PIDs from output
-	pidsStr := strings.TrimSpace(string(output))
-	if pidsStr == "" {
-		return false, nil
-	}
-
-	pids := strings.Split(pidsStr, "\n")
-	for _, pidStr := range pids {
-		pidStr = strings.TrimSpace(pidStr)
-		if pidStr != "" {
-			slog.Debug("Found existing process on port", "port", port, "pid", pidStr)
-			return true, nil
-		}
-	}
-
+	// Port is available, close the listener
+	_ = ln.Close()
+	slog.Debug("Port is available", "port", port)
 	return false, nil
 }
 
@@ -242,7 +161,7 @@ func (e *Executor) waitForReadiness(cfg *config.Config) error {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		cmd := exec.Command("/bin/sh", "-c", cfg.Service.Readiness.Command) // #nosec G204
+		cmd := createReadinessCommand(cfg.Service.Readiness.Command)
 		if err := cmd.Run(); err == nil {
 			return nil
 		}

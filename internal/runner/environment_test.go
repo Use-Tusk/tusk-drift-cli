@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
@@ -35,7 +34,7 @@ service:
   id: test-service
   port: 14001
   start:
-    command: "sleep 0.2"
+    command: "` + getMediumSleepCommand() + `"
 `
 				err := os.WriteFile(configPath, []byte(configContent), 0o600)
 				require.NoError(t, err)
@@ -162,10 +161,9 @@ func TestStopEnvironment(t *testing.T) {
 				_ = server.Start()
 				e.server = server
 
-				// Create mock service command
+				// Create mock service command using platform-specific helper
 				ctx := context.Background()
-				cmd := exec.CommandContext(ctx, "/bin/sh", "-c", "sleep 0.1")
-				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				cmd := createTestCommand(ctx, "1")
 				_ = cmd.Start()
 				e.serviceCmd = cmd
 

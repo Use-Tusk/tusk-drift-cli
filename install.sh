@@ -1,7 +1,8 @@
 #!/bin/sh
 set -e
 
-# Tusk Drift CLI Installer
+# Tusk Drift CLI Installer (Linux/macOS only)
+# For Windows, see: https://github.com/Use-Tusk/tusk-drift-cli#install
 # Usage: curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
 
 REPO="Use-Tusk/tusk-drift-cli"
@@ -13,7 +14,11 @@ ARCH=$(uname -m)
 case "$OS" in
   linux*)  OS="linux" ;;
   darwin*) OS="darwin" ;;
-  mingw*|msys*|cygwin*) OS="windows" ;;
+  mingw*|msys*|cygwin*)
+    echo "Error: This script is for Linux/macOS only."
+    echo "For Windows installation, see: https://github.com/Use-Tusk/tusk-drift-cli#install"
+    exit 1
+    ;;
   *)
     echo "Unsupported operating system: $OS"
     exit 1

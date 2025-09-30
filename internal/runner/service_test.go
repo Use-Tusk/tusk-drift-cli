@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"testing"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
@@ -67,7 +65,7 @@ func TestStartService(t *testing.T) {
 				// Use environment variable to speed up tests
 				origVal := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
 				_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", "100ms")
-				configPath := createTestConfig(t, 13001, "sleep 0.1", "")
+				configPath := createTestConfig(t, 13001, getSimpleSleepCommand(), "")
 				return e, configPath, func() {
 					if origVal != "" {
 						_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", origVal)
@@ -82,7 +80,7 @@ func TestStartService(t *testing.T) {
 			name: "successful_start_with_readiness_check",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
 				e := NewExecutor()
-				configPath := createTestConfig(t, 13002, "sleep 0.1", "true")
+				configPath := createTestConfig(t, 13002, getSimpleSleepCommand(), "true")
 				return e, configPath, func() {}
 			},
 			expectError: false,
@@ -271,10 +269,9 @@ func TestStopService(t *testing.T) {
 			name: "stop_running_service_gracefully",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				// Create a mock process
+				// Create a mock process using platform-specific helper
 				ctx := context.Background()
-				cmd := exec.CommandContext(ctx, "/bin/sh", "-c", "sleep 10")
-				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				cmd := createTestCommand(ctx, "10")
 				_ = cmd.Start()
 				e.serviceCmd = cmd
 				e.servicePort = 3000
@@ -289,10 +286,9 @@ func TestStopService(t *testing.T) {
 			name: "stop_with_force_kill_after_timeout",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				// Create a process that ignores SIGTERM
+				// Create a process that's harder to kill
 				ctx := context.Background()
-				cmd := exec.CommandContext(ctx, "/bin/sh", "-c", "trap '' TERM; sleep 10")
-				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				cmd := createUnkillableTestCommand(ctx, "10")
 				_ = cmd.Start()
 				e.serviceCmd = cmd
 				e.servicePort = 3000
@@ -309,8 +305,7 @@ func TestStopService(t *testing.T) {
 
 				// Create a mock process
 				ctx := context.Background()
-				cmd := exec.CommandContext(ctx, "/bin/sh", "-c", "sleep 1")
-				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				cmd := createTestCommand(ctx, "1")
 				_ = cmd.Start()
 				e.serviceCmd = cmd
 				return e
@@ -697,7 +692,7 @@ func TestIntegrationServiceLifecycle(t *testing.T) {
 	e := NewExecutor()
 	e.SetEnableServiceLogs(true)
 
-	configPath := createTestConfig(t, 19876, "sh -c 'while true; do sleep 1; done'", "true")
+	configPath := createTestConfig(t, 19876, getLongRunningCommand(), "true")
 
 	err := config.Load(configPath)
 	require.NoError(t, err)
