@@ -44,7 +44,7 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make setup-ci
 
       - name: Start runner
         id: test-action

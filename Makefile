@@ -8,7 +8,7 @@ BINARY_NAME=tusk
 BINARY_UNIX=$(BINARY_NAME)_unix
 
 
-.PHONY: all build clean test deps help
+.PHONY: all build build-ci build-linux test test-ci clean deps install-buf install-lint-tools setup setup-ci run fmt lint help
 
 all: build
 
@@ -46,13 +46,22 @@ build-linux:
 	@echo "🐧 Building for Linux..."
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BINARY_UNIX) -v .
 
-install-tools:
-	@echo "🔧 Installing development tools..."
-	@command -v buf >/dev/null 2>&1 || { echo "❌ buf not found. Install with: go install github.com/bufbuild/buf/cmd/buf@latest"; exit 1; }
+install-buf:
+	@echo "🔧 Installing buf..."
+	@command -v buf >/dev/null 2>&1 || go install github.com/bufbuild/buf/cmd/buf@latest
 	@echo "✅ buf is available"
 
-setup: install-tools deps
+install-lint-tools:
+	@echo "📦 Installing linting tools..."
+	go install mvdan.cc/gofumpt@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@echo "✅ Linting tools installed"
+
+setup: install-buf deps install-lint-tools
 	@echo "✅ Development environment ready"
+
+setup-ci: deps install-lint-tools
+	@echo "✅ CI environment ready"
 
 run: build
 	./$(BINARY_NAME)
@@ -68,15 +77,19 @@ lint:
 
 help:
 	@echo "Available targets:"
-	@echo "  all          - build (default)"
-	@echo "  build        - Build the binary"
-	@echo "  build-ci     - Build for CI"
-	@echo "  test         - Run tests"
-	@echo "  test-ci      - Run tests for CI"
-	@echo "  clean        - Clean build artifacts"
-	@echo "  deps         - Download dependencies"
-	@echo "  setup        - Setup development environment"
-	@echo "  run          - Build and run"
-	@echo "  fmt          - Format code"
-	@echo "  lint         - Lint code"
-	@echo "  help         - Show this help"
+	@echo "  all                - build (default)"
+	@echo "  build              - Build the binary"
+	@echo "  build-ci           - Build for CI with version info"
+	@echo "  build-linux        - Build for Linux"
+	@echo "  test               - Run tests"
+	@echo "  test-ci            - Run tests for CI"
+	@echo "  clean              - Clean build artifacts"
+	@echo "  deps               - Download dependencies"
+	@echo "  install-buf        - Check if buf is installed"
+	@echo "  install-lint-tools - Install linting tools"
+	@echo "  setup              - Setup development environment"
+	@echo "  setup-ci           - Setup CI environment"
+	@echo "  run                - Build and run"
+	@echo "  fmt                - Format code"
+	@echo "  lint               - Lint code"
+	@echo "  help               - Show this help"
