@@ -494,3 +494,203 @@ func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
 	// Should pick span2 because nested structure is much more similar
 	assert.Equal(t, "span-user", match.SpanId, "Should pick the span with more similar nested structure")
 }
+
+// TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates tests that when multiple
+// candidates exist, the top 5 alternatives are returned with their scores
+func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing.T) {
+	server, err := NewServer("svc")
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	traceID := "trace-top5"
+	pkg := "postgres"
+
+	inputSchemaMap := map[string]any{
+		"properties": map[string]any{
+			"query":      map[string]any{},
+			"parameters": map[string]any{},
+		},
+	}
+
+	// Request: UPDATE query
+	requestValueMap := map[string]any{
+		"query":      "UPDATE users SET name = $1 WHERE id = $2",
+		"parameters": []any{"Alice", 123},
+	}
+
+	// Create 7 spans with varying similarity to the request
+	// All have same schema but different query content
+	spans := []*core.Span{
+		makeSpan(t, traceID, "span-best", pkg, map[string]any{
+			"query":      "UPDATE users SET name = $1 WHERE id = $2",
+			"parameters": []any{"Bob", 123},
+		}, inputSchemaMap, 1000),
+		makeSpan(t, traceID, "span-second", pkg, map[string]any{
+			"query":      "UPDATE users SET name = $1 WHERE id = $3",
+			"parameters": []any{"Alice", 456},
+		}, inputSchemaMap, 2000),
+		makeSpan(t, traceID, "span-third", pkg, map[string]any{
+			"query":      "UPDATE users SET email = $1 WHERE id = $2",
+			"parameters": []any{"test@example.com", 123},
+		}, inputSchemaMap, 3000),
+		makeSpan(t, traceID, "span-fourth", pkg, map[string]any{
+			"query":      "UPDATE posts SET title = $1 WHERE id = $2",
+			"parameters": []any{"New Title", 123},
+		}, inputSchemaMap, 4000),
+		makeSpan(t, traceID, "span-fifth", pkg, map[string]any{
+			"query":      "INSERT INTO users (name) VALUES ($1)",
+			"parameters": []any{"Alice"},
+		}, inputSchemaMap, 5000),
+		makeSpan(t, traceID, "span-sixth", pkg, map[string]any{
+			"query":      "SELECT * FROM users WHERE id = $1",
+			"parameters": []any{123},
+		}, inputSchemaMap, 6000),
+		makeSpan(t, traceID, "span-seventh", pkg, map[string]any{
+			"query":      "DELETE FROM users WHERE id = $1",
+			"parameters": []any{999},
+		}, inputSchemaMap, 7000),
+	}
+
+	server.LoadSpansForTrace(traceID, spans)
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+
+	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should pick the best match (very similar query)
+	assert.Equal(t, "span-best", match.SpanId, "Should pick the best match")
+
+	// Should have similarity score populated (schema hash match with multiple candidates)
+	require.NotNil(t, level.SimilarityScore, "Similarity score should be populated for multiple matches")
+	assert.Greater(t, *level.SimilarityScore, float32(0.7), "Best match should have high similarity score")
+
+	// Should have top 5 candidates (excluding the best match)
+	require.NotNil(t, level.TopCandidates, "Top candidates should be populated")
+	assert.Len(t, level.TopCandidates, 5, "Should return exactly 5 top candidates (excluding the best)")
+
+	// Verify candidates are sorted by score (highest first)
+	for i := 0; i < len(level.TopCandidates)-1; i++ {
+		assert.GreaterOrEqual(t, level.TopCandidates[i].Score, level.TopCandidates[i+1].Score,
+			"Candidates should be sorted by score (highest first)")
+	}
+
+	// Verify the top candidate is the second-best match
+	assert.Equal(t, "span-second", level.TopCandidates[0].SpanId, "Top candidate should be the second-best match")
+
+	t.Logf("Best match: %s (score: %.4f)", match.SpanId, *level.SimilarityScore)
+	for i, candidate := range level.TopCandidates {
+		t.Logf("Candidate #%d: %s (score: %.4f)", i+1, candidate.SpanId, candidate.Score)
+	}
+}
+
+// TestFindBestMatchInTrace_SimilarityScoring_DeepNesting tests that similarity scoring works
+// correctly beyond depth 5 by stringifying deeply nested structures
+func TestFindBestMatchInTrace_SimilarityScoring_DeepNesting(t *testing.T) {
+	server, err := NewServer("svc")
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	traceID := "trace-deep"
+	pkg := "http"
+
+	inputSchemaMap := map[string]any{
+		"properties": map[string]any{
+			"body": map[string]any{},
+		},
+	}
+
+	// Create a deeply nested structure (depth > 5)
+	// Level 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 (beyond max depth)
+	deepStructure := map[string]any{
+		"body": map[string]any{
+			"level1": map[string]any{
+				"level2": map[string]any{
+					"level3": map[string]any{
+						"level4": map[string]any{
+							"level5": map[string]any{
+								"level6": map[string]any{
+									"level7": map[string]any{
+										"data": "target-value-123",
+										"meta": "important-info",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Request with deep nesting
+	requestValueMap := deepStructure
+
+	// Span 1: Different value at depth 7 (should stringify and compare)
+	span1Deep := map[string]any{
+		"body": map[string]any{
+			"level1": map[string]any{
+				"level2": map[string]any{
+					"level3": map[string]any{
+						"level4": map[string]any{
+							"level5": map[string]any{
+								"level6": map[string]any{
+									"level7": map[string]any{
+										"data": "completely-different-xyz",
+										"meta": "other-data",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Span 2: Very similar value at depth 7 (should stringify and show high similarity)
+	span2Deep := map[string]any{
+		"body": map[string]any{
+			"level1": map[string]any{
+				"level2": map[string]any{
+					"level3": map[string]any{
+						"level4": map[string]any{
+							"level5": map[string]any{
+								"level6": map[string]any{
+									"level7": map[string]any{
+										"data": "target-value-124", // Very similar
+										"meta": "important-info",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	span1 := makeSpan(t, traceID, "span-deep-different", pkg, span1Deep, inputSchemaMap, 1000)
+	span2 := makeSpan(t, traceID, "span-deep-similar", pkg, span2Deep, inputSchemaMap, 2000)
+
+	server.LoadSpansForTrace(traceID, []*core.Span{span1, span2})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+
+	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should pick span2 because even at depth > 5, stringification shows higher similarity
+	assert.Equal(t, "span-deep-similar", match.SpanId, "Should pick the span with more similar deep structure")
+
+	// Log similarity scores to verify depth > 5 comparison works
+	require.NotNil(t, level.SimilarityScore, "Similarity score should be populated")
+	t.Logf("Best match: %s (score: %.4f)", match.SpanId, *level.SimilarityScore)
+	if len(level.TopCandidates) > 0 {
+		t.Logf("Next best: %s (score: %.4f)", level.TopCandidates[0].SpanId, level.TopCandidates[0].Score)
+	}
+}

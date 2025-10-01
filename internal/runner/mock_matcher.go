@@ -268,15 +268,12 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	if result := mm.findUnusedSpanByInputSchemaHash(requestData, sortedSpans); result.span != nil {
 		slog.Debug("Found unused span by input schema hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
-		description := "Unused span by input schema hash"
-		if result.multipleMatches {
-			description = fmt.Sprintf("Unused span by input schema hash (similarity: %.2f, next best: %.2f)", result.bestScore, result.secondBestScore)
-		}
-		return result.span, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_TRACE,
-			MatchDescription: description,
-		}, nil
+		return result.span, buildMatchLevelWithSimilarity(
+			backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
+			backend.MatchScope_MATCH_SCOPE_TRACE,
+			"Unused span by input schema hash",
+			result,
+		), nil
 	}
 	slog.Debug("Priority 5 failed: No unused span by input schema hash", "traceId", traceID)
 
@@ -285,15 +282,12 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	if result := mm.findUsedSpanByInputSchemaHash(requestData, sortedSpans); result.span != nil {
 		slog.Debug("Found used span by input schema hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
-		description := "Used span by input schema hash"
-		if result.multipleMatches {
-			description = fmt.Sprintf("Used span by input schema hash (similarity: %.2f, next best: %.2f)", result.bestScore, result.secondBestScore)
-		}
-		return result.span, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_TRACE,
-			MatchDescription: description,
-		}, nil
+		return result.span, buildMatchLevelWithSimilarity(
+			backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
+			backend.MatchScope_MATCH_SCOPE_TRACE,
+			"Used span by input schema hash",
+			result,
+		), nil
 	}
 	slog.Debug("Priority 6 failed: No used span by input schema hash", "traceId", traceID)
 
@@ -302,15 +296,12 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	if result := mm.findUnusedSpanByReducedInputSchemaHash(req, sortedSpans); result.span != nil {
 		slog.Debug("Found unused span by reduced input value hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
-		description := "Unused span by reduced input schema hash"
-		if result.multipleMatches {
-			description = fmt.Sprintf("Unused span by reduced input schema hash (similarity: %.2f, next best: %.2f)", result.bestScore, result.secondBestScore)
-		}
-		return result.span, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_TRACE,
-			MatchDescription: description,
-		}, nil
+		return result.span, buildMatchLevelWithSimilarity(
+			backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
+			backend.MatchScope_MATCH_SCOPE_TRACE,
+			"Unused span by reduced input schema hash",
+			result,
+		), nil
 	}
 	slog.Debug("Priority 7 failed: No unused span by reduced input schema hash", "traceId", traceID)
 
@@ -319,15 +310,12 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	if result := mm.findUsedSpanByReducedInputSchemaHash(req, sortedSpans); result.span != nil {
 		slog.Debug("Found used span by reduced input schema hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
-		description := "Used span by reduced input schema hash"
-		if result.multipleMatches {
-			description = fmt.Sprintf("Used span by reduced input schema hash (similarity: %.2f, next best: %.2f)", result.bestScore, result.secondBestScore)
-		}
-		return result.span, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_TRACE,
-			MatchDescription: description,
-		}, nil
+		return result.span, buildMatchLevelWithSimilarity(
+			backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
+			backend.MatchScope_MATCH_SCOPE_TRACE,
+			"Used span by reduced input schema hash",
+			result,
+		), nil
 	}
 	slog.Debug("Priority 8 failed: No used span by reduced input schema hash", "traceId", traceID)
 
@@ -363,6 +351,39 @@ func (mm *MockMatcher) isUsed(span *core.Span) bool {
 	return !mm.isUnused(span)
 }
 
+// buildMatchLevelWithSimilarity creates a MatchLevel with similarity scoring data
+func buildMatchLevelWithSimilarity(matchType backend.MatchType, matchScope backend.MatchScope, baseDescription string, result spanMatchResult) *backend.MatchLevel {
+	level := &backend.MatchLevel{
+		MatchType:        matchType,
+		MatchScope:       matchScope,
+		MatchDescription: baseDescription,
+	}
+
+	if result.multipleMatches {
+		// Populate best score
+		bestScore := float32(result.bestScore)
+		level.SimilarityScore = &bestScore
+
+		// Build description with scores
+		if len(result.topCandidates) > 0 {
+			nextBestScore := result.topCandidates[0].score
+			level.MatchDescription = fmt.Sprintf("%s (similarity: %.2f, next best: %.2f)", baseDescription, result.bestScore, nextBestScore)
+		} else {
+			level.MatchDescription = fmt.Sprintf("%s (similarity: %.2f)", baseDescription, result.bestScore)
+		}
+
+		// Populate top candidates (up to 5)
+		for _, candidate := range result.topCandidates {
+			level.TopCandidates = append(level.TopCandidates, &backend.SimilarityCandidate{
+				SpanId: candidate.span.SpanId,
+				Score:  float32(candidate.score),
+			})
+		}
+	}
+
+	return level
+}
+
 // spanWithScore holds a span and its similarity score
 type spanWithScore struct {
 	span  *core.Span
@@ -375,7 +396,10 @@ type spanWithScore struct {
 func calculateSimilarityScore(a, b any, depth int) float64 {
 	const maxDepth = 5
 	if depth > maxDepth {
-		return 0.0
+		// Beyond max depth, stringify and compare as strings
+		aStr := safeStringify(a)
+		bStr := safeStringify(b)
+		return compareStrings(aStr, bStr)
 	}
 
 	// Handle nil cases
@@ -413,6 +437,28 @@ func calculateSimilarityScore(a, b any, depth int) float64 {
 		aStr := fmt.Sprintf("%v", a)
 		bStr := fmt.Sprintf("%v", b)
 		return compareStrings(aStr, bStr)
+	}
+}
+
+// safeStringify converts any value to a string representation safely
+func safeStringify(v any) string {
+	if v == nil {
+		return ""
+	}
+
+	switch val := v.(type) {
+	case string:
+		return val
+	case map[string]any, []any:
+		// For complex types, use JSON marshaling
+		bytes, err := json.Marshal(val)
+		if err != nil {
+			// Fallback to fmt if JSON fails
+			return fmt.Sprintf("%v", val)
+		}
+		return string(bytes)
+	default:
+		return fmt.Sprintf("%v", val)
 	}
 }
 
@@ -490,9 +536,9 @@ func compareStrings(a, b string) float64 {
 }
 
 // findBestMatchBySimilarity ranks spans by similarity score and returns the best match
-func (mm *MockMatcher) findBestMatchBySimilarity(requestData MockMatcherRequestData, spans []*core.Span, isUnused bool) (*core.Span, float64, float64) {
+func (mm *MockMatcher) findBestMatchBySimilarity(requestData MockMatcherRequestData, spans []*core.Span, isUnused bool) (*core.Span, float64, []spanWithScore) {
 	if len(spans) == 0 {
-		return nil, 0.0, 0.0
+		return nil, 0.0, nil
 	}
 
 	// Limit to first 50 spans for performance
@@ -522,7 +568,7 @@ func (mm *MockMatcher) findBestMatchBySimilarity(requestData MockMatcherRequestD
 	}
 
 	if len(scored) == 0 {
-		return nil, 0.0, 0.0
+		return nil, 0.0, nil
 	}
 
 	// Sort by score (highest first), then by timestamp (oldest first)
@@ -544,12 +590,15 @@ func (mm *MockMatcher) findBestMatchBySimilarity(requestData MockMatcherRequestD
 	})
 
 	bestScore := scored[0].score
-	secondBestScore := 0.0
-	if len(scored) > 1 {
-		secondBestScore = scored[1].score
+
+	// Get top 5 candidates (excluding the best match)
+	var topCandidates []spanWithScore
+	maxCandidates := 5
+	for i := 1; i < len(scored) && i <= maxCandidates; i++ {
+		topCandidates = append(topCandidates, scored[i])
 	}
 
-	return scored[0].span, bestScore, secondBestScore
+	return scored[0].span, bestScore, topCandidates
 }
 
 func (mm *MockMatcher) findUnusedSpanByInputValueHash(requestData MockMatcherRequestData, spans []*core.Span) *core.Span {
@@ -573,7 +622,7 @@ func (mm *MockMatcher) findUsedSpanByInputValueHash(requestData MockMatcherReque
 type spanMatchResult struct {
 	span            *core.Span
 	bestScore       float64
-	secondBestScore float64
+	topCandidates   []spanWithScore // Top 5 candidates with scores (excluding the best match)
 	multipleMatches bool
 }
 
@@ -597,11 +646,11 @@ func (mm *MockMatcher) findUnusedSpanByInputSchemaHash(requestData MockMatcherRe
 	}
 
 	// Multiple matches - use similarity scoring
-	bestMatch, bestScore, secondBestScore := mm.findBestMatchBySimilarity(requestData, candidates, true)
+	bestMatch, bestScore, topCandidates := mm.findBestMatchBySimilarity(requestData, candidates, true)
 	return spanMatchResult{
 		span:            bestMatch,
 		bestScore:       bestScore,
-		secondBestScore: secondBestScore,
+		topCandidates:   topCandidates,
 		multipleMatches: true,
 	}
 }
@@ -626,11 +675,11 @@ func (mm *MockMatcher) findUsedSpanByInputSchemaHash(requestData MockMatcherRequ
 	}
 
 	// Multiple matches - use similarity scoring
-	bestMatch, bestScore, secondBestScore := mm.findBestMatchBySimilarity(requestData, candidates, false)
+	bestMatch, bestScore, topCandidates := mm.findBestMatchBySimilarity(requestData, candidates, false)
 	return spanMatchResult{
 		span:            bestMatch,
 		bestScore:       bestScore,
-		secondBestScore: secondBestScore,
+		topCandidates:   topCandidates,
 		multipleMatches: true,
 	}
 }
@@ -692,11 +741,11 @@ func (mm *MockMatcher) findUnusedSpanByReducedInputSchemaHash(req *core.GetMockR
 	}
 
 	// Multiple matches - use similarity scoring
-	bestMatch, bestScore, secondBestScore := mm.findBestMatchBySimilarity(requestData, candidates, true)
+	bestMatch, bestScore, topCandidates := mm.findBestMatchBySimilarity(requestData, candidates, true)
 	return spanMatchResult{
 		span:            bestMatch,
 		bestScore:       bestScore,
-		secondBestScore: secondBestScore,
+		topCandidates:   topCandidates,
 		multipleMatches: true,
 	}
 }
@@ -726,11 +775,11 @@ func (mm *MockMatcher) findUsedSpanByReducedInputSchemaHash(req *core.GetMockReq
 	}
 
 	// Multiple matches - use similarity scoring
-	bestMatch, bestScore, secondBestScore := mm.findBestMatchBySimilarity(requestData, candidates, false)
+	bestMatch, bestScore, topCandidates := mm.findBestMatchBySimilarity(requestData, candidates, false)
 	return spanMatchResult{
 		span:            bestMatch,
 		bestScore:       bestScore,
-		secondBestScore: secondBestScore,
+		topCandidates:   topCandidates,
 		multipleMatches: true,
 	}
 }
