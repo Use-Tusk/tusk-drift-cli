@@ -337,7 +337,20 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addTestLog(test.TraceID, fmt.Sprintf("✅ %s %s - PASSED (%dms)", test.Method, test.Path, msg.result.Duration))
 		default:
 			m.addTestLog(test.TraceID, fmt.Sprintf("❌ %s %s - FAILED (%dms)", test.Method, test.Path, msg.result.Duration))
-			if len(msg.result.Deviations) > 0 {
+
+			// Check for mock-not-found events first
+			if m.executor != nil && m.executor.GetServer() != nil && m.executor.GetServer().HasMockNotFoundEvents(test.TraceID) {
+				mockNotFoundEvents := m.executor.GetServer().GetMockNotFoundEvents(test.TraceID)
+				for _, ev := range mockNotFoundEvents {
+					m.addTestLog(test.TraceID, fmt.Sprintf("  🔴 Mock not found: %s %s", ev.PackageName, ev.Operation))
+					if ev.SpanName != "" {
+						m.addTestLog(test.TraceID, fmt.Sprintf("    Request: %s", ev.SpanName))
+					}
+					if ev.StackTrace != "" {
+						m.addTestLog(test.TraceID, fmt.Sprintf("    Stack trace:\n%s", ev.StackTrace))
+					}
+				}
+			} else if len(msg.result.Deviations) > 0 {
 				for _, dev := range msg.result.Deviations {
 					m.addTestLog(test.TraceID, fmt.Sprintf("  Deviation: %s", dev.Description))
 					m.addTestLog(test.TraceID, fmt.Sprintf("    Expected: %v", dev.Expected))

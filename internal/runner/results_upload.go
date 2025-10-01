@@ -162,11 +162,20 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 		}
 
 		if !r.Passed {
-			if r.Error != "" {
+			switch {
+			case e != nil && e.server != nil && e.server.HasMockNotFoundEvents(r.TestID):
+				// Check if there were any mock-not-found events during replay
+				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_MOCK_NOT_FOUND
+				tr.TestFailureReason = &reason
+				msg := "Mock not found during replay"
+				tr.TestFailureMessage = &msg
+			case r.Error != "":
+				// HTTP request failed (network error, timeout, etc.)
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_NO_RESPONSE
 				tr.TestFailureReason = &reason
 				tr.TestFailureMessage = &r.Error
-			} else {
+			default:
+				// Response received but doesn't match expected
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_RESPONSE_MISMATCH
 				tr.TestFailureReason = &reason
 			}

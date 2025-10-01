@@ -30,21 +30,22 @@ import (
 
 // Server handles Unix socket communication with the SDK
 type Server struct {
-	socketPath       string
-	listener         net.Listener
-	spans            map[string][]*core.Span
-	spanUsage        map[string]map[string]bool // traceId -> spanId -> isUsed
-	currentTestID    string
-	ctx              context.Context
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
-	mu               sync.RWMutex
-	sdkVersion       string
-	sdkConnected     bool
-	sdkConnectedChan chan struct{}
-	suiteSpans       []*core.Span
-	matchEvents      map[string][]MatchEvent
-	replayInbound    map[string]*core.Span
+	socketPath         string
+	listener           net.Listener
+	spans              map[string][]*core.Span
+	spanUsage          map[string]map[string]bool // traceId -> spanId -> isUsed
+	currentTestID      string
+	ctx                context.Context
+	cancel             context.CancelFunc
+	wg                 sync.WaitGroup
+	mu                 sync.RWMutex
+	sdkVersion         string
+	sdkConnected       bool
+	sdkConnectedChan   chan struct{}
+	suiteSpans         []*core.Span
+	matchEvents        map[string][]MatchEvent
+	replayInbound      map[string]*core.Span
+	mockNotFoundEvents map[string][]MockNotFoundEvent
 }
 
 // MessageType represents the type of message sent by the SDK
@@ -64,6 +65,15 @@ type MatchEvent struct {
 	ReplaySpan *core.Span          `json:"replaySpan,omitempty"`
 }
 
+type MockNotFoundEvent struct {
+	PackageName string    `json:"packageName"`
+	SpanName    string    `json:"spanName"`   // e.g., "GET /api/users" or "pg.query"
+	Operation   string    `json:"operation"`  // "GET", "POST", "query", etc.
+	StackTrace  string    `json:"stackTrace"` // Code location that made the call
+	Timestamp   time.Time `json:"timestamp"`
+	Error       string    `json:"error"` // Full error message
+}
+
 // NewServer creates a new server instance
 func NewServer(serviceID string) (*Server, error) {
 	socketPath := filepath.Join(os.TempDir(), "tusk-connect.sock")
@@ -74,15 +84,16 @@ func NewServer(serviceID string) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Server{
-		socketPath:       socketPath,
-		spans:            make(map[string][]*core.Span),
-		spanUsage:        make(map[string]map[string]bool),
-		ctx:              ctx,
-		cancel:           cancel,
-		sdkConnected:     false,
-		sdkConnectedChan: make(chan struct{}),
-		matchEvents:      make(map[string][]MatchEvent),
-		replayInbound:    make(map[string]*core.Span),
+		socketPath:         socketPath,
+		spans:              make(map[string][]*core.Span),
+		spanUsage:          make(map[string]map[string]bool),
+		ctx:                ctx,
+		cancel:             cancel,
+		sdkConnected:       false,
+		sdkConnectedChan:   make(chan struct{}),
+		matchEvents:        make(map[string][]MatchEvent),
+		replayInbound:      make(map[string]*core.Span),
+		mockNotFoundEvents: make(map[string][]MockNotFoundEvent),
 	}, nil
 }
 
@@ -586,6 +597,15 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 
 			if testID != "" {
 				logging.LogToCurrentTest(testID, "🔴 No mock found for request\n")
+				// Record that a mock was not found for this test
+				ms.recordMockNotFoundEvent(testID, MockNotFoundEvent{
+					PackageName: req.OutboundSpan.PackageName,
+					SpanName:    req.OutboundSpan.Name,
+					Operation:   req.Operation,
+					StackTrace:  req.StackTrace,
+					Timestamp:   time.Now(),
+					Error:       fmt.Sprintf("no mock found for %s %s: %v", req.Operation, req.OutboundSpan.Name, err),
+				})
 			}
 
 			return &core.GetMockResponse{
@@ -795,6 +815,30 @@ func (ms *Server) GetInboundReplaySpan(traceID string) *core.Span {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 	return ms.replayInbound[traceID]
+}
+
+func (ms *Server) recordMockNotFoundEvent(traceID string, ev MockNotFoundEvent) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	if ms.mockNotFoundEvents == nil {
+		ms.mockNotFoundEvents = make(map[string][]MockNotFoundEvent)
+	}
+	ms.mockNotFoundEvents[traceID] = append(ms.mockNotFoundEvents[traceID], ev)
+}
+
+func (ms *Server) GetMockNotFoundEvents(traceID string) []MockNotFoundEvent {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	events := ms.mockNotFoundEvents[traceID]
+	out := make([]MockNotFoundEvent, len(events))
+	copy(out, events)
+	return out
+}
+
+func (ms *Server) HasMockNotFoundEvents(traceID string) bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return len(ms.mockNotFoundEvents[traceID]) > 0
 }
 
 func (ms *Server) GetRootSpanID(traceID string) string {

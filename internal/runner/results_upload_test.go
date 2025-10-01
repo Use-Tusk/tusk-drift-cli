@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
@@ -399,6 +400,98 @@ func TestBuildTraceTestResultsProto_EdgeCases(t *testing.T) {
 		assert.False(t, protoResults[0].TestSuccess)
 		assert.Equal(t, backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_RESPONSE_MISMATCH, *protoResults[0].TestFailureReason)
 		assert.Empty(t, protoResults[0].SpanResults)
+	})
+}
+
+func TestBuildTraceTestResultsProto_WithMockNotFound(t *testing.T) {
+	t.Parallel()
+
+	t.Run("mock not found takes priority over deviations", func(t *testing.T) {
+		t.Parallel()
+
+		// Create a mock server with mock-not-found events
+		server, err := NewServer("test-service")
+		require.NoError(t, err)
+		defer func() { _ = server.Stop() }()
+
+		server.recordMockNotFoundEvent("trace-1", MockNotFoundEvent{
+			PackageName: "pg",
+			SpanName:    "pg.query",
+			Operation:   "query",
+			StackTrace:  "at test.ts:10",
+			Timestamp:   time.Now(),
+			Error:       "no mock found for query pg.query",
+		})
+
+		executor := &Executor{
+			server: server,
+		}
+
+		tests := []Test{
+			{TraceID: "trace-1", TraceTestID: "tt-1"},
+		}
+
+		results := []TestResult{
+			{
+				TestID: "trace-1",
+				Passed: false,
+				Deviations: []Deviation{
+					{Field: "body", Description: "Response body content mismatch"},
+				},
+			},
+		}
+
+		protoResults := BuildTraceTestResultsProto(executor, results, tests)
+
+		require.Len(t, protoResults, 1)
+		result := protoResults[0]
+
+		assert.Equal(t, "tt-1", result.TraceTestId)
+		assert.False(t, result.TestSuccess)
+
+		require.NotNil(t, result.TestFailureReason)
+		assert.Equal(t, backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_MOCK_NOT_FOUND, *result.TestFailureReason)
+
+		require.NotNil(t, result.TestFailureMessage)
+		assert.Equal(t, "Mock not found during replay", *result.TestFailureMessage)
+	})
+
+	t.Run("no mock-not-found events falls back to response mismatch", func(t *testing.T) {
+		t.Parallel()
+
+		server, err := NewServer("test-service")
+		require.NoError(t, err)
+		defer func() { _ = server.Stop() }()
+
+		executor := &Executor{
+			server: server,
+		}
+
+		tests := []Test{
+			{TraceID: "trace-1", TraceTestID: "tt-1"},
+		}
+
+		results := []TestResult{
+			{
+				TestID: "trace-1",
+				Passed: false,
+				Deviations: []Deviation{
+					{Field: "body", Description: "Response body content mismatch"},
+				},
+			},
+		}
+
+		protoResults := BuildTraceTestResultsProto(executor, results, tests)
+
+		require.Len(t, protoResults, 1)
+		result := protoResults[0]
+
+		assert.Equal(t, "tt-1", result.TraceTestId)
+		assert.False(t, result.TestSuccess)
+
+		// Should be RESPONSE_MISMATCH when no mock-not-found events
+		require.NotNil(t, result.TestFailureReason)
+		assert.Equal(t, backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_RESPONSE_MISMATCH, *result.TestFailureReason)
 	})
 }
 
