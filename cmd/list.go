@@ -77,13 +77,22 @@ func listTests(cmd *cobra.Command, args []string) error {
 		tests = runner.ConvertTraceTestsToRunnerTests(all)
 	} else {
 		_ = config.Load("")
-		cfg, _ := config.Get()
+		cfg, getConfigErr := config.Get()
 
 		selected := traceDir
 
-		if selected == "" {
+		if selected == "" && getConfigErr == nil && cfg.Traces.Dir != "" {
 			selected = cfg.Traces.Dir
 		}
+
+		// Default to standard traces directory if nothing specified
+		if selected == "" {
+			selected = utils.GetTracesDir()
+		} else if traceDir != "" {
+			// Resolve --trace-dir flag relative to tusk root if it's a relative path
+			selected = utils.ResolveTuskPath(selected)
+		}
+
 		if selected != "" {
 			utils.SetTracesDirOverride(selected)
 		}

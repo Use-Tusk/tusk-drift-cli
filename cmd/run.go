@@ -235,8 +235,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if getConfigErr == nil && cfg.Results.Dir != "" {
 				resultsDir = cfg.Results.Dir
 			} else {
-				resultsDir = ".tusk/results"
+				resultsDir = utils.ResolveTuskPath(".tusk/results")
 			}
+		} else {
+			resultsDir = utils.ResolveTuskPath(resultsDir)
 		}
 		executor.SetResultsOutput(resultsDir)
 	}
