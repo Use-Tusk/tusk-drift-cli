@@ -496,6 +496,18 @@ func runTests(cmd *cobra.Command, args []string) error {
 }
 
 func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID, driftRunID, traceTestID string, allCloud bool) ([]runner.Test, error) {
+	if traceTestID != "" {
+		req := &backend.GetTraceTestRequest{
+			ObservableServiceId: serviceID,
+			TraceTestId:         traceTestID,
+		}
+		resp, err := client.GetTraceTest(ctx, req, auth)
+		if err != nil {
+			return nil, err
+		}
+		return runner.ConvertTraceTestsToRunnerTests([]*backend.TraceTest{resp.TraceTest}), nil
+	}
+
 	if allCloud {
 		var (
 			all []*backend.TraceTest
@@ -522,18 +534,6 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 		}
 		logging.LogToService(fmt.Sprintf("Fetched %d trace tests from backend", len(all)))
 		return runner.ConvertTraceTestsToRunnerTests(all), nil
-	}
-
-	if traceTestID != "" {
-		req := &backend.GetTraceTestRequest{
-			ObservableServiceId: serviceID,
-			TraceTestId:         traceTestID,
-		}
-		resp, err := client.GetTraceTest(ctx, req, auth)
-		if err != nil {
-			return nil, err
-		}
-		return runner.ConvertTraceTestsToRunnerTests([]*backend.TraceTest{resp.TraceTest}), nil
 	}
 
 	var (
