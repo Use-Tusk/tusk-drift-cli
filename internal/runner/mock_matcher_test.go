@@ -307,3 +307,190 @@ func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
 	require.NotNil(t, result.span)
 	assert.Equal(t, "sRS", result.span.SpanId)
 }
+
+// TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch tests that when multiple spans
+// match on schema, the matcher picks the one with the closest input value using Levenshtein similarity
+func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) {
+	server, err := NewServer("svc")
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	traceID := "trace-similarity"
+	pkg := "postgres"
+
+	// Schema that matches for SQL queries
+	inputSchemaMap := map[string]any{
+		"properties": map[string]any{
+			"query":      map[string]any{},
+			"parameters": map[string]any{},
+		},
+	}
+
+	// Request: UPDATE sessions with specific parameters
+	requestValueMap := map[string]any{
+		"query": "update \"tests\" set \"expires_at\" = $1, \"updated_at\" = $2 where \"tests\".\"id\" = $3",
+		"parameters": []any{
+			"2025-10-01T05:24:30.809Z",
+			"2025-10-01T01:59:47.260Z",
+			"random-id-1",
+		},
+	}
+
+	// Span 1: Very different query (SELECT from roles) - should NOT be picked
+	span1ValueMap := map[string]any{
+		"query": "select \"id\", \"name\", \"repo_id\", \"created_at\", \"updated_at\", \"random_column\" from \"users\" \"usersTable\" where (\"usersTable\".\"repo_id\" = $1 and \"usersTable\".\"random_column\" = $2) limit $3",
+		"parameters": []any{
+			"results_viewer",
+			"random-id-2",
+			1,
+		},
+	}
+
+	// Span 2: Almost identical query (UPDATE sessions with different timestamps) - SHOULD be picked
+	span2ValueMap := map[string]any{
+		"query": "update \"tests\" set \"expires_at\" = $1, \"updated_at\" = $2 where \"tests\".\"id\" = $3",
+		"parameters": []any{
+			"2025-10-01T14:20:17.076Z",
+			"2025-10-01T06:20:17.077Z",
+			"random-id-1",
+		},
+	}
+
+	span1 := makeSpan(t, traceID, "span-different", pkg, span1ValueMap, inputSchemaMap, 1000)
+	span2 := makeSpan(t, traceID, "span-similar", pkg, span2ValueMap, inputSchemaMap, 2000)
+
+	// Load spans in reverse order to ensure timestamp isn't the primary factor
+	server.LoadSpansForTrace(traceID, []*core.Span{span1, span2})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+
+	// Both spans have same schema but different values
+	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should pick span2 because it has much higher similarity (same query, similar params)
+	assert.Equal(t, "span-similar", match.SpanId, "Should pick the span with more similar input value")
+
+	// Should be a schema hash match (Priority 5)
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
+
+	// Match description should include similarity scores
+	assert.Contains(t, level.MatchDescription, "similarity:")
+}
+
+// TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp tests that when similarity
+// scores are identical, the oldest span is picked
+func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T) {
+	server, err := NewServer("svc")
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	traceID := "trace-tiebreak"
+	pkg := "http"
+
+	inputSchemaMap := map[string]any{
+		"properties": map[string]any{
+			"method": map[string]any{},
+			"path":   map[string]any{},
+		},
+	}
+
+	requestValueMap := map[string]any{
+		"method": "POST",
+		"path":   "/api/users",
+	}
+
+	// Both spans have identical values (perfect similarity score = 1.0)
+	spanValueMap1 := map[string]any{
+		"method": "POST",
+		"path":   "/api/users",
+	}
+
+	spanValueMap2 := map[string]any{
+		"method": "POST",
+		"path":   "/api/users",
+	}
+
+	// Create spans with different timestamps
+	spanOlder := makeSpan(t, traceID, "span-older", pkg, spanValueMap1, inputSchemaMap, 1000)
+	spanNewer := makeSpan(t, traceID, "span-newer", pkg, spanValueMap2, inputSchemaMap, 3000)
+
+	// Load in random order
+	server.LoadSpansForTrace(traceID, []*core.Span{spanNewer, spanOlder})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+
+	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should pick the older span when similarity is identical
+	assert.Equal(t, "span-older", match.SpanId, "Should pick oldest span when similarity scores are identical")
+}
+
+// TestFindBestMatchInTrace_SimilarityScoring_NestedStructures tests similarity scoring
+// with nested maps and arrays
+func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
+	server, err := NewServer("svc")
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	traceID := "trace-nested"
+	pkg := "http"
+
+	inputSchemaMap := map[string]any{
+		"properties": map[string]any{
+			"body": map[string]any{},
+		},
+	}
+
+	// Request with nested structure
+	requestValueMap := map[string]any{
+		"body": map[string]any{
+			"user": map[string]any{
+				"name":  "Alice",
+				"email": "alice@example.com",
+				"tags":  []any{"admin", "active"},
+			},
+		},
+	}
+
+	// Span 1: Completely different structure
+	span1ValueMap := map[string]any{
+		"body": map[string]any{
+			"product": map[string]any{
+				"id":    "123",
+				"price": 99.99,
+			},
+		},
+	}
+
+	// Span 2: Very similar structure (same user with slightly different email)
+	span2ValueMap := map[string]any{
+		"body": map[string]any{
+			"user": map[string]any{
+				"name":  "Alice",
+				"email": "alice@other.com",
+				"tags":  []any{"admin", "active"},
+			},
+		},
+	}
+
+	span1 := makeSpan(t, traceID, "span-product", pkg, span1ValueMap, inputSchemaMap, 1000)
+	span2 := makeSpan(t, traceID, "span-user", pkg, span2ValueMap, inputSchemaMap, 2000)
+
+	server.LoadSpansForTrace(traceID, []*core.Span{span1, span2})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+
+	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should pick span2 because nested structure is much more similar
+	assert.Equal(t, "span-user", match.SpanId, "Should pick the span with more similar nested structure")
+}
