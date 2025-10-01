@@ -263,3 +263,53 @@ func TestWaitForSDKConnectionContextCancelled(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "context cancelled")
 }
+
+func TestMockNotFoundEvents(t *testing.T) {
+	t.Parallel()
+
+	server, err := NewServer("test-service")
+	require.NoError(t, err)
+	defer func() { _ = server.Stop() }()
+
+	traceID := "test-trace-1"
+
+	// Initially no events
+	assert.False(t, server.HasMockNotFoundEvents(traceID))
+	assert.Empty(t, server.GetMockNotFoundEvents(traceID))
+
+	// Record an event
+	event1 := MockNotFoundEvent{
+		PackageName: "pg",
+		SpanName:    "pg.query",
+		Operation:   "query",
+		StackTrace:  "at test.ts:10",
+		Timestamp:   time.Now(),
+		Error:       "no mock found",
+	}
+	server.recordMockNotFoundEvent(traceID, event1)
+
+	// Should now have events
+	assert.True(t, server.HasMockNotFoundEvents(traceID))
+	events := server.GetMockNotFoundEvents(traceID)
+	require.Len(t, events, 1)
+	assert.Equal(t, "pg", events[0].PackageName)
+	assert.Equal(t, "pg.query", events[0].SpanName)
+
+	// Record another
+	event2 := MockNotFoundEvent{
+		PackageName: "http",
+		SpanName:    "GET /api/users",
+		Operation:   "GET",
+		StackTrace:  "at test.ts:20",
+		Timestamp:   time.Now(),
+		Error:       "no mock found",
+	}
+	server.recordMockNotFoundEvent(traceID, event2)
+
+	// Should have 2 events
+	events = server.GetMockNotFoundEvents(traceID)
+	require.Len(t, events, 2)
+
+	// Different trace should have no events
+	assert.False(t, server.HasMockNotFoundEvents("other-trace"))
+}

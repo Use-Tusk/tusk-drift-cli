@@ -107,6 +107,11 @@ func (e *Executor) GetConcurrency() int {
 	return e.parallel
 }
 
+// GetServer returns the server instance
+func (e *Executor) GetServer() *Server {
+	return e.server
+}
+
 // WaitForSpanData blocks briefly until inbound or match events are recorded for a test
 func (e *Executor) WaitForSpanData(traceID string, timeout time.Duration) {
 	if e.server != nil {
