@@ -5,6 +5,8 @@ on:
     tags:
       - "v*"
 
+run-name: "Release ${{ github.ref_name }}"
+
 permissions:
   contents: write
 
