@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/Use-Tusk/tusk-drift-schemas v0.0.0-20250927035852-0ec6a0206ee5
+	github.com/agnivade/levenshtein v1.2.1
 	github.com/atotto/clipboard v0.1.4
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
 	github.com/charmbracelet/bubbles v0.21.0
