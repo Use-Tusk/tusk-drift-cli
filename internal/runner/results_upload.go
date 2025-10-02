@@ -218,6 +218,23 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 				}
 				tr.SpanResults = append(tr.SpanResults, spanRes)
 			}
+
+			// Mock-not-found events (outbound requests that had no matching recording)
+			mockNotFoundEvents := e.server.GetMockNotFoundEvents(r.TestID)
+			for i := range mockNotFoundEvents {
+				ev := mockNotFoundEvents[i]
+				spanRes := &backend.TraceTestSpanResult{
+					MatchedSpanRecordingId: nil,
+					MatchLevel:             nil,
+				}
+				if ev.StackTrace != "" {
+					spanRes.StackTrace = &ev.StackTrace
+				}
+				if ev.ReplaySpan != nil {
+					spanRes.ReplaySpan = ev.ReplaySpan
+				}
+				tr.SpanResults = append(tr.SpanResults, spanRes)
+			}
 		}
 
 		out = append(out, tr)
