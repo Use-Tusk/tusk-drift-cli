@@ -224,7 +224,6 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 			for i := range mockNotFoundEvents {
 				ev := mockNotFoundEvents[i]
 				spanRes := &backend.TraceTestSpanResult{
-					// NO MatchedSpanRecordingId - this is the key difference!
 					MatchedSpanRecordingId: nil,
 					MatchLevel:             nil,
 				}
