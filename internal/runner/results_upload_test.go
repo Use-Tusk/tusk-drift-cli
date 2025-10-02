@@ -10,6 +10,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -421,6 +422,12 @@ func TestBuildTraceTestResultsProto_WithMockNotFound(t *testing.T) {
 			StackTrace:  "at test.ts:10",
 			Timestamp:   time.Now(),
 			Error:       "no mock found for query pg.query",
+			ReplaySpan: &core.Span{
+				SpanId:      "replay-span-1",
+				TraceId:     "trace-1",
+				Name:        "pg.query",
+				PackageName: "pg",
+			},
 		})
 
 		executor := &Executor{
@@ -454,6 +461,25 @@ func TestBuildTraceTestResultsProto_WithMockNotFound(t *testing.T) {
 
 		require.NotNil(t, result.TestFailureMessage)
 		assert.Equal(t, "Mock not found during replay", *result.TestFailureMessage)
+
+		// EXPECT: Span results should be created for mock-not-found events
+		// We expect 2 span results:
+		// [0] = inbound span result (for the deviations)
+		// [1] = mock-not-found span result (for the failed outbound call)
+		require.Len(t, result.SpanResults, 2, "Should have inbound span result + mock-not-found span result")
+
+		// Check the inbound span result (index 0)
+		inboundSpanResult := result.SpanResults[0]
+		assert.Nil(t, inboundSpanResult.MatchedSpanRecordingId)
+		assert.NotEmpty(t, inboundSpanResult.Deviations, "Inbound span should have deviations")
+
+		// Check the mock-not-found span result (index 1)
+		mockNotFoundSpanResult := result.SpanResults[1]
+		assert.Nil(t, mockNotFoundSpanResult.MatchedSpanRecordingId, "Mock-not-found event should have NO matched span recording ID")
+		assert.Nil(t, mockNotFoundSpanResult.MatchLevel, "Mock-not-found event should have NO match level")
+		assert.NotNil(t, mockNotFoundSpanResult.StackTrace, "Should include stack trace from the mock-not-found event")
+		assert.Equal(t, "at test.ts:10", *mockNotFoundSpanResult.StackTrace)
+		assert.NotNil(t, mockNotFoundSpanResult.ReplaySpan, "Should include the replay span that failed to find a mock")
 	})
 
 	t.Run("no mock-not-found events falls back to response mismatch", func(t *testing.T) {
