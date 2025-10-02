@@ -51,7 +51,6 @@ service:
 					// Wait for server to be created
 					for range 50 {
 						if e.server != nil {
-							time.Sleep(100 * time.Millisecond)
 							// Simulate SDK connection
 							e.server.mu.Lock()
 							if !e.server.sdkConnected {
@@ -61,7 +60,7 @@ service:
 							e.server.mu.Unlock()
 							break
 						}
-						time.Sleep(100 * time.Millisecond)
+						time.Sleep(10 * time.Millisecond)
 					}
 				}()
 
