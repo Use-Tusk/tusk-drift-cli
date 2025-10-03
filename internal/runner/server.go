@@ -26,7 +26,6 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Server handles Unix socket communication with the SDK
@@ -509,8 +508,6 @@ func (ms *Server) handleInboundReplaySpanProtobuf(msg *core.SDKMessage, conn net
 	slog.Debug("Received inbound span for replay", "traceID", req.Span.TraceId, "spanID", req.Span.SpanId)
 
 	span := req.Span
-	// Override the timestamp to current replay time (SDK may send wrong timestamp due to Date patching)
-	span.Timestamp = timestamppb.Now()
 
 	ms.mu.Lock()
 	if ms.replayInbound == nil {
@@ -536,11 +533,6 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 		testID = ms.currentTestID
 	}
 	ms.mu.RUnlock()
-
-	// Override the timestamp to current replay time (SDK may send wrong timestamp due to Date patching)
-	if req.OutboundSpan != nil {
-		req.OutboundSpan.Timestamp = timestamppb.Now()
-	}
 
 	matcher := NewMockMatcher(ms)
 	var span *core.Span
