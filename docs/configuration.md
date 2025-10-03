@@ -240,7 +240,7 @@ For authentication in cloud mode, either use:
 
 This will not affect CLI behavior. See SDK for more details:
 
-- [Node](https://github.com/Use-Tusk/tusk-drift-sdk)
+- [Node](https://github.com/Use-Tusk/drift-node-sdk)
 
 ## Results
 

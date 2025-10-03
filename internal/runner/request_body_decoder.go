@@ -9,7 +9,7 @@ import (
 )
 
 // DecodedType represents the type of decoded content.
-// Must match the DecodedType enum in tusk-drift-sdk/src/core/tracing/JsonSchemaHelper.ts.
+// Must match the DecodedType enum in drift-node-sdk/src/core/tracing/JsonSchemaHelper.ts.
 // TODO: use Protobuf to share this type across the CLI and SDK(s).
 type DecodedType string
 

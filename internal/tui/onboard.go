@@ -310,7 +310,7 @@ func (m onboardModel) View() string {
 
 			// TODO: update this to point to site docs
 			nextSteps := `Next steps:
-1. Follow the instructions to get started with the SDK in your service: https://github.com/Use-Tusk/tusk-drift-sdk/blob/main/README.md#installation
+1. Follow the instructions to get started with the SDK in your service: https://github.com/Use-Tusk/drift-node-sdk#installation
    - Install the SDK
    - Initialize the SDK on your service
    - Record your first traces
