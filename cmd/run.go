@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,7 +21,6 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
-	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
 
 var (
@@ -332,15 +330,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	// Provide suite spans before starting environment so SDK can mock pre-app calls
 	if !deferLoadTests {
-		if err := prepareAndSetSuiteSpans(
+		if err := runner.PrepareAndSetSuiteSpans(
 			context.Background(),
 			executor,
-			client,
-			authOptions,
-			cfg.Service.ID,
+			runner.SuiteSpanOptions{
+				IsCloudMode: cloud,
+				Client:      client,
+				AuthOptions: authOptions,
+				ServiceID:   cfg.Service.ID,
+				TraceTestID: traceTestID,
+				AllTests:    tests,
+				Interactive: false,
+			},
 			tests,
-			traceTestID,
-			false, // interactive
 		); err != nil {
 			slog.Warn("Failed to prepare suite spans", "error", err)
 		}
@@ -390,15 +392,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 				filter,
 			),
 			OnBeforeEnvironmentStart: func(exec *runner.Executor, tests []runner.Test) error {
-				return prepareAndSetSuiteSpans(
+				return runner.PrepareAndSetSuiteSpans(
 					context.Background(),
 					exec,
-					client,
-					authOptions,
-					cfg.Service.ID,
+					runner.SuiteSpanOptions{
+						IsCloudMode: cloud,
+						Client:      client,
+						AuthOptions: authOptions,
+						ServiceID:   cfg.Service.ID,
+						TraceTestID: traceTestID,
+						AllTests:    tests,
+						Interactive: true,
+					},
 					tests,
-					traceTestID,
-					true, // interactive
 				)
 			},
 			OnAllCompleted: func(results []runner.TestResult, tests []runner.Test, exec *runner.Executor) {
@@ -563,184 +569,6 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 	return runner.ConvertTraceTestsToRunnerTests(all), nil
 }
 
-func fetchPreAppStartSpans(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID string) ([]*core.Span, error) {
-	var all []*core.Span
-	cur := ""
-	for {
-		req := &backend.GetPreAppStartSpansRequest{
-			ObservableServiceId: serviceID,
-			PageSize:            200,
-		}
-		if cur != "" {
-			req.PaginationCursor = &cur
-		}
-
-		resp, err := client.GetPreAppStartSpans(ctx, req, auth)
-		if err != nil {
-			return nil, fmt.Errorf("get pre-app-start spans: %w", err)
-		}
-		all = append(all, resp.Spans...)
-		if next := resp.GetNextCursor(); next != "" {
-			cur = next
-			continue
-		}
-		break
-	}
-	return all, nil
-}
-
-func fetchLocalPreAppStartSpans(interactive bool) ([]*core.Span, error) {
-	var out []*core.Span
-	seen := map[string]struct{}{}
-
-	for _, dir := range utils.GetPossibleTraceDirs() {
-		matches, err := filepath.Glob(filepath.Join(dir, "*trace*.jsonl"))
-		if err != nil {
-			continue
-		}
-		for _, f := range matches {
-			spans, err := utils.ParseSpansFromFile(f, func(s *core.Span) bool { return s.IsPreAppStart })
-			if err != nil {
-				if interactive {
-					logging.LogToService(fmt.Sprintf("❌ Failed to parse spans from %s: %v", f, err))
-				} else {
-					fmt.Fprintf(os.Stderr, "Failed to parse spans from %s: %v\n", f, err)
-				}
-				continue
-			}
-			for _, s := range spans {
-				key := s.TraceId + "|" + s.SpanId
-				if _, ok := seen[key]; ok {
-					continue
-				}
-				seen[key] = struct{}{}
-				out = append(out, s)
-			}
-		}
-	}
-	return out, nil
-}
-
-func fetchAllSuiteSpans(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID string) ([]*core.Span, error) {
-	var spans []*core.Span
-	cur := ""
-	for {
-		req := &backend.GetAllTraceTestsRequest{
-			ObservableServiceId: serviceID,
-			PageSize:            100,
-		}
-		if cur != "" {
-			req.PaginationCursor = &cur
-		}
-		resp, err := client.GetAllTraceTests(ctx, req, auth)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
-		}
-		for _, tt := range resp.TraceTests {
-			if len(tt.Spans) > 0 {
-				spans = append(spans, tt.Spans...)
-			}
-		}
-		if next := resp.GetNextCursor(); next != "" {
-			cur = next
-			continue
-		}
-		break
-	}
-	return spans, nil
-}
-
-// buildSuiteSpansForRun builds the suite spans for the run.
-// If running a single cloud trace test, eager-fetch all suite spans to enable cross-suite matching.
-// Returns the suite spans, the number of pre-app-start spans, and the number of unique traces.
-func buildSuiteSpansForRun(
-	ctx context.Context,
-	client *api.TuskClient,
-	auth api.AuthOptions,
-	serviceID string,
-	tests []runner.Test,
-	traceTestID string,
-	interactive bool,
-) ([]*core.Span, int, int, error) {
-	var suiteSpans []*core.Span
-
-	if client != nil && traceTestID != "" {
-		all, err := fetchAllSuiteSpans(ctx, client, auth, serviceID)
-		if err != nil {
-			return nil, 0, 0, fmt.Errorf("fetch all suite spans: %w", err)
-		}
-		if len(all) > 0 {
-			suiteSpans = append(suiteSpans, all...)
-		}
-	}
-
-	// Fallback: use spans from the loaded tests
-	if len(suiteSpans) == 0 {
-		for _, t := range tests {
-			if len(t.Spans) > 0 {
-				suiteSpans = append(suiteSpans, t.Spans...)
-			}
-		}
-	}
-
-	// Layer on pre-app-start spans if available
-	// Prepend these spans so they get considered first
-	if client != nil {
-		preAppStartSpans, err := fetchPreAppStartSpans(ctx, client, auth, serviceID)
-		if err == nil && len(preAppStartSpans) > 0 {
-			suiteSpans = append(preAppStartSpans, suiteSpans...)
-		}
-	} else {
-		if localPreAppStartSpans, err := fetchLocalPreAppStartSpans(interactive); err == nil && len(localPreAppStartSpans) > 0 {
-			suiteSpans = append(localPreAppStartSpans, suiteSpans...)
-		}
-	}
-
-	suiteSpans = dedupeSpans(suiteSpans)
-
-	preAppCount := 0
-	uniq := make(map[string]struct{})
-	for _, s := range suiteSpans {
-		if s == nil {
-			continue
-		}
-		if s.IsPreAppStart {
-			preAppCount++
-		}
-		if s.TraceId != "" {
-			uniq[s.TraceId] = struct{}{}
-		}
-	}
-
-	return suiteSpans, preAppCount, len(uniq), nil
-}
-
-// dedupeSpans deduplicates spans by (trace_id, span_id) while preserving order
-func dedupeSpans(spans []*core.Span) []*core.Span {
-	if len(spans) <= 1 {
-		return spans
-	}
-	seen := make(map[string]struct{}, len(spans))
-	out := make([]*core.Span, 0, len(spans))
-
-	for _, s := range spans {
-		if s == nil {
-			continue
-		}
-		if s.TraceId != "" && s.SpanId != "" {
-			key := s.TraceId + "|" + s.SpanId
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-		}
-		out = append(out, s)
-	}
-
-	slog.Debug("Deduplicated suite spans", "inCount", len(spans), "outCount", len(out))
-	return out
-}
-
 func makeLoadTestsFunc(
 	executor *runner.Executor,
 	client *api.TuskClient,
@@ -789,36 +617,6 @@ func makeLoadTestsFunc(
 		}
 		return tests, nil
 	}
-}
-
-func prepareAndSetSuiteSpans(
-	ctx context.Context,
-	exec *runner.Executor,
-	client *api.TuskClient,
-	auth api.AuthOptions,
-	serviceID string,
-	tests []runner.Test,
-	traceTestID string,
-	interactive bool,
-) error {
-	suiteSpans, preAppCount, uniqueTraceCount, err := buildSuiteSpansForRun(
-		ctx, client, auth, serviceID, tests, traceTestID, interactive,
-	)
-	if interactive {
-		logging.LogToService(fmt.Sprintf(
-			"Loading %d suite spans for matching (%d unique traces, %d pre-app-start)",
-			len(suiteSpans), uniqueTraceCount, preAppCount,
-		))
-	}
-	slog.Debug("Prepared suite spans for matching",
-		"count", len(suiteSpans),
-		"uniqueTraces", uniqueTraceCount,
-		"preAppSpans", preAppCount,
-		"interactive", interactive,
-		"traceTestID", traceTestID,
-	)
-	exec.SetSuiteSpans(suiteSpans)
-	return err
 }
 
 func stringPtr(s string) *string {
