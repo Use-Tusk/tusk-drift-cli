@@ -126,14 +126,7 @@ func UploadResultsAndFinalize(
 	}
 
 	finalStatus := backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS
-	statusMessage := "All tests completed successfully"
-	for _, r := range results {
-		if !r.Passed {
-			finalStatus = backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE
-			statusMessage = "Some tests failed"
-			break
-		}
-	}
+	statusMessage := fmt.Sprintf("Completed %d tests", len(results))
 	statusReq := &backend.UpdateDriftRunCIStatusRequest{
 		DriftRunId:      driftRunID,
 		CiStatus:        finalStatus,

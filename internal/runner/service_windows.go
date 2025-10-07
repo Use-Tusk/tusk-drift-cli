@@ -46,7 +46,7 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 	// First, try graceful termination using taskkill
 	killCmd := exec.Command("taskkill", "/T", "/PID", fmt.Sprintf("%d", pid))
 	if err := killCmd.Run(); err != nil {
-		slog.Warn("Failed to gracefully terminate process tree", "pid", pid, "error", err)
+		slog.Debug("Failed to gracefully terminate process tree", "pid", pid, "error", err)
 	}
 
 	// Wait for the process to exit gracefully
@@ -58,11 +58,11 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 		slog.Debug("Service stopped gracefully")
 		return nil
 	case <-time.After(timeout):
-		slog.Warn("Service didn't stop gracefully, force killing")
+		slog.Debug("Service didn't stop gracefully, force killing")
 		// Force kill the entire process tree
 		forceKillCmd := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
 		if err := forceKillCmd.Run(); err != nil {
-			slog.Warn("Failed to force kill process tree", "pid", pid, "error", err)
+			slog.Debug("Failed to force kill process tree", "pid", pid, "error", err)
 			// Last resort: use Process.Kill()
 			_ = cmd.Process.Kill()
 		}

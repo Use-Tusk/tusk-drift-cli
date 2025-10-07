@@ -43,17 +43,17 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 		// Send SIGTERM to the entire process group
 		slog.Debug("Killing process group", "pgid", pgid)
 		if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil {
-			slog.Warn("Failed to send SIGTERM to process group", "pgid", pgid, "error", err)
+			slog.Debug("Failed to send SIGTERM to process group", "pgid", pgid, "error", err)
 			// Fallback to interrupting the main process
 			if err := cmd.Process.Signal(syscall.Signal(syscall.SIGINT)); err != nil {
-				slog.Warn("Failed to send interrupt signal", "pid", pid, "error", err)
+				slog.Debug("Failed to send interrupt signal", "pid", pid, "error", err)
 			}
 		}
 	} else {
 		// If we can't get the process group, just interrupt the main process
-		slog.Warn("Failed to get process group", "pid", pid, "error", err)
+		slog.Debug("Failed to get process group", "pid", pid, "error", err)
 		if err := cmd.Process.Signal(syscall.Signal(syscall.SIGINT)); err != nil {
-			slog.Warn("Failed to send interrupt signal", "pid", pid, "error", err)
+			slog.Debug("Failed to send interrupt signal", "pid", pid, "error", err)
 		}
 	}
 
@@ -66,17 +66,17 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 		slog.Debug("Service stopped gracefully")
 		return nil
 	case <-time.After(timeout):
-		slog.Warn("Service didn't stop gracefully, force killing")
+		slog.Debug("Service didn't stop gracefully, force killing")
 		// Force kill the process group
 		if pgid, err := syscall.Getpgid(pid); err == nil {
 			slog.Debug("Force killing process group", "pgid", pgid)
 			if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
-				slog.Warn("Failed to SIGKILL process group", "pgid", pgid, "error", err)
+				slog.Debug("Failed to SIGKILL process group", "pgid", pgid, "error", err)
 				// Last resort: kill the main process
 				_ = cmd.Process.Kill()
 			}
 		} else {
-			slog.Warn("Final fallback: killing main process", "pid", pid)
+			slog.Debug("Final fallback: killing main process", "pid", pid)
 			_ = cmd.Process.Kill()
 		}
 		_ = cmd.Wait()
