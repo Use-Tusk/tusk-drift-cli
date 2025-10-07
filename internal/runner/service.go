@@ -33,7 +33,7 @@ func (e *Executor) StartService() error {
 
 	processExists, err := e.checkProcessOnPort(cfg.Service.Port)
 	if err != nil {
-		slog.Warn("Failed to check for existing processes on port", "port", cfg.Service.Port, "error", err)
+		slog.Debug("Failed to check for existing processes on port", "port", cfg.Service.Port, "error", err)
 	} else if processExists {
 		return fmt.Errorf("port %d is already in use by another process. Please stop the existing service or use a different port", cfg.Service.Port)
 	}
@@ -89,7 +89,7 @@ func (e *Executor) StopService() error {
 	if e.serviceCmd != nil && e.serviceCmd.Process != nil {
 		// Use platform-specific process group killing with 3 second timeout
 		if err := killProcessGroup(e.serviceCmd, 3*time.Second); err != nil {
-			slog.Warn("Process group kill completed with error", "error", err)
+			slog.Debug("Process group kill completed with error", "error", err)
 		}
 		e.serviceCmd = nil
 	}

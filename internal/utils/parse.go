@@ -33,8 +33,7 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 
 	var spans []*core.Span
 	scanner := bufio.NewScanner(file)
-	// Increase buffer size to handle large JSON lines in massive trace files
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // Initial 64KB, max 1MB
+	scanner.Buffer(make([]byte, 0, 64*1024), 15*1024*1024) // Initial 64KB, max 15MB
 
 	lineNum := 0
 	for scanner.Scan() {
@@ -61,6 +60,19 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 	}
 
 	if err := scanner.Err(); err != nil {
+		if err == bufio.ErrTooLong {
+			return nil, fmt.Errorf(
+				"trace file contains a line that exceeds the maximum size (15MB).\n\n"+
+					"This typically happens when HTTP responses contain large media files (videos, images, etc.)\n"+
+					"that are base64-encoded in the trace.\n\n"+
+					"To fix this:\n"+
+					"1. Use transforms in your .tusk/config.yaml to exclude large response bodies\n"+
+					"2. Consider deleting this trace file if it's not needed\n\n"+
+					"File: %s\n"+
+					"See: https://docs.usetusk.ai/automated-tests/pii-redaction",
+				filename,
+			)
+		}
 		return nil, fmt.Errorf("failed reading %s: %w", filename, err)
 	}
 
