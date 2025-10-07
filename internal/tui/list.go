@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,27 +31,32 @@ type listModel struct {
 	testExecutor *testExecutorModel
 	selectedTest *runner.Test
 	columns      []table.Column
+	suiteOpts    runner.SuiteSpanOptions
 }
 
 func ShowTestList(tests []runner.Test) error {
-	return ShowTestListWithExecutor(tests, nil)
+	return ShowTestListWithExecutor(tests, nil, runner.SuiteSpanOptions{})
 }
 
-func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor) error {
+func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, suiteOpts runner.SuiteSpanOptions) error {
 	columns := []table.Column{
 		{Title: "#", Width: 5},
 		{Title: "Trace ID", Width: 32},
 		{Title: "Type", Width: 12},
 		{Title: "Path", Width: 32},
 		{Title: "Status", Width: 10},
-		{Title: "Duration", Width: 19},
-		{Title: "Timestamp", Width: 32},
+		{Title: "Duration", Width: 10},
+		{Title: "Recorded At", Width: 32},
 	}
 
 	rows := []table.Row{}
 	for i, test := range tests {
 		timestamp := test.Timestamp
-		if len(timestamp) >= 19 {
+		// Parse and format timestamp with local timezone
+		if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
+			timestamp = t.Local().Format("2006-01-02 15:04:05 MST")
+		} else if len(timestamp) >= 19 {
+			// Fallback to old format if parsing fails
 			timestamp = timestamp[:10] + " " + timestamp[11:19]
 		}
 
@@ -88,11 +95,12 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor) er
 	t.SetStyles(s)
 
 	m := &listModel{
-		table:    t,
-		tests:    tests,
-		executor: executor,
-		state:    listView,
-		columns:  columns,
+		table:     t,
+		tests:     tests,
+		executor:  executor,
+		state:     listView,
+		columns:   columns,
+		suiteOpts: suiteOpts,
 	}
 
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
@@ -123,17 +131,18 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					traceID := selectedRow[1]
 					for _, test := range m.tests {
 						if test.TraceID == traceID {
-							// Create test executor model with current window size
-							// TODO: might need to pass in opts here too
-							executor := newTestExecutorModel([]runner.Test{test}, m.executor, nil)
+							opts := &InteractiveOpts{
+								OnBeforeEnvironmentStart: m.createSuiteSpanPreparation(),
+							}
+							executor := newTestExecutorModel([]runner.Test{test}, m.executor, opts)
 
 							logging.SetTestLogger(executor)
 
 							// Set the window size if we have it
 							if m.width > 0 && m.height > 0 {
 								sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
-								updatedModel, _ := executor.Update(sizeMsg)  // Handle both return values
-								executor = updatedModel.(*testExecutorModel) // Type assert to get back the correct type
+								updatedModel, _ := executor.Update(sizeMsg)
+								executor = updatedModel.(*testExecutorModel)
 							}
 
 							m.testExecutor = executor
@@ -252,5 +261,17 @@ func (m *listModel) View() string {
 		return "Loading test executor..."
 	default:
 		return "Unknown state"
+	}
+}
+
+// createSuiteSpanPreparation creates the OnBeforeEnvironmentStart hook for preparing suite spans
+func (m *listModel) createSuiteSpanPreparation() func(*runner.Executor, []runner.Test) error {
+	return func(exec *runner.Executor, tests []runner.Test) error {
+		return runner.PrepareAndSetSuiteSpans(
+			context.Background(),
+			exec,
+			m.suiteOpts,
+			tests,
+		)
 	}
 }

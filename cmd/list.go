@@ -35,18 +35,25 @@ func init() {
 	listCmd.Flags().StringVar(&traceDir, "trace-dir", "", "Path to local folder containing recorded trace files")
 	listCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
 	listCmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "List trace tests from Tusk Drift Cloud")
+	listCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs if you start a test. Logs from the SDK will be present.")
+
+	listCmd.Flags().SortFlags = false
 }
 
 func listTests(cmd *cobra.Command, args []string) error {
 	_ = config.Load(cfgFile)
 
 	executor := runner.NewExecutor()
+	executor.SetEnableServiceLogs(enableServiceLogs || debug)
 
 	var tests []runner.Test
 	var err error
+	var client *api.TuskClient
+	var authOptions api.AuthOptions
+	var cfg *config.Config
 
 	if cloud {
-		client, authOptions, cfg, err := api.SetupCloud(context.Background(), true)
+		client, authOptions, cfg, err = api.SetupCloud(context.Background(), true)
 		if err != nil {
 			return err
 		}
@@ -127,5 +134,16 @@ func listTests(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return tui.ShowTestListWithExecutor(tests, executor)
+	suiteOpts := runner.SuiteSpanOptions{
+		IsCloudMode: cloud,
+		Client:      client,
+		AuthOptions: authOptions,
+		AllTests:    tests,
+		Interactive: true,
+	}
+	if cfg != nil {
+		suiteOpts.ServiceID = cfg.Service.ID
+	}
+
+	return tui.ShowTestListWithExecutor(tests, executor, suiteOpts)
 }
