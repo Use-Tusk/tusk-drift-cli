@@ -279,13 +279,15 @@ func outputText(results []TestResult, tests []Test, quiet bool) error {
 	}
 
 	green := ""
-	red := ""
+	orange := ""
 	yellow := ""
 	reset := ""
 
 	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
 		green = "\033[32m"
-		red = "\033[31m"
+		// This is a 256-color code for orange, previously we were using 16-color
+		// Some really old terminals may not support 256-color codes, but since we offer NO_COLOR it's ok to use it
+		orange = "\033[38;5;208m"
 		yellow = "\033[33m"
 		reset = "\033[0m"
 	}
@@ -301,10 +303,10 @@ func outputText(results []TestResult, tests []Test, quiet bool) error {
 	for _, result := range results {
 		if result.Passed {
 			if !quiet {
-				fmt.Printf("%s✓ PASSED - %s (%dms)%s\n", green, result.TestID, result.Duration, reset)
+				fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s\n", green, result.TestID, result.Duration, reset)
 			}
 		} else {
-			fmt.Printf("%s✗ FAILED - %s (%dms)%s\n", red, result.TestID, result.Duration, reset)
+			fmt.Printf("%s● DEVIATION - %s (%dms)%s\n", orange, result.TestID, result.Duration, reset)
 
 			if len(result.Deviations) > 0 {
 				if test, exists := testMap[result.TestID]; exists {
@@ -335,13 +337,13 @@ func outputText(results []TestResult, tests []Test, quiet bool) error {
 	}
 
 	if quiet && failed > 0 {
-		fmt.Printf("\nTests: %d total, %s%d failed%s\n", len(results), red, failed, reset)
+		fmt.Printf("\nTests: %d total, %s%d deviations%s\n", len(results), orange, failed, reset)
 	} else if !quiet {
-		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d failed%s\n\n", len(results), green, passed, reset, red, failed, reset)
+		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s\n\n", len(results), green, passed, reset, orange, failed, reset)
 	}
 
 	if failed > 0 {
-		return fmt.Errorf("%d tests failed", failed)
+		return fmt.Errorf("%d tests with deviations", failed)
 	}
 
 	return nil

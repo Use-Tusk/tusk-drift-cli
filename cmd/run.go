@@ -67,7 +67,7 @@ func init() {
 	runCmd.Flags().BoolVarP(&print, "print", "p", false, "Print response and exit (useful for pipes)")
 	runCmd.Flags().StringVar(&outputFormat, "output-format", "text", `Output format (only works with --print): "text" (default) or "json" (single result) (choices: "text", "json")"`)
 	runCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
-	runCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Quiet output, only show failures (only works with --print and --output-format text)")
+	runCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Quiet output, only show deviations (only works with --print and --output-format text)")
 	runCmd.Flags().IntVar(&concurrency, "concurrency", 5, "Maximum number of concurrent tests. If set, overrides the concurrency setting in the config file.")
 	runCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
 	runCmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
@@ -479,13 +479,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("test execution failed: %w", err)
 	}
 
-	err = runner.OutputResults(results, tests, outputFormat, quiet)
-	if err != nil {
-		cmd.SilenceUsage = true
-		return err
-	}
+	outputErr := runner.OutputResults(results, tests, outputFormat, quiet)
 
 	// Step 5: Upload results to backend if in cloud mode
+	// Do this before returning any error so CI status is always updated
 	if cloud && client != nil && ci {
 		if err := runner.UploadResultsAndFinalize(context.Background(), client, driftRunID, authOptions, executor, results, tests, true); err != nil {
 			slog.Warn("Headless: cloud finalize failed", "error", err)
@@ -497,6 +494,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Fprintln(os.Stderr)
 		mu.Unlock()
+	}
+
+	if outputErr != nil {
+		cmd.SilenceUsage = true
+		return outputErr
 	}
 
 	return nil
