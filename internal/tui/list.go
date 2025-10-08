@@ -132,6 +132,7 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					for _, test := range m.tests {
 						if test.TraceID == traceID {
 							opts := &InteractiveOpts{
+								IsCloudMode:              m.suiteOpts.IsCloudMode,
 								OnBeforeEnvironmentStart: m.createSuiteSpanPreparation(),
 							}
 							executor := newTestExecutorModel([]runner.Test{test}, m.executor, opts)

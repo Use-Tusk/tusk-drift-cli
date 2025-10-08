@@ -195,7 +195,7 @@ func (lp *LogPanelComponent) IsFocused() bool {
 func (lp *LogPanelComponent) updateViewport() {
 	var content string
 
-	wrapWidth := lp.viewport.Width - 2 // Only subtract left + right padding (1 + 1)
+	wrapWidth := lp.viewport.Width - 4 // Subtract borders (2) and padding (2)
 	if wrapWidth <= 0 {
 		wrapWidth = 70 // Conservative fallback
 	}
@@ -205,8 +205,11 @@ func (lp *LogPanelComponent) updateViewport() {
 		var wrappedLines []string
 
 		for _, line := range lp.serviceLogs {
-			wrapped := utils.WrapLine(line, wrapWidth)
-			wrappedLines = append(wrappedLines, wrapped...)
+			subLines := strings.SplitSeq(line, "\n")
+			for subLine := range subLines {
+				wrapped := utils.WrapLine(subLine, wrapWidth)
+				wrappedLines = append(wrappedLines, wrapped...)
+			}
 		}
 		content = strings.Join(wrappedLines, "\n")
 	} else {
@@ -214,8 +217,11 @@ func (lp *LogPanelComponent) updateViewport() {
 			var wrappedLines []string
 
 			for _, line := range logs {
-				wrapped := utils.WrapLine(line, wrapWidth)
-				wrappedLines = append(wrappedLines, wrapped...)
+				subLines := strings.SplitSeq(line, "\n")
+				for subLine := range subLines {
+					wrapped := utils.WrapLine(subLine, wrapWidth)
+					wrappedLines = append(wrappedLines, wrapped...)
+				}
 			}
 			content = strings.Join(wrappedLines, "\n")
 		} else {
@@ -223,6 +229,6 @@ func (lp *LogPanelComponent) updateViewport() {
 		}
 	}
 
-	lp.viewport.SetContent(content)
+	lp.viewport.SetContent(utils.StripNoWrapMarker(content))
 	lp.viewport.GotoBottom()
 }

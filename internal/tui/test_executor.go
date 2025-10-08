@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
@@ -103,6 +104,7 @@ type InteractiveOpts struct {
 	OnTestCompleted    func(res runner.TestResult, test runner.Test, executor *runner.Executor)
 	OnAllCompleted     func(results []runner.TestResult, tests []runner.Test, executor *runner.Executor)
 	InitialServiceLogs []string
+	IsCloudMode        bool
 
 	// A callback that TUI invokes async to prepare the list of runner.Test items.
 	LoadTests func(ctx context.Context) ([]runner.Test, error)
@@ -120,6 +122,45 @@ func (m *testExecutorModel) LogToCurrentTest(testID, message string) {
 	} else {
 		m.addServiceLog(message)
 	}
+}
+
+// formatDriftCloudCTA returns the CTA text for Tusk Drift Cloud as a boxed message
+func formatDriftCloudCTA() []string {
+	lines := []string{
+		"💡 Want root cause analysis?",
+		"   Sign up for Tusk Drift Cloud: https://docs.usetusk.ai/api-tests/cloud",
+	}
+	padding := 2
+
+	if len(lines) == 0 {
+		return []string{}
+	}
+
+	// Calculate max display width (not byte length) of content
+	contentMaxWidth := 0
+	for _, line := range lines {
+		width := runewidth.StringWidth(line)
+		if width > contentMaxWidth {
+			contentMaxWidth = width
+		}
+	}
+
+	boxWidth := contentMaxWidth + 2*padding
+
+	result := []string{""}
+
+	result = append(result, utils.MarkNonWrappable("╭"+strings.Repeat("─", boxWidth)+"╮"))
+
+	for _, line := range lines {
+		leftPad := strings.Repeat(" ", padding)
+		lineWidth := runewidth.StringWidth(line)
+		rightPad := strings.Repeat(" ", boxWidth-lineWidth-padding)
+		result = append(result, utils.MarkNonWrappable("│"+leftPad+line+rightPad+"│"))
+	}
+
+	result = append(result, utils.MarkNonWrappable("╰"+strings.Repeat("─", boxWidth)+"╯"))
+
+	return result
 }
 
 func (m *testExecutorModel) LogToService(message string) {
@@ -263,6 +304,7 @@ func (m *testExecutorModel) Init() tea.Cmd {
 	cmds = append(cmds, m.header.Update(nil))
 
 	if m.opts == nil || !m.opts.StartAfterTestsLoaded {
+		cmds = append(cmds, m.header.SetInitialProgress())
 		cmds = append(cmds, m.startExecution())
 	}
 	// Otherwise, startExecution will be called later (after tests are loaded)
@@ -305,7 +347,8 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.tests) == 0 {
 				return m, tea.Batch(m.updateStats(), func() tea.Msg { return executionFailedMsg{reason: "No tests to run"} })
 			}
-			return m, tea.Batch(m.updateStats(), m.startExecution())
+			return m, tea.Batch(m.updateStats(), m.header.SetInitialProgress(), m.startExecution())
+
 		}
 		return m, m.updateStats()
 
@@ -334,9 +377,9 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.err != nil:
 			m.addTestLog(test.TraceID, fmt.Sprintf("❌ %s %s - ERROR: %v", test.Method, test.Path, msg.err))
 		case msg.result.Passed:
-			m.addTestLog(test.TraceID, fmt.Sprintf("✅ %s %s - PASSED (%dms)", test.Method, test.Path, msg.result.Duration))
+			m.addTestLog(test.TraceID, fmt.Sprintf("✅ %s %s - NO DEVIATION (%dms)", test.Method, test.Path, msg.result.Duration))
 		default:
-			m.addTestLog(test.TraceID, fmt.Sprintf("❌ %s %s - FAILED (%dms)", test.Method, test.Path, msg.result.Duration))
+			m.addTestLog(test.TraceID, fmt.Sprintf("🟠 %s %s - DEVIATION DETECTED (%dms)", test.Method, test.Path, msg.result.Duration))
 
 			// Check for mock-not-found events first
 			if m.executor != nil && m.executor.GetServer() != nil && m.executor.GetServer().HasMockNotFoundEvents(test.TraceID) {
@@ -353,8 +396,20 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if len(msg.result.Deviations) > 0 {
 				for _, dev := range msg.result.Deviations {
 					m.addTestLog(test.TraceID, fmt.Sprintf("  Deviation: %s", dev.Description))
-					m.addTestLog(test.TraceID, fmt.Sprintf("    Expected: %v", dev.Expected))
-					m.addTestLog(test.TraceID, fmt.Sprintf("    Actual: %v", dev.Actual))
+
+					// For JSON response body mismatches, use git-style diff formatting
+					if dev.Field == "response.body" {
+						m.addTestLog(test.TraceID, utils.FormatJSONDiff(dev.Expected, dev.Actual))
+					} else {
+						m.addTestLog(test.TraceID, fmt.Sprintf("    Expected: %v", dev.Expected))
+						m.addTestLog(test.TraceID, fmt.Sprintf("    Actual: %v", dev.Actual))
+					}
+				}
+			}
+
+			if m.opts == nil || !m.opts.IsCloudMode {
+				for _, line := range formatDriftCloudCTA() {
+					m.addTestLog(test.TraceID, line)
 				}
 			}
 		}
@@ -742,6 +797,15 @@ func (m *testExecutorModel) completeExecution() tea.Cmd {
 	}
 }
 
+func (m *testExecutorModel) hasAnyDeviations() bool {
+	for i := 0; i < len(m.results); i++ {
+		if m.errors[i] == nil && !m.results[i].Passed {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *testExecutorModel) cleanup() {
 	if m.serviceStarted || m.serverStarted {
 		m.addServiceLog("Stopping environment...")
@@ -750,6 +814,12 @@ func (m *testExecutorModel) cleanup() {
 		}
 		m.serviceStarted = false
 		m.serverStarted = false
+
+		if (m.opts == nil || !m.opts.IsCloudMode) && m.hasAnyDeviations() {
+			for _, line := range formatDriftCloudCTA() {
+				m.addServiceLog(line)
+			}
+		}
 	}
 }
 

@@ -91,7 +91,7 @@ func (h *TestExecutionHeaderComponent) View(width int) string {
 			"", // Empty line for spacing
 		)
 	} else {
-		statsText := fmt.Sprintf("%d/%d completed | 🏃 %d running | ✅ %d passed | ❌ %d failed",
+		statsText := fmt.Sprintf("%d/%d completed | 🏃 %d running | ✅ %d passed | 🟠 %d deviations",
 			h.completed, h.testCount, h.running, h.passed, h.failed,
 		)
 		statsWidth := lipgloss.Width(statsText) + 1 // Space between bar and stats
@@ -129,4 +129,14 @@ func (h *TestExecutionHeaderComponent) UpdateStats(completed, passed, failed, ru
 
 func (h *TestExecutionHeaderComponent) SetCompleted() {
 	h.state = "completed"
+}
+
+func (h *TestExecutionHeaderComponent) SetInitialProgress() tea.Cmd {
+	if h.testCount > 0 {
+		percent := 0.5 / float64(h.testCount)
+		return h.progress.SetPercent(percent)
+	}
+
+	// Fallback to 0% if we don't know test count yet
+	return h.progress.SetPercent(0.0)
 }
