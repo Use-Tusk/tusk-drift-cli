@@ -125,6 +125,9 @@ func UploadResultsAndFinalize(
 		}
 	}
 
+	// Note: We always report SUCCESS status here unless there was an error executing tests.
+	// Individual test failures (assertions, deviations, etc.) are not considered CI failures.
+	// The CI run succeeded if all tests were executed, regardless of test outcomes.
 	finalStatus := backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS
 	statusMessage := fmt.Sprintf("Completed %d tests", len(results))
 	statusReq := &backend.UpdateDriftRunCIStatusRequest{

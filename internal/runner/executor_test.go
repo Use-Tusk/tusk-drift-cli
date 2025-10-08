@@ -629,14 +629,14 @@ func TestOutputResults_Text_WithFailures(t *testing.T) {
 	outputStr := string(output)
 
 	assert.Error(t, err) // Should error when tests fail
-	assert.Contains(t, outputStr, "✗ FAILED - test1")
+	assert.Contains(t, outputStr, "● DEVIATION - test1")
 	assert.Contains(t, outputStr, "GET /api/test")
 	assert.Contains(t, outputStr, "Authorization: Bearer token")
 	assert.Contains(t, outputStr, "Body: map[key:value]")
 	assert.Contains(t, outputStr, "Deviation: Status code mismatch")
 	assert.Contains(t, outputStr, "Expected: 200")
 	assert.Contains(t, outputStr, "Actual: 404")
-	assert.Contains(t, outputStr, "1 failed")
+	assert.Contains(t, outputStr, "1 deviations")
 }
 
 func TestOutputResults_Text_WithPasses(t *testing.T) {
@@ -658,10 +658,10 @@ func TestOutputResults_Text_WithPasses(t *testing.T) {
 	outputStr := string(output)
 
 	assert.NoError(t, err)
-	assert.Contains(t, outputStr, "✓ PASSED - test1")
-	assert.Contains(t, outputStr, "✓ PASSED - test2")
+	assert.Contains(t, outputStr, "✓ NO DEVIATION - test1")
+	assert.Contains(t, outputStr, "✓ NO DEVIATION - test2")
 	assert.Contains(t, outputStr, "2 passed")
-	assert.Contains(t, outputStr, "0 failed")
+	assert.Contains(t, outputStr, "0 deviations")
 }
 
 func TestOutputResults_Text_Quiet_OnlyFailures(t *testing.T) {
@@ -682,10 +682,10 @@ func TestOutputResults_Text_Quiet_OnlyFailures(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Error(t, err)                         // Should error when tests fail
-	assert.NotContains(t, outputStr, "✓ PASSED") // Should not show passed tests in quiet mode
-	assert.Contains(t, outputStr, "✗ FAILED - test2")
-	assert.Contains(t, outputStr, "1 failed")
+	assert.Error(t, err)                               // Should error when tests fail
+	assert.NotContains(t, outputStr, "✓ NO DEVIATION") // Should not show passed tests in quiet mode
+	assert.Contains(t, outputStr, "● DEVIATION - test2")
+	assert.Contains(t, outputStr, "1 deviations")
 }
 
 func TestOutputResults_Text_WithError(t *testing.T) {
@@ -711,7 +711,7 @@ func TestOutputResults_Text_WithError(t *testing.T) {
 	outputStr := string(output)
 
 	assert.Error(t, err)
-	assert.Contains(t, outputStr, "✗ FAILED - test1")
+	assert.Contains(t, outputStr, "● DEVIATION - test1")
 	assert.Contains(t, outputStr, "Error: Connection refused")
 }
 
