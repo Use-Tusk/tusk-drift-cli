@@ -23,6 +23,12 @@ SDKs:
 - JSON response comparison with dynamic field rules (UUIDs, timestamps, dates, etc.)
 - Tusk Drift Cloud: fetch and replay tests stored with Tusk, and upload test results for intelligent classification of regressions in CI/CD checks
 
+![Demo](assets/tusk-drift-demo.gif)
+
+<div align="center">
+<p><a href="https://github.com/Use-Tusk/drift-node-demo">Try it on a demo repo →</a></p>
+</div>
+
 ## Install
 
 ### Quick install (recommended)
