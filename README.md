@@ -25,7 +25,7 @@ SDKs:
 
 <div align="center">
 
-![Demo](assets/tusk-drift-demo.gif)
+![Demo](assets/demo.gif)
 <p><a href="https://github.com/Use-Tusk/drift-node-demo">Try it on a demo repo →</a></p>
 
 </div>
