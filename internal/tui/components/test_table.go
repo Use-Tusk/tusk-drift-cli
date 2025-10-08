@@ -29,7 +29,7 @@ func NewTestTableComponent(tests []runner.Test) *TestTableComponent {
 	columns := []table.Column{
 		{Title: "#", Width: 4},
 		{Title: "Test", Width: 35},
-		{Title: "Status", Width: 10},
+		{Title: "Status", Width: 17},
 		{Title: "Duration", Width: 8},
 	}
 
@@ -152,9 +152,9 @@ func (tt *TestTableComponent) buildRows() {
 			case err != nil:
 				status = "❌ Error"
 			case result.Passed:
-				status = "✅ Passed"
+				status = "✅ No deviation"
 			default:
-				status = "❌ Failed"
+				status = "🟠 Deviation"
 			}
 			duration = fmt.Sprintf("%dms", result.Duration)
 		}

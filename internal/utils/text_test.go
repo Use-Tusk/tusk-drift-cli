@@ -38,6 +38,24 @@ func TestWrapLine_LongWordSplitsWithinLimit(t *testing.T) {
 	}
 }
 
+func TestWrapLine_PreservesANSICodesAndWrapsCorrectly(t *testing.T) {
+	red := "\033[31m"
+	reset := "\033[0m"
+	text := red + "hello world" + reset // visible: 11 chars, actual: 20 chars
+	got := WrapLine(text, 6)
+	require.Len(t, got, 2)
+	// Should wrap at "hello" and "world", preserving ANSI codes
+}
+
+func TestWrapLine_PreservesLeadingWhitespace(t *testing.T) {
+	text := "    hello world test"
+	got := WrapLine(text, 15)
+	require.GreaterOrEqual(t, len(got), 2)
+	for _, line := range got {
+		assert.True(t, strings.HasPrefix(line, "    "), "wrapped line should preserve leading whitespace")
+	}
+}
+
 func TestWrapLine_DefaultWidthWhenZero(t *testing.T) {
 	long := strings.Repeat("a", 100)
 	got := WrapLine(long, 0)
@@ -65,4 +83,66 @@ func TestWrapText_PreservesEmptyLines(t *testing.T) {
 	assert.Equal(t, "a", lines[0])
 	assert.Equal(t, "", lines[1])
 	assert.Equal(t, "b", lines[2])
+}
+
+func TestFormatJSONForDiff_NilValue(t *testing.T) {
+	got := FormatJSONForDiff(nil)
+	assert.Equal(t, "<nil>", got)
+}
+
+func TestFormatJSONForDiff_StringValue(t *testing.T) {
+	got := FormatJSONForDiff("plain string")
+	assert.Equal(t, "plain string", got)
+}
+
+func TestFormatJSONForDiff_JSONString(t *testing.T) {
+	jsonStr := `{"key":"value"}`
+	got := FormatJSONForDiff(jsonStr)
+	assert.Contains(t, got, "key")
+	assert.Contains(t, got, "value")
+}
+
+func TestFormatJSONForDiff_ObjectValue(t *testing.T) {
+	obj := map[string]any{"name": "test", "count": 42}
+	got := FormatJSONForDiff(obj)
+	assert.Contains(t, got, "name")
+	assert.Contains(t, got, "test")
+}
+
+func TestFormatJSONDiff_IdenticalValues(t *testing.T) {
+	obj := map[string]string{"a": "b"}
+	got := FormatJSONDiff(obj, obj)
+	assert.Equal(t, "No differences found", got)
+}
+
+func TestFormatJSONDiff_DifferentValues(t *testing.T) {
+	expected := map[string]string{"key": "value1"}
+	actual := map[string]string{"key": "value2"}
+	got := FormatJSONDiff(expected, actual)
+	assert.NotEqual(t, "No differences found", got)
+	assert.Contains(t, got, "value1")
+	assert.Contains(t, got, "value2")
+
+	require.Contains(t, got, "-", "diff should contain '-' for removed lines")
+	require.Contains(t, got, "+", "diff should contain '+' for added lines")
+
+	lines := strings.Split(got, "\n")
+	foundMinusValue1 := false
+	foundPlusValue2 := false
+
+	for _, line := range lines {
+		// Strip both ANSI codes and the NoWrapMarker before checking
+		stripped := StripNoWrapMarker(stripANSI(line))
+		trimmed := strings.TrimSpace(stripped)
+
+		if strings.HasPrefix(trimmed, "-") && strings.Contains(line, "value1") {
+			foundMinusValue1 = true
+		}
+		if strings.HasPrefix(trimmed, "+") && strings.Contains(line, "value2") {
+			foundPlusValue2 = true
+		}
+	}
+
+	assert.True(t, foundMinusValue1, "expected value 'value1' should appear on a line starting with '-'")
+	assert.True(t, foundPlusValue2, "actual value 'value2' should appear on a line starting with '+'")
 }

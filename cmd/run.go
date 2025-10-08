@@ -380,6 +380,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		_, err := tui.RunTestsInteractiveWithOpts(nil, executor, &tui.InteractiveOpts{
 			InitialServiceLogs:    initialLogs,
 			StartAfterTestsLoaded: true,
+			IsCloudMode:           cloud,
 			LoadTests: makeLoadTestsFunc(
 				executor,
 				client,
