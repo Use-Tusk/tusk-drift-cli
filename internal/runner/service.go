@@ -101,6 +101,11 @@ func (e *Executor) StartService() error {
 func (e *Executor) StopService() error {
 	cfg, _ := config.Get()
 
+	defer func() {
+		e.cleanupLogFiles()
+		logging.LogToService("Service stopped")
+	}()
+
 	// Use custom stop command if provided
 	if cfg != nil && cfg.Service.Stop.Command != "" {
 		slog.Debug("Using custom stop command", "command", cfg.Service.Stop.Command)
@@ -110,7 +115,6 @@ func (e *Executor) StopService() error {
 			slog.Warn("Stop command failed", "error", err)
 			// Continue to fallback method
 		} else {
-			logging.LogToService("Service stopped")
 			return nil
 		}
 	}
@@ -124,8 +128,6 @@ func (e *Executor) StopService() error {
 		e.serviceCmd = nil
 	}
 
-	e.cleanupLogFiles()
-	logging.LogToService("Service stopped")
 	return nil
 }
 
