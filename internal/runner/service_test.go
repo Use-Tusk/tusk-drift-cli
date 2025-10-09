@@ -116,20 +116,34 @@ func TestStartService(t *testing.T) {
 				origVal := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
 				_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", "100ms")
 
-				// Create a real server with a socket
-				server, err := NewServer("test-service")
+				testServiceConfig := &config.ServiceConfig{
+					ID:   "test-service",
+					Port: 13005,
+					Start: config.StartConfig{
+						Command: "sleep 0.1",
+					},
+					Communication: config.CommunicationConfig{
+						Type:    "unix", // Force Unix mode for this test
+						TCPPort: 9001,
+					},
+				}
+
+				server, err := NewServer("test-service", testServiceConfig)
 				require.NoError(t, err)
 
-				// Create the socket file to simulate it exists
+				// Start the server so socketPath is set
+				err = server.Start()
+				require.NoError(t, err)
+
+				// Now get the socket path (it's been set by Start())
 				socketPath := server.GetSocketPath()
-				f, _ := os.Create(socketPath) // #nosec G304
-				_ = f.Close()
+				require.NotEmpty(t, socketPath, "socket path should not be empty")
 
 				e.server = server
 
 				configPath := createTestConfig(t, 13005, "sleep 0.1", "")
 				return e, configPath, func() {
-					_ = os.Remove(socketPath)
+					_ = server.Stop() // Clean up the server
 					if origVal != "" {
 						_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", origVal)
 					} else {
@@ -144,7 +158,18 @@ func TestStartService(t *testing.T) {
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
 				e := NewExecutor()
 				// Create a server but don't create the socket file
-				server, err := NewServer("test-service")
+				testServiceConfig := &config.ServiceConfig{
+					ID:   "test-service",
+					Port: 13006,
+					Start: config.StartConfig{
+						Command: "sleep 0.1",
+					},
+					Communication: config.CommunicationConfig{
+						Type:    "auto",
+						TCPPort: 9001,
+					},
+				}
+				server, err := NewServer("test-service", testServiceConfig)
 				require.NoError(t, err)
 
 				// Remove the socket if it was created
@@ -223,18 +248,14 @@ func TestStartService(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config.ResetForTesting()
 
-			// Setup
 			executor, configPath, cleanup := tt.setupFunc(t)
 			defer cleanup()
 
-			// Load config from file
 			err := config.Load(configPath)
 			require.NoError(t, err)
 
-			// Execute
 			err = executor.StartService()
 
-			// Assert
 			if tt.expectError {
 				assert.Error(t, err)
 				if tt.errorMsg != "" {
@@ -245,19 +266,64 @@ func TestStartService(t *testing.T) {
 				assert.Greater(t, executor.servicePort, 0)
 				assert.Contains(t, executor.serviceURL, "http://localhost:")
 
-				// Clean up the service if started successfully
 				if executor.serviceCmd != nil && executor.serviceCmd.Process != nil {
 					_ = executor.StopService()
 				}
 			}
 
-			// Clean up log files
 			if executor.serviceLogFile != nil {
 				_ = executor.serviceLogFile.Close()
 				_ = os.Remove(executor.serviceLogFile.Name())
 			}
 		})
 	}
+}
+
+func TestStartServiceWithTCPMode(t *testing.T) {
+	config.ResetForTesting()
+
+	testServiceConfig := &config.ServiceConfig{
+		ID:   "test-tcp-service",
+		Port: 13011,
+		Start: config.StartConfig{
+			Command: "sleep 0.1",
+		},
+		Communication: config.CommunicationConfig{
+			Type:    "tcp",
+			TCPPort: 9003,
+		},
+	}
+
+	e := NewExecutor()
+
+	server, err := NewServer("test-tcp-service", testServiceConfig)
+	require.NoError(t, err)
+	err = server.Start()
+	require.NoError(t, err)
+	e.server = server
+
+	origVal := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
+	_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", "100ms")
+	defer func() {
+		if origVal != "" {
+			_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", origVal)
+		} else {
+			_ = os.Unsetenv("TUSK_TEST_DEFAULT_WAIT")
+		}
+		_ = server.Stop()
+	}()
+
+	configPath := createTestConfig(t, 13011, "sleep 0.1", "")
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	err = e.StartService()
+	require.NoError(t, err)
+
+	assert.NotNil(t, e.serviceCmd)
+	assert.NotNil(t, e.serviceCmd.Process)
+
+	_ = e.StopService()
 }
 
 func TestStopService(t *testing.T) {
@@ -329,6 +395,44 @@ func TestStopService(t *testing.T) {
 			assert.Nil(t, executor.serviceLogFile)
 		})
 	}
+}
+
+func TestCustomStopCommand(t *testing.T) {
+	config.ResetForTesting()
+
+	tempDir := t.TempDir()
+	markerFile := filepath.Join(tempDir, "stop-executed")
+
+	// Cross-platform compatibility
+	markerFileYAML := filepath.ToSlash(markerFile)
+
+	configContent := fmt.Sprintf(`
+service:
+  port: 13012
+  start:
+    command: "sleep 10"
+  stop:
+    command: "touch %s && pkill -f 'sleep 10'"
+`, markerFileYAML) // Use the forward-slash version
+
+	configPath := filepath.Join(tempDir, "tusk.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0o600)
+	require.NoError(t, err)
+
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	e := NewExecutor()
+
+	err = e.StartService()
+	require.NoError(t, err)
+	assert.NotNil(t, e.serviceCmd)
+
+	err = e.StopService()
+	assert.NoError(t, err)
+
+	_, err = os.Stat(markerFile)
+	assert.NoError(t, err, "Custom stop command should have created marker file")
 }
 
 func TestGetServiceLogPath(t *testing.T) {
