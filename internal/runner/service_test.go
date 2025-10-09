@@ -403,6 +403,9 @@ func TestCustomStopCommand(t *testing.T) {
 	tempDir := t.TempDir()
 	markerFile := filepath.Join(tempDir, "stop-executed")
 
+	// Cross-platform compatibility
+	markerFileYAML := filepath.ToSlash(markerFile)
+
 	configContent := fmt.Sprintf(`
 service:
   port: 13012
@@ -410,7 +413,7 @@ service:
     command: "sleep 10"
   stop:
     command: "touch %s && pkill -f 'sleep 10'"
-`, markerFile)
+`, markerFileYAML) // Use the forward-slash version
 
 	configPath := filepath.Join(tempDir, "tusk.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0o600)

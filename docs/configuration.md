@@ -105,38 +105,45 @@ Runtime environment variables set by the CLI for your service:
 
 ## Docker Support
 
-When using Docker or Docker Compose, the CLI automatically detects Docker commands and switches to TCP communication (since Unix sockets don't work across container boundaries).
+When using Docker or Docker Compose, the CLI automatically detects Docker commands and switches to TCP communication.
 
 ### Requirements for Docker
 
-Add these environment variables to your `docker-compose.yml`:
+For Docker setups, additional steps are required for the SDK in your containerized app to communicate with the CLI.
+For Linux environments, you will need to add the `add-host` flag (if using `docker run`) or the `extra_hosts` parameter (if using Docker Compose) to resolve `host.docker.internal` to the IP address of the host machine.
+
+You should also add a `service.stop.command` in your config so Tusk knows how to stop the container when tests have complete. See [Service](#service) parameters above.
+
+See: [Docker example](#starting-your-service-with-docker-run).
+
+#### Docker Compose
+
+While Tusk replays traffic in your app as a standalone service, we do support Docker Compose setups as well.
+
+Create a `docker-compose.tusk-override.yml` file:
 
 ```yaml
 services:
-  your-app:
-    # ... your existing config ...
+  api:
     environment:
-      # Required for Tusk Drift CLI
-      - TUSK_MOCK_HOST=${TUSK_MOCK_HOST:-host.docker.internal}
-      - TUSK_MOCK_PORT=${TUSK_MOCK_PORT:-9001}
-      - TUSK_DRIFT_MODE=${TUSK_DRIFT_MODE:-RECORD}
+      TUSK_DRIFT_MODE: ${TUSK_DRIFT_MODE:-REPLAY}
+      TUSK_MOCK_HOST: ${TUSK_MOCK_HOST:-host.docker.internal}
+      TUSK_MOCK_PORT: ${TUSK_MOCK_PORT:-9001}
+
+    # Uncomment this if you are running it on Linux
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
 ```
 
-**Linux users only:** Docker on Linux requires an additional setting to enable `host.docker.internal`:
+Then, your start command will be something like:
 
-```yaml
-services:
-  your-app:
-    # ... your existing config ...
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - TUSK_MOCK_HOST=${TUSK_MOCK_HOST:-host.docker.internal}
-      - TUSK_MOCK_PORT=${TUSK_MOCK_PORT:-9001}
-      - TUSK_DRIFT_MODE=${TUSK_DRIFT_MODE:-RECORD}
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tusk-override.yml up
 ```
 
-You may also wish to create separate but similar Docker Compose file for this purpose.
+If you're recording your service started with Docker Compose, we recommend setting the `TUSK_DRIFT_MODE` to `RECORD` as an `env` parameter in your Docker Compose file (not in the command in your `start` parameter), so that this can be properly overridden during replay.
+
+See: [Docker Compose example](#starting-your-service-with-docker-compose).
 
 ### How it works
 
@@ -348,9 +355,9 @@ This will not affect CLI behavior. See SDK for more details:
 - `TUSK_RESULTS_DIR` → `results.dir`
 - `TUSK_RECORDING_SAMPLING_RATE` → `recording.sampling_rate`
 
-## Minimal examples
+## Minimal config examples
 
-Local:
+### Local example
 
 ```yaml
 service:
@@ -363,6 +370,7 @@ service:
     timeout: 30s
     interval: 2s
 
+# Parameters below are optional
 traces:
   dir: .tusk/traces
 
@@ -377,7 +385,7 @@ results:
   dir: .tusk/results
 ```
 
-### Docker
+### Starting your service with `docker run`
 
 ```yaml
 service:
@@ -408,21 +416,18 @@ service:
 
 traces:
   dir: .tusk/traces
-
-test_execution:
-  concurrency: 10
 ```
 
 `--add-host` is required when running on a Linux machine and is redundant for Mac/Windows.
 
-### Docker Compose
+### Starting your service with Docker Compose
 
 ```yaml
 service:
   name: my-service
   port: 9000
   start:
-    command: docker compose up
+    command: docker compose -f docker-compose.yml -f docker-compose.tusk-override.yml up
   stop:
     command: docker compose down
   readiness_check:
@@ -438,23 +443,17 @@ service:
 
 traces:
   dir: .tusk/traces
-
-test_execution:
-  concurrency: 10
-
-comparison:
-  ignore_fields: ["randomId"]
 ```
 
-As a reminder, you need to add specific environment variables to your Docker Compose file (see [Docker Support](#docker-support) section above).
+As a reminder, you need to create and pass in an override file in your start command (see [Docker Support](#docker-support) section above).
 
-Cloud:
+### Cloud example
 
 ```yaml
 service:
   id: 1165f64c-5a5e-4586-a22a-2d7cab42af83
-  name: acme-backend
-  port: 3000
+  name: my-service
+  port: 9000
   start:
     command: npm run dev
   readiness_check:
@@ -465,3 +464,5 @@ service:
 tusk_api:
   url: https://app.usetusk.ai
 ```
+
+To run against traces to Tusk Drift Cloud, your config file must contain `service.id` and `tusk_api.url`.
