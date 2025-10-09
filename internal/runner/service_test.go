@@ -116,20 +116,34 @@ func TestStartService(t *testing.T) {
 				origVal := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
 				_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", "100ms")
 
-				// Create a real server with a socket
-				server, err := NewServer("test-service")
+				testServiceConfig := &config.ServiceConfig{
+					ID:   "test-service",
+					Port: 13005,
+					Start: config.StartConfig{
+						Command: "sleep 0.1",
+					},
+					Communication: config.CommunicationConfig{
+						Type:    "unix", // Force Unix mode for this test
+						TCPPort: 9001,
+					},
+				}
+
+				server, err := NewServer("test-service", testServiceConfig)
 				require.NoError(t, err)
 
-				// Create the socket file to simulate it exists
+				// Start the server so socketPath is set
+				err = server.Start()
+				require.NoError(t, err)
+
+				// Now get the socket path (it's been set by Start())
 				socketPath := server.GetSocketPath()
-				f, _ := os.Create(socketPath) // #nosec G304
-				_ = f.Close()
+				require.NotEmpty(t, socketPath, "socket path should not be empty")
 
 				e.server = server
 
 				configPath := createTestConfig(t, 13005, "sleep 0.1", "")
 				return e, configPath, func() {
-					_ = os.Remove(socketPath)
+					_ = server.Stop() // Clean up the server
 					if origVal != "" {
 						_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", origVal)
 					} else {
@@ -144,7 +158,18 @@ func TestStartService(t *testing.T) {
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
 				e := NewExecutor()
 				// Create a server but don't create the socket file
-				server, err := NewServer("test-service")
+				testServiceConfig := &config.ServiceConfig{
+					ID:   "test-service",
+					Port: 13006,
+					Start: config.StartConfig{
+						Command: "sleep 0.1",
+					},
+					Communication: config.CommunicationConfig{
+						Type:    "auto",
+						TCPPort: 9001,
+					},
+				}
+				server, err := NewServer("test-service", testServiceConfig)
 				require.NoError(t, err)
 
 				// Remove the socket if it was created

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,7 +66,8 @@ func TestParseVersionInvalid(t *testing.T) {
 }
 
 func TestSpanToMockInteractionPopulatesRequestAndResponse(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -126,7 +128,8 @@ func TestSpanToMockInteractionPopulatesRequestAndResponse(t *testing.T) {
 }
 
 func TestSpanToMockInteractionFallbacksWhenValuesMissing(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -151,7 +154,8 @@ func TestSpanToMockInteractionFallbacksWhenValuesMissing(t *testing.T) {
 }
 
 func TestRecordMatchEventReturnsCopy(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -171,7 +175,8 @@ func TestRecordMatchEventReturnsCopy(t *testing.T) {
 }
 
 func TestWaitForSpanDataReturnsOnceDataAvailable(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -199,7 +204,8 @@ func TestWaitForSpanDataReturnsOnceDataAvailable(t *testing.T) {
 }
 
 func TestWaitForSpanDataTimesOut(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -218,7 +224,8 @@ func TestWaitForSpanDataTimesOut(t *testing.T) {
 }
 
 func TestWaitForSDKConnectionSignals(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -237,7 +244,8 @@ func TestWaitForSDKConnectionSignals(t *testing.T) {
 }
 
 func TestWaitForSDKConnectionTimeout(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -253,7 +261,8 @@ func TestWaitForSDKConnectionTimeout(t *testing.T) {
 }
 
 func TestWaitForSDKConnectionContextCancelled(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Stop() })
 
@@ -267,7 +276,8 @@ func TestWaitForSDKConnectionContextCancelled(t *testing.T) {
 func TestMockNotFoundEvents(t *testing.T) {
 	t.Parallel()
 
-	server, err := NewServer("test-service")
+	cfg, _ := config.Get()
+	server, err := NewServer("test-service", &cfg.Service)
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
 

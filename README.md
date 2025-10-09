@@ -155,7 +155,8 @@ We recommend adding to your `.gitignore`:
 ## Troubleshooting
 
 - SDK connect failure: ensure your service uses the Tusk Drift SDK and is started by the CLI (so it sees `TUSK_MOCK_SOCKET`).
-- Port in use: the CLI will block if `service.port` is already taken.
+- If your service starts using a Docker container, refer to [Docker configuration](docs/configuration.md#docker-support).
+- Port in use: the CLI will block if `service.port` is already taken. If using TCP to connect with SDK, use ensure `service.communication.tcp_port` is not in use.
 - Readiness: if `service.readiness_check.command` is omitted, the CLI waits ~10s before replay.
 - No mock found: check suite spans availability and matching rules; ensure traces exist for the trace being replayed.
 - For Cloud mode, ensure `service.id`, `tusk_api.url`, and `TUSK_API_KEY` or `tusk login` are set.

@@ -52,6 +52,27 @@ Where the CLI reads config from:
       <td>Shell command to start your service. Executed via <code>/bin/sh -c</code>. e.g., <code>npm run start</code>.</td>
     </tr>
     <tr>
+      <td><code>service.stop.command</code></td>
+      <td>string</td>
+      <td></td>
+      <td>no</td>
+      <td>Shell command to stop your service. If omitted, CLI uses process group termination (SIGTERM/SIGKILL). Useful for Docker: <code>docker compose down</code>.</td>
+    </tr>
+    <tr>
+      <td><code>service.communication.type</code></td>
+      <td>string</td>
+      <td><code>auto</code></td>
+      <td>no</td>
+      <td>Communication method between CLI and SDK: <code>auto</code> (detects Docker), <code>unix</code> (Unix socket), or <code>tcp</code> (TCP socket). Auto-detects <code>tcp</code> when start command contains "docker".</td>
+    </tr>
+    <tr>
+      <td><code>service.communication.tcp_port</code></td>
+      <td>number</td>
+      <td><code>9001</code></td>
+      <td>no</td>
+      <td>Port for CLI's mock server when using TCP communication (Docker mode). This is separate from <code>service.port</code>.</td>
+    </tr>
+    <tr>
       <td><code>service.readiness_check.command</code></td>
       <td>string</td>
       <td></td>
@@ -77,8 +98,53 @@ Where the CLI reads config from:
 
 Runtime environment variables set by the CLI for your service:
 
-- `TUSK_MOCK_SOCKET`: Unix socket path the SDK uses to talk to the CLI
+- `TUSK_MOCK_SOCKET`: Unix socket path (non-Docker mode)
+- `TUSK_MOCK_HOST`: Mock server host for TCP mode (Docker)
+- `TUSK_MOCK_PORT`: Mock server port for TCP mode (Docker)
 - `TUSK_DRIFT_MODE=REPLAY`: Signals the SDK to run in replay mode
+
+## Docker Support
+
+When using Docker or Docker Compose, the CLI automatically detects Docker commands and switches to TCP communication (since Unix sockets don't work across container boundaries).
+
+### Requirements for Docker
+
+Add these environment variables to your `docker-compose.yml`:
+
+```yaml
+services:
+  your-app:
+    # ... your existing config ...
+    environment:
+      # Required for Tusk Drift CLI
+      - TUSK_MOCK_HOST=${TUSK_MOCK_HOST:-host.docker.internal}
+      - TUSK_MOCK_PORT=${TUSK_MOCK_PORT:-9001}
+      - TUSK_DRIFT_MODE=${TUSK_DRIFT_MODE:-RECORD}
+```
+
+**Linux users only:** Docker on Linux requires an additional setting to enable `host.docker.internal`:
+
+```yaml
+services:
+  your-app:
+    # ... your existing config ...
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TUSK_MOCK_HOST=${TUSK_MOCK_HOST:-host.docker.internal}
+      - TUSK_MOCK_PORT=${TUSK_MOCK_PORT:-9001}
+      - TUSK_DRIFT_MODE=${TUSK_DRIFT_MODE:-RECORD}
+```
+
+You may also wish to create separate but similar Docker Compose file for this purpose.
+
+### How it works
+
+- **Your app's port** (`service.port`): Where your API listens for HTTP requests
+- **CLI's mock server port** (`service.communication.tcp_port`): Where the SDK connects to get mocks
+- The CLI auto-detects Docker from the start command and uses TCP instead of Unix sockets
+- Your service port is exposed to the host via Docker port mapping (normal `-p` flag)
+- The SDK inside the container reaches the CLI on the host via `host.docker.internal`
 
 ## Traces (local)
 
@@ -310,6 +376,77 @@ comparison:
 results:
   dir: .tusk/results
 ```
+
+### Docker
+
+```yaml
+service:
+  name: my-service
+  port: 9000
+  start:
+    command: |
+      docker run -d \
+        --name my-app \
+        --add-host=host.docker.internal:host-gateway \
+        -p 9000:9000 \
+        -e TUSK_MOCK_HOST=host.docker.internal \
+        -e TUSK_MOCK_PORT=9001 \
+        -e TUSK_DRIFT_MODE=REPLAY \
+        my-app-image:latest
+  stop:
+    command: docker stop my-app && docker rm my-app
+  readiness_check:
+    command: curl http://localhost:9000/health
+    timeout: 45s
+    interval: 5s
+
+# Communication auto-detects TCP from "docker" in start command
+# Optionally configure explicitly:
+# communication:
+#   type: tcp
+#   tcp_port: 9001
+
+traces:
+  dir: .tusk/traces
+
+test_execution:
+  concurrency: 10
+```
+
+`--add-host` is required when running on a Linux machine and is redundant for Mac/Windows.
+
+### Docker Compose
+
+```yaml
+service:
+  name: my-service
+  port: 9000
+  start:
+    command: docker compose up
+  stop:
+    command: docker compose down
+  readiness_check:
+    command: curl http://localhost:9000/health
+    timeout: 45s
+    interval: 5s
+
+# Communication auto-detects TCP from "docker" in start command
+# Optionally configure explicitly:
+# communication:
+#   type: tcp
+#   tcp_port: 9001
+
+traces:
+  dir: .tusk/traces
+
+test_execution:
+  concurrency: 10
+
+comparison:
+  ignore_fields: ["randomId"]
+```
+
+As a reminder, you need to add specific environment variables to your Docker Compose file (see [Docker Support](#docker-support) section above).
 
 Cloud:
 

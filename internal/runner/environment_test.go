@@ -156,7 +156,8 @@ func TestStopEnvironment(t *testing.T) {
 			setupFunc: func() *Executor {
 				e := NewExecutor()
 				// Create mock server
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 
@@ -180,7 +181,8 @@ func TestStopEnvironment(t *testing.T) {
 			setupFunc: func() *Executor {
 				e := NewExecutor()
 				// Create mock server
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 
@@ -327,7 +329,8 @@ func TestStopServer(t *testing.T) {
 			name: "stop_running_server",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 				return e
@@ -369,7 +372,8 @@ func TestWaitForSDKAcknowledgement(t *testing.T) {
 			name: "successful_acknowledgement",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 
@@ -398,7 +402,8 @@ func TestWaitForSDKAcknowledgement(t *testing.T) {
 			name: "failure_timeout",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 				// Don't simulate SDK connection, let it timeout
@@ -511,7 +516,8 @@ service:
 	// Server should be created but the environment start should have cleaned it up
 	// We can verify by checking if we can create a new server with the same service ID
 	// (if the old one wasn't cleaned up properly, this might fail)
-	newServer, err := NewServer("cleanup-test-service")
+	cfg, _ := config.Get()
+	newServer, err := NewServer("cleanup-test-service", &cfg.Service)
 	require.NoError(t, err)
 	defer func() { _ = newServer.Stop() }()
 

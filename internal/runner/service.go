@@ -35,7 +35,7 @@ func (e *Executor) StartService() error {
 	if err != nil {
 		slog.Debug("Failed to check for existing processes on port", "port", cfg.Service.Port, "error", err)
 	} else if processExists {
-		return fmt.Errorf("port %d is already in use by another process. Please stop the existing service or use a different port", cfg.Service.Port)
+		return fmt.Errorf("port %d is already in use", cfg.Service.Port)
 	}
 
 	slog.Debug("Starting service", "command", cfg.Service.Start.Command)
@@ -49,14 +49,27 @@ func (e *Executor) StartService() error {
 	env := os.Environ()
 
 	if e.server != nil {
-		socketPath := e.server.GetSocketPath()
-		env = append(env, fmt.Sprintf("TUSK_MOCK_SOCKET=%s", socketPath))
-		slog.Debug("Setting socket environment variable", "TUSK_MOCK_SOCKET", socketPath)
+		socketPath, tcpPort := e.server.GetConnectionInfo()
 
-		if _, err := os.Stat(socketPath); err != nil {
-			return fmt.Errorf("socket file does not exist before starting service: %w", err)
+		if e.server.GetCommunicationType() == CommunicationTCP {
+			// TCP mode - set host and port
+			env = append(env, fmt.Sprintf("TUSK_MOCK_PORT=%d", tcpPort))
+			env = append(env, "TUSK_MOCK_HOST=host.docker.internal") // Mac/Windows
+
+			slog.Debug("Setting TCP environment variables",
+				"TUSK_MOCK_PORT", tcpPort,
+				"TUSK_MOCK_HOST", "host.docker.internal")
+		} else {
+			// Unix socket mode
+			env = append(env, fmt.Sprintf("TUSK_MOCK_SOCKET=%s", socketPath))
+			slog.Debug("Setting socket environment variable", "TUSK_MOCK_SOCKET", socketPath)
+
+			if _, err := os.Stat(socketPath); err != nil {
+				return fmt.Errorf("socket file does not exist before starting service: %w", err)
+			}
 		}
 	}
+
 	env = append(env, "TUSK_DRIFT_MODE=REPLAY")
 	e.serviceCmd.Env = env
 
@@ -86,6 +99,23 @@ func (e *Executor) StartService() error {
 }
 
 func (e *Executor) StopService() error {
+	cfg, _ := config.Get()
+
+	// Use custom stop command if provided
+	if cfg != nil && cfg.Service.Stop.Command != "" {
+		slog.Debug("Using custom stop command", "command", cfg.Service.Stop.Command)
+
+		stopCmd := createServiceCommand(context.Background(), cfg.Service.Stop.Command)
+		if err := stopCmd.Run(); err != nil {
+			slog.Warn("Stop command failed", "error", err)
+			// Continue to fallback method
+		} else {
+			logging.LogToService("Service stopped")
+			return nil
+		}
+	}
+
+	// Default: kill process group
 	if e.serviceCmd != nil && e.serviceCmd.Process != nil {
 		// Use platform-specific process group killing with 3 second timeout
 		if err := killProcessGroup(e.serviceCmd, 3*time.Second); err != nil {
@@ -94,9 +124,7 @@ func (e *Executor) StopService() error {
 		e.serviceCmd = nil
 	}
 
-	// Clean up log files
 	e.cleanupLogFiles()
-
 	logging.LogToService("Service stopped")
 	return nil
 }
