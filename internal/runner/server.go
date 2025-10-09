@@ -90,9 +90,12 @@ type MockNotFoundEvent struct {
 
 func isDockerCommand(cmd string) bool {
 	cmd = strings.ToLower(cmd)
-	return strings.Contains(cmd, "docker") ||
-		strings.Contains(cmd, "docker-compose") ||
-		strings.Contains(cmd, "docker compose")
+	cmd = strings.Join(strings.Fields(cmd), " ")
+
+	return strings.Contains(cmd, "docker ") ||
+		strings.Contains(cmd, "docker-compose ") ||
+		cmd == "docker" ||
+		cmd == "docker-compose"
 }
 
 func determineCommunicationType(cfg *config.ServiceConfig) CommunicationType {

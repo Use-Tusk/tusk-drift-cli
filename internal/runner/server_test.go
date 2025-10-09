@@ -65,6 +65,170 @@ func TestParseVersionInvalid(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestServerTCPMode(t *testing.T) {
+	config.ResetForTesting()
+
+	testServiceConfig := &config.ServiceConfig{
+		ID:   "test-tcp-service",
+		Port: 3000,
+		Start: config.StartConfig{
+			Command: "docker compose up",
+		},
+		Communication: config.CommunicationConfig{
+			Type:    "tcp",
+			TCPPort: 9002,
+		},
+	}
+
+	server, err := NewServer("test-tcp-service", testServiceConfig)
+	require.NoError(t, err)
+	defer func() { _ = server.Stop() }()
+
+	// Verify it's TCP mode
+	assert.Equal(t, CommunicationTCP, server.GetCommunicationType())
+
+	// Start the server
+	err = server.Start()
+	require.NoError(t, err)
+
+	// Verify connection info
+	socketPath, tcpPort := server.GetConnectionInfo()
+	assert.Empty(t, socketPath, "TCP mode should have empty socket path")
+	assert.Equal(t, 9002, tcpPort)
+}
+
+func TestServerUnixMode(t *testing.T) {
+	config.ResetForTesting()
+
+	testServiceConfig := &config.ServiceConfig{
+		ID:   "test-unix-service",
+		Port: 3000,
+		Start: config.StartConfig{
+			Command: "npm run dev",
+		},
+		Communication: config.CommunicationConfig{
+			Type:    "unix",
+			TCPPort: 9001,
+		},
+	}
+
+	server, err := NewServer("test-unix-service", testServiceConfig)
+	require.NoError(t, err)
+	defer func() { _ = server.Stop() }()
+
+	// Verify it's Unix mode
+	assert.Equal(t, CommunicationUnix, server.GetCommunicationType())
+
+	// Start the server
+	err = server.Start()
+	require.NoError(t, err)
+
+	// Verify connection info
+	socketPath, tcpPort := server.GetConnectionInfo()
+	assert.NotEmpty(t, socketPath, "Unix mode should have socket path")
+	assert.Equal(t, 0, tcpPort, "Unix mode should have zero TCP port")
+	assert.Contains(t, socketPath, "tusk-connect.sock")
+}
+
+func TestDetermineCommunicationType(t *testing.T) {
+	tests := []struct {
+		name       string
+		startCmd   string
+		configType string
+		expected   CommunicationType
+	}{
+		{
+			name:       "auto_detects_docker_compose",
+			startCmd:   "docker compose up",
+			configType: "auto",
+			expected:   CommunicationTCP,
+		},
+		{
+			name:       "auto_detects_docker_run",
+			startCmd:   "docker run my-image",
+			configType: "auto",
+			expected:   CommunicationTCP,
+		},
+		{
+			name:       "auto_detects_docker-compose",
+			startCmd:   "docker-compose up -d",
+			configType: "auto",
+			expected:   CommunicationTCP,
+		},
+		{
+			name:       "auto_defaults_to_unix_for_npm",
+			startCmd:   "npm run start",
+			configType: "auto",
+			expected:   CommunicationUnix,
+		},
+		{
+			name:       "auto_defaults_to_unix_for_node",
+			startCmd:   "node server.js",
+			configType: "auto",
+			expected:   CommunicationUnix,
+		},
+		{
+			name:       "explicit_tcp_overrides",
+			startCmd:   "npm run start",
+			configType: "tcp",
+			expected:   CommunicationTCP,
+		},
+		{
+			name:       "explicit_unix_overrides",
+			startCmd:   "docker compose up",
+			configType: "unix",
+			expected:   CommunicationUnix,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ServiceConfig{
+				Start: config.StartConfig{
+					Command: tt.startCmd,
+				},
+				Communication: config.CommunicationConfig{
+					Type: tt.configType,
+				},
+			}
+
+			result := determineCommunicationType(cfg)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsDockerCommand(t *testing.T) {
+	tests := []struct {
+		command  string
+		expected bool
+	}{
+		// Docker commands
+		{"docker", true},
+		{"docker-compose", true},
+		{"docker compose up", true},
+		{"docker-compose up", true},
+		{"docker run myimage", true},
+		{"ENV=test docker compose up", true},
+
+		// Non-Docker commands
+		{"npm run start", false},
+		{"node server.js", false},
+		{"python app.py", false},
+
+		// This is likely a docker-related script, but we don't make further assumptions.
+		// Users can explicitly set the communication type in the config.
+		{"./start-docker.sh", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			result := isDockerCommand(tt.command)
+			assert.Equal(t, tt.expected, result, "Command: %s", tt.command)
+		})
+	}
+}
+
 func TestSpanToMockInteractionPopulatesRequestAndResponse(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
