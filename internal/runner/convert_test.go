@@ -36,6 +36,19 @@ func TestConvertTraceTestToRunnerTest_GraphQLDisplaySpan(t *testing.T) {
 			"statusCode": 200,
 			"body":       encodedBody,
 		}),
+		OutputSchema: &core.JsonSchema{
+			Type: core.JsonSchemaType_JSON_SCHEMA_TYPE_OBJECT,
+			Properties: map[string]*core.JsonSchema{
+				"statusCode": {
+					Type: core.JsonSchemaType_JSON_SCHEMA_TYPE_NUMBER,
+				},
+				"body": {
+					Type:        core.JsonSchemaType_JSON_SCHEMA_TYPE_STRING,
+					Encoding:    core.EncodingType_ENCODING_TYPE_BASE64.Enum(),
+					DecodedType: core.DecodedType_DECODED_TYPE_JSON.Enum(),
+				},
+			},
+		},
 		Metadata: makeStruct(t, map[string]any{
 			"env":         "prod",
 			"http.method": "POST",

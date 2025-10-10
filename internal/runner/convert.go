@@ -1,8 +1,6 @@
 package runner
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -119,7 +117,7 @@ func ConvertTraceTestToRunnerTest(tt *backend.TraceTest) Test {
 			}
 			test.Request.Headers = extractHeadersFromStruct(serverSpan.InputValue, "headers")
 			if body := extractBodyFromStruct(serverSpan.InputValue, "body"); body != nil {
-				test.Request.Body = body // base64 string expected; executor decodes
+				test.Request.Body = body // Raw value; executor decodes using InputSchema
 			}
 		}
 		// Fallbacks from metadata
@@ -164,18 +162,22 @@ func ConvertTraceTestToRunnerTest(tt *backend.TraceTest) Test {
 				}
 			}
 			test.Response.Status = status
-			// Try to parse/decode body if present (base64-encoded string)
+
+			// Decode body using schema metadata
 			if bodyField, ok := serverSpan.OutputValue.Fields["body"]; ok {
-				if bodyStr := bodyField.GetStringValue(); bodyStr != "" {
-					if decoded, err := base64.StdEncoding.DecodeString(bodyStr); err == nil {
-						var parsed any
-						if json.Unmarshal(decoded, &parsed) == nil {
-							test.Response.Body = parsed
-						} else {
-							test.Response.Body = string(decoded)
+				bodyValue := bodyField.AsInterface()
+				if bodyValue != nil {
+					// Extract metadata from output schema
+					metadata := ExtractRequestBodyMetadata(serverSpan.OutputSchema, "body")
+
+					// Decode the body bytes
+					decodedBytes, decodedType, err := DecodeBody(bodyValue, metadata)
+					if err == nil {
+						// Parse for comparison/display
+						parsedBody, err := ParseBodyForComparison(decodedBytes, decodedType)
+						if err == nil {
+							test.Response.Body = parsedBody
 						}
-					} else {
-						test.Response.Body = bodyStr
 					}
 				}
 			}

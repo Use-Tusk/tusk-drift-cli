@@ -32,10 +32,15 @@ func TestParseProtobufSpanFromJSON_Basic(t *testing.T) {
 			"b": "x",
 		},
 		"inputSchema": map[string]any{
-			"type": "OBJECT",
+			"type": 6, // JSON_SCHEMA_TYPE_OBJECT
 		},
 		"outputSchema": map[string]any{
-			"x": 2,
+			"type": 6, // JSON_SCHEMA_TYPE_OBJECT
+			"properties": map[string]any{
+				"x": map[string]any{
+					"type": 1, // JSON_SCHEMA_TYPE_NUMBER
+				},
+			},
 		},
 		"inputSchemaHash":  "ih",
 		"outputSchemaHash": "oh",
@@ -91,12 +96,11 @@ func TestParseProtobufSpanFromJSON_Basic(t *testing.T) {
 	assert.Equal(t, "x", outMap["b"])
 
 	require.NotNil(t, span.InputSchema)
-	inSchema := span.InputSchema.AsMap()
-	assert.Equal(t, "OBJECT", inSchema["type"])
+	assert.Equal(t, core.JsonSchemaType_JSON_SCHEMA_TYPE_OBJECT, span.InputSchema.Type)
 
 	require.NotNil(t, span.OutputSchema)
-	outSchema := span.OutputSchema.AsMap()
-	assert.Equal(t, float64(2), outSchema["x"])
+	assert.NotNil(t, span.OutputSchema.Properties)
+	assert.Contains(t, span.OutputSchema.Properties, "x")
 
 	// Hashes/strings
 	assert.Equal(t, "ih", span.InputSchemaHash)

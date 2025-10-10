@@ -147,6 +147,7 @@ func TestExecutor_SetSuiteSpans(t *testing.T) {
 
 func TestExecutor_RunTests(t *testing.T) {
 	executor := NewExecutor()
+	executor.serviceURL = "http://localhost:59999"  // Use a port that's definitely not in use
 	executor.SetTestTimeout(100 * time.Millisecond) // Short timeout for faster test failure
 
 	tests := []Test{
@@ -162,10 +163,11 @@ func TestExecutor_RunTests(t *testing.T) {
 	assert.NoError(t, err) // No error at the concurrent execution level
 	assert.Len(t, results, 2)
 
-	// But individual test results should show failures
+	// But individual test results should show failures with connection errors
 	for _, result := range results {
 		assert.False(t, result.Passed)
-		assert.NotEmpty(t, result.Error)
+		assert.NotEmpty(t, result.Error, "Expected connection error but got empty error")
+		assert.Contains(t, result.Error, "connect", "Expected connection error")
 	}
 }
 

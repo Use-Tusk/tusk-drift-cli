@@ -5,97 +5,37 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"google.golang.org/protobuf/types/known/structpb"
-)
-
-// DecodedType represents the type of decoded content.
-// Must match the DecodedType enum in drift-node-sdk/src/core/tracing/JsonSchemaHelper.ts.
-// TODO: use Protobuf to share this type across the CLI and SDK(s).
-type DecodedType string
-
-const (
-	DecodedTypeJSON          DecodedType = "JSON"
-	DecodedTypeHTML          DecodedType = "HTML"
-	DecodedTypeCSS           DecodedType = "CSS"
-	DecodedTypeJAVASCRIPT    DecodedType = "JAVASCRIPT"
-	DecodedTypeXML           DecodedType = "XML"
-	DecodedTypeYAML          DecodedType = "YAML"
-	DecodedTypeMARKDOWN      DecodedType = "MARKDOWN"
-	DecodedTypeCSV           DecodedType = "CSV"
-	DecodedTypeSQL           DecodedType = "SQL"
-	DecodedTypeGRAPHQL       DecodedType = "GRAPHQL"
-	DecodedTypePLAINTEXT     DecodedType = "PLAIN_TEXT"
-	DecodedTypeFORMDATA      DecodedType = "FORM_DATA"
-	DecodedTypeMULTIPARTFORM DecodedType = "MULTIPART_FORM"
-	DecodedTypePDF           DecodedType = "PDF"
-	DecodedTypeAUDIO         DecodedType = "AUDIO"
-	DecodedTypeVIDEO         DecodedType = "VIDEO"
-	DecodedTypeGZIP          DecodedType = "GZIP"
-	DecodedTypeBINARY        DecodedType = "BINARY"
-	DecodedTypeJPEG          DecodedType = "JPEG"
-	DecodedTypePNG           DecodedType = "PNG"
-	DecodedTypeGIF           DecodedType = "GIF"
-	DecodedTypeWEBP          DecodedType = "WEBP"
-	DecodedTypeSVG           DecodedType = "SVG"
-	DecodedTypeZIP           DecodedType = "ZIP"
-	DecodedTypeUNSPECIFIED   DecodedType = "UNSPECIFIED"
-)
-
-// EncodingType represents how the body is encoded
-type EncodingType string
-
-const (
-	EncodingTypeBASE64 EncodingType = "BASE64"
-	EncodingTypeNONE   EncodingType = "NONE"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
 
 // RequestBodyMetadata contains encoding information from the schema
 type RequestBodyMetadata struct {
-	Encoding    EncodingType
-	DecodedType DecodedType
+	Encoding    core.EncodingType
+	DecodedType core.DecodedType
 }
 
-// ExtractBodyMetadata extracts encoding metadata from a schema for a specific field
-func ExtractRequestBodyMetadata(schema *structpb.Struct, fieldPath string) *RequestBodyMetadata {
-	if schema == nil || schema.Fields == nil {
+// ExtractBodyMetadata extracts encoding metadata from a JsonSchema for a specific field
+func ExtractRequestBodyMetadata(schema *core.JsonSchema, fieldPath string) *RequestBodyMetadata {
+	if schema == nil || schema.Properties == nil {
 		return nil
 	}
 
-	properties := schema.Fields["properties"]
-	if properties == nil {
-		return nil
-	}
-
-	propsStruct := properties.GetStructValue()
-	if propsStruct == nil {
-		return nil
-	}
-
-	fieldSchema := propsStruct.Fields[fieldPath]
-	if fieldSchema == nil {
-		return nil
-	}
-
-	fieldStruct := fieldSchema.GetStructValue()
-	if fieldStruct == nil {
+	fieldSchema, ok := schema.Properties[fieldPath]
+	if !ok || fieldSchema == nil {
 		return nil
 	}
 
 	metadata := &RequestBodyMetadata{
-		Encoding:    EncodingTypeNONE,
-		DecodedType: DecodedTypeUNSPECIFIED,
+		Encoding:    core.EncodingType_ENCODING_TYPE_UNSPECIFIED,
+		DecodedType: core.DecodedType_DECODED_TYPE_UNSPECIFIED,
 	}
 
-	if encodingField := fieldStruct.Fields["encoding"]; encodingField != nil {
-		if encodingStr := encodingField.GetStringValue(); encodingStr != "" {
-			metadata.Encoding = EncodingType(encodingStr)
-		}
+	if fieldSchema.Encoding != nil {
+		metadata.Encoding = *fieldSchema.Encoding
 	}
 
-	if decodedTypeField := fieldStruct.Fields["decodedType"]; decodedTypeField != nil {
-		if decodedTypeStr := decodedTypeField.GetStringValue(); decodedTypeStr != "" {
-			metadata.DecodedType = DecodedType(decodedTypeStr)
-		}
+	if fieldSchema.DecodedType != nil {
+		metadata.DecodedType = *fieldSchema.DecodedType
 	}
 
 	return metadata
@@ -103,31 +43,40 @@ func ExtractRequestBodyMetadata(schema *structpb.Struct, fieldPath string) *Requ
 
 // DecodeBody decodes a body value using schema metadata
 // Returns the decoded bytes and the type for further processing
-func DecodeBody(bodyValue any, metadata *RequestBodyMetadata) ([]byte, DecodedType, error) {
+func DecodeBody(bodyValue any, metadata *RequestBodyMetadata) ([]byte, core.DecodedType, error) {
 	bodyStr, ok := bodyValue.(string)
 	if !ok {
-		return nil, DecodedTypeUNSPECIFIED, fmt.Errorf("expected body to be a string, got %T", bodyValue)
+		return nil, core.DecodedType_DECODED_TYPE_UNSPECIFIED, fmt.Errorf("expected body to be a string, got %T", bodyValue)
 	}
 
-	// Determine encoding - default to base64 if not specified (default SDK behavior)
-	encoding := EncodingTypeBASE64
-	if metadata != nil && metadata.Encoding != "" {
-		encoding = metadata.Encoding
+	// Determine encoding - default to base64 if metadata is nil (default SDK behavior)
+	encoding := core.EncodingType_ENCODING_TYPE_BASE64
+	if metadata != nil {
+		if metadata.Encoding != core.EncodingType_ENCODING_TYPE_UNSPECIFIED {
+			encoding = metadata.Encoding
+		} else {
+			// If explicitly UNSPECIFIED, keep it UNSPECIFIED to try base64 with fallback
+			encoding = core.EncodingType_ENCODING_TYPE_UNSPECIFIED
+		}
 	}
 
 	var decodedBytes []byte
 	var err error
 
 	switch encoding {
-	case EncodingTypeBASE64:
+	case core.EncodingType_ENCODING_TYPE_BASE64:
 		decodedBytes, err = base64.StdEncoding.DecodeString(bodyStr)
 		if err != nil {
-			return nil, DecodedTypeUNSPECIFIED, fmt.Errorf("failed to decode base64 body: %w", err)
+			return nil, core.DecodedType_DECODED_TYPE_UNSPECIFIED, fmt.Errorf("failed to decode base64 body: %w", err)
 		}
-	case EncodingTypeNONE:
-		decodedBytes = []byte(bodyStr)
-	default:
+	case core.EncodingType_ENCODING_TYPE_UNSPECIFIED:
 		// Try base64 first, fall back to raw string
+		decodedBytes, err = base64.StdEncoding.DecodeString(bodyStr)
+		if err != nil {
+			decodedBytes = []byte(bodyStr)
+		}
+	default:
+		// For any other encoding type, try base64 first, fall back to raw string
 		decodedBytes, err = base64.StdEncoding.DecodeString(bodyStr)
 		if err != nil {
 			decodedBytes = []byte(bodyStr)
@@ -135,8 +84,8 @@ func DecodeBody(bodyValue any, metadata *RequestBodyMetadata) ([]byte, DecodedTy
 	}
 
 	// Determine decoded type
-	decodedType := DecodedTypeUNSPECIFIED
-	if metadata != nil && metadata.DecodedType != "" {
+	decodedType := core.DecodedType_DECODED_TYPE_UNSPECIFIED
+	if metadata != nil && metadata.DecodedType != core.DecodedType_DECODED_TYPE_UNSPECIFIED {
 		decodedType = metadata.DecodedType
 	}
 
@@ -146,9 +95,9 @@ func DecodeBody(bodyValue any, metadata *RequestBodyMetadata) ([]byte, DecodedTy
 // ParseBodyForComparison parses decoded body bytes for response comparison.
 // For JSON, it unmarshals into a structured type; for text, returns string.
 // For binary/media types, returns base64-encoded string for comparison.
-func ParseBodyForComparison(decodedBytes []byte, decodedType DecodedType) (any, error) {
+func ParseBodyForComparison(decodedBytes []byte, decodedType core.DecodedType) (any, error) {
 	switch decodedType {
-	case DecodedTypeJSON:
+	case core.DecodedType_DECODED_TYPE_JSON:
 		var parsedBody any
 		if err := json.Unmarshal(decodedBytes, &parsedBody); err != nil {
 			// If JSON parse fails, fall back to string
@@ -156,39 +105,39 @@ func ParseBodyForComparison(decodedBytes []byte, decodedType DecodedType) (any, 
 		}
 		return parsedBody, nil
 
-	case DecodedTypePLAINTEXT,
-		DecodedTypeHTML,
-		DecodedTypeCSS,
-		DecodedTypeJAVASCRIPT,
-		DecodedTypeXML,
-		DecodedTypeYAML,
-		DecodedTypeMARKDOWN,
-		DecodedTypeCSV,
-		DecodedTypeSQL,
-		DecodedTypeGRAPHQL,
-		DecodedTypeSVG:
+	case core.DecodedType_DECODED_TYPE_PLAIN_TEXT,
+		core.DecodedType_DECODED_TYPE_HTML,
+		core.DecodedType_DECODED_TYPE_CSS,
+		core.DecodedType_DECODED_TYPE_JAVASCRIPT,
+		core.DecodedType_DECODED_TYPE_XML,
+		core.DecodedType_DECODED_TYPE_YAML,
+		core.DecodedType_DECODED_TYPE_MARKDOWN,
+		core.DecodedType_DECODED_TYPE_CSV,
+		core.DecodedType_DECODED_TYPE_SQL,
+		core.DecodedType_DECODED_TYPE_GRAPHQL,
+		core.DecodedType_DECODED_TYPE_SVG:
 		// Text-based formats - return as string for human-readable comparison
 		return string(decodedBytes), nil
 
-	case DecodedTypeFORMDATA, DecodedTypeMULTIPARTFORM:
+	case core.DecodedType_DECODED_TYPE_FORM_DATA, core.DecodedType_DECODED_TYPE_MULTIPART_FORM:
 		// Form data - return as string (URL-encoded or multipart boundary)
 		return string(decodedBytes), nil
 
-	case DecodedTypeBINARY,
-		DecodedTypePDF,
-		DecodedTypeAUDIO,
-		DecodedTypeVIDEO,
-		DecodedTypeGZIP,
-		DecodedTypeZIP,
-		DecodedTypeJPEG,
-		DecodedTypePNG,
-		DecodedTypeGIF,
-		DecodedTypeWEBP:
+	case core.DecodedType_DECODED_TYPE_BINARY,
+		core.DecodedType_DECODED_TYPE_PDF,
+		core.DecodedType_DECODED_TYPE_AUDIO,
+		core.DecodedType_DECODED_TYPE_VIDEO,
+		core.DecodedType_DECODED_TYPE_GZIP,
+		core.DecodedType_DECODED_TYPE_ZIP,
+		core.DecodedType_DECODED_TYPE_JPEG,
+		core.DecodedType_DECODED_TYPE_PNG,
+		core.DecodedType_DECODED_TYPE_GIF,
+		core.DecodedType_DECODED_TYPE_WEBP:
 		// Binary/media data - return base64 for comparison
 		// (comparing raw bytes would be less readable in test output)
 		return base64.StdEncoding.EncodeToString(decodedBytes), nil
 
-	case DecodedTypeUNSPECIFIED:
+	case core.DecodedType_DECODED_TYPE_UNSPECIFIED:
 		// Try JSON first, fall back to string
 		var parsedBody any
 		if err := json.Unmarshal(decodedBytes, &parsedBody); err == nil {
