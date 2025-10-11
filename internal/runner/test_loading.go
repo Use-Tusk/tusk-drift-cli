@@ -162,19 +162,22 @@ func spanToTest(span *core.Span, filename string) Test {
 
 		if bodyField, exists := span.OutputValue.Fields["body"]; exists {
 			if bodyStr := bodyField.GetStringValue(); bodyStr != "" {
-				bodyMetadata := ExtractRequestBodyMetadata(span.OutputSchema, "body")
-				decodedBytes, decodedType, err := DecodeBody(bodyStr, bodyMetadata)
+				// Extract body schema from output schema
+				var bodySchema *core.JsonSchema
+				if span.OutputSchema != nil && span.OutputSchema.Properties != nil {
+					bodySchema = span.OutputSchema.Properties["body"]
+				}
+
+				// Decode and parse the body (returns both bytes and parsed value)
+				decodedBytes, parsedBody, err := DecodeValueBySchema(bodyStr, bodySchema)
 				if err != nil {
 					// Fall back to raw value on error
 					responseBody = bodyStr
 				} else {
-					parsedBody, err := ParseBodyForComparison(decodedBytes, decodedType)
-					if err != nil {
-						// Fall back to decoded string on parse error
-						responseBody = string(decodedBytes)
-					} else {
-						responseBody = parsedBody
-					}
+					responseBody = parsedBody
+					// If parsing failed internally, parsedBody might be the string(decodedBytes)
+					// which is fine as a fallback
+					_ = decodedBytes // decodedBytes available if needed in future
 				}
 			}
 		}

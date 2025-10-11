@@ -19,7 +19,7 @@ import (
 type MockMatcherRequestData struct {
 	InputValue      any
 	InputValueHash  string
-	InputSchema     any
+	InputSchema     *core.JsonSchema
 	InputSchemaHash string
 }
 
@@ -40,7 +40,7 @@ func reducedInputSchemaHash(span *core.Span) string {
 		return ""
 	}
 	// Drop 0-importance fields from schema itself
-	reduced := utils.ReduceByMatchImportance(span.InputSchema.AsMap(), span.InputSchema)
+	reduced := utils.ReduceSchemaByMatchImportance(span.InputSchema)
 	return utils.GenerateDeterministicHash(reduced)
 }
 
@@ -56,7 +56,7 @@ func reducedRequestSchemaHash(req *core.GetMockRequest) string {
 	if req == nil || req.OutboundSpan == nil || req.OutboundSpan.InputSchema == nil {
 		return ""
 	}
-	reduced := utils.ReduceByMatchImportance(req.OutboundSpan.InputSchema.AsMap(), req.OutboundSpan.InputSchema)
+	reduced := utils.ReduceSchemaByMatchImportance(req.OutboundSpan.InputSchema)
 	return utils.GenerateDeterministicHash(reduced)
 }
 

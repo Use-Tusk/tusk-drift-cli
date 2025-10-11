@@ -126,6 +126,16 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		return nil
 	}
 
+	// Convert schema objects to proto JsonSchema
+	convertToJsonSchema := func(key string) *core.JsonSchema {
+		if v, exists := spanMap[key]; exists && v != nil {
+			if objMap, ok := v.(map[string]any); ok {
+				return mapToJsonSchema(objMap)
+			}
+		}
+		return nil
+	}
+
 	// Handle status object
 	var status *core.SpanStatus
 	if statusObj, exists := spanMap["status"]; exists && statusObj != nil {
@@ -193,8 +203,8 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		SubmoduleName:       getString("submodule_name"),
 		InputValue:          convertToStruct("inputValue"),
 		OutputValue:         convertToStruct("outputValue"),
-		InputSchema:         convertToStruct("inputSchema"),
-		OutputSchema:        convertToStruct("outputSchema"),
+		InputSchema:         convertToJsonSchema("inputSchema"),
+		OutputSchema:        convertToJsonSchema("outputSchema"),
 		InputSchemaHash:     getString("inputSchemaHash"),
 		OutputSchemaHash:    getString("outputSchemaHash"),
 		InputValueHash:      getString("inputValueHash"),
@@ -208,4 +218,54 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		Metadata:            convertToStruct("metadata"),
 		PackageType:         core.PackageType(getInt32("packageType")),
 	}, nil
+}
+
+// mapToJsonSchema converts a map[string]any to a proto JsonSchema
+func mapToJsonSchema(m map[string]any) *core.JsonSchema {
+	if m == nil {
+		return nil
+	}
+
+	schema := &core.JsonSchema{
+		Type:       core.JsonSchemaType_JSON_SCHEMA_TYPE_UNSPECIFIED,
+		Properties: make(map[string]*core.JsonSchema),
+	}
+
+	// Extract type (proto enum as numeric value)
+	if typeVal, ok := m["type"].(float64); ok {
+		schema.Type = core.JsonSchemaType(int32(typeVal))
+	}
+
+	// Extract properties
+	if propsVal, ok := m["properties"].(map[string]any); ok {
+		for key, val := range propsVal {
+			if propMap, ok := val.(map[string]any); ok {
+				schema.Properties[key] = mapToJsonSchema(propMap)
+			}
+		}
+	}
+
+	// Extract items
+	if itemsVal, ok := m["items"].(map[string]any); ok {
+		schema.Items = mapToJsonSchema(itemsVal)
+	}
+
+	// Extract encoding
+	if encVal, ok := m["encoding"].(float64); ok {
+		enc := core.EncodingType(int32(encVal))
+		schema.Encoding = &enc
+	}
+
+	// Extract decodedType
+	if decVal, ok := m["decodedType"].(float64); ok {
+		dec := core.DecodedType(int32(decVal))
+		schema.DecodedType = &dec
+	}
+
+	// Extract matchImportance
+	if matchVal, ok := m["matchImportance"].(float64); ok {
+		schema.MatchImportance = &matchVal
+	}
+
+	return schema
 }
