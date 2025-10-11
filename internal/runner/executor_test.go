@@ -334,7 +334,7 @@ func TestExecutor_RunSingleTest_InvalidRequestBody(t *testing.T) {
 	result, err := executor.RunSingleTest(test)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "expected body to be a string")
+	assert.Contains(t, err.Error(), "expected value to be a string")
 	assert.Equal(t, TestResult{}, result)
 }
 
@@ -353,7 +353,7 @@ func TestExecutor_RunSingleTest_InvalidBase64Body(t *testing.T) {
 	result, err := executor.RunSingleTest(test)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to decode base64 body")
+	assert.Contains(t, err.Error(), "failed to decode base64 value")
 	assert.Equal(t, TestResult{}, result)
 }
 

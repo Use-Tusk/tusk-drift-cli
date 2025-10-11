@@ -163,21 +163,20 @@ func ConvertTraceTestToRunnerTest(tt *backend.TraceTest) Test {
 			}
 			test.Response.Status = status
 
-			// Decode body using schema metadata
+			// Decode body using schema
 			if bodyField, ok := serverSpan.OutputValue.Fields["body"]; ok {
 				bodyValue := bodyField.AsInterface()
 				if bodyValue != nil {
-					// Extract metadata from output schema
-					metadata := ExtractRequestBodyMetadata(serverSpan.OutputSchema, "body")
+					// Extract body schema from output schema
+					var bodySchema *core.JsonSchema
+					if serverSpan.OutputSchema != nil && serverSpan.OutputSchema.Properties != nil {
+						bodySchema = serverSpan.OutputSchema.Properties["body"]
+					}
 
-					// Decode the body bytes
-					decodedBytes, decodedType, err := DecodeBody(bodyValue, metadata)
+					// Decode and parse the body (returns both bytes and parsed value)
+					_, parsedBody, err := DecodeValueBySchema(bodyValue, bodySchema)
 					if err == nil {
-						// Parse for comparison/display
-						parsedBody, err := ParseBodyForComparison(decodedBytes, decodedType)
-						if err == nil {
-							test.Response.Body = parsedBody
-						}
+						test.Response.Body = parsedBody
 					}
 				}
 			}
