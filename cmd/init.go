@@ -1,9 +1,8 @@
 package cmd
 
 import (
+	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/onboard"
 	"github.com/spf13/cobra"
-
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui"
 )
 
 var initCmd = &cobra.Command{
@@ -19,7 +18,7 @@ func init() {
 }
 
 func initService(cmd *cobra.Command, args []string) error {
-	err := tui.RunOnboardingWizard()
+	err := onboard.RunOnboardingWizard()
 	if err != nil {
 		cmd.SilenceUsage = true
 	}
