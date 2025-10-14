@@ -132,7 +132,7 @@ func spanToTest(span *core.Span, filename string) Test {
 	}
 
 	// For HTTP spans, try to extract more meaningful info
-	if (span.PackageType == core.PackageType_PACKAGE_TYPE_HTTP || span.PackageType == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.InputValue != nil {
+	if (span.GetPackageType() == core.PackageType_PACKAGE_TYPE_HTTP || span.GetPackageType() == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.InputValue != nil {
 		if httpMethod, exists := span.InputValue.Fields["method"]; exists {
 			if methodStr := httpMethod.GetStringValue(); methodStr != "" {
 				method = methodStr
@@ -153,7 +153,7 @@ func spanToTest(span *core.Span, filename string) Test {
 	httpStatus := 200 // Default status code
 	var responseBody any
 
-	if (span.PackageType == core.PackageType_PACKAGE_TYPE_HTTP || span.PackageType == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.OutputValue != nil {
+	if (span.GetPackageType() == core.PackageType_PACKAGE_TYPE_HTTP || span.GetPackageType() == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.OutputValue != nil {
 		if statusCode, exists := span.OutputValue.Fields["statusCode"]; exists {
 			if statusFloat := statusCode.GetNumberValue(); statusFloat != 0 {
 				httpStatus = int(statusFloat)
@@ -213,7 +213,7 @@ func spanToTest(span *core.Span, filename string) Test {
 // extractHeaders extracts HTTP headers from span input data
 func extractHeaders(span *core.Span) map[string]string {
 	headers := make(map[string]string)
-	if (span.PackageType == core.PackageType_PACKAGE_TYPE_HTTP || span.PackageType == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.InputValue != nil {
+	if (span.GetPackageType() == core.PackageType_PACKAGE_TYPE_HTTP || span.GetPackageType() == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.InputValue != nil {
 		if headersField, exists := span.InputValue.Fields["headers"]; exists {
 			if headersStruct := headersField.GetStructValue(); headersStruct != nil {
 				for key, value := range headersStruct.Fields {
@@ -229,7 +229,7 @@ func extractHeaders(span *core.Span) map[string]string {
 
 // extractBody extracts HTTP request body from span input data
 func extractBody(span *core.Span) any {
-	if (span.PackageType == core.PackageType_PACKAGE_TYPE_HTTP || span.PackageType == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.InputValue != nil {
+	if (span.GetPackageType() == core.PackageType_PACKAGE_TYPE_HTTP || span.GetPackageType() == core.PackageType_PACKAGE_TYPE_GRAPHQL) && span.InputValue != nil {
 		if bodyField, exists := span.InputValue.Fields["body"]; exists {
 			return bodyField.AsInterface()
 		}
