@@ -80,7 +80,41 @@ go test -cover ./...
 
 ## Releasing (maintainers)
 
-### Building for distribution
+Releases are automated using [GoReleaser](https://goreleaser.com/) via GitHub Actions.
+
+### Creating a release
+
+1. Tag the commit with a semantic version:
+
+   ```bash
+   git tag v1.2.3
+   git push origin v1.2.3
+   ```
+
+2. GitHub Actions will automatically:
+   - Build binaries for all supported platforms
+   - Create archives with README and LICENSE
+   - Generate checksums
+   - Create a GitHub release with changelog
+   - Upload all artifacts
+
+### Supported platforms
+
+The release workflow builds for:
+
+- **Linux**: amd64, arm64
+- **macOS (darwin)**: amd64, arm64
+- **Windows**: amd64, arm64
+
+All binaries include embedded version information:
+
+- `internal/version.Version` — git tag
+- `internal/version.BuildTime` — build timestamp  
+- `internal/version.GitCommit` — git commit hash
+
+### Building locally for distribution
+
+For local testing or manual builds:
 
 ```bash
 # Build for current platform
@@ -89,8 +123,8 @@ go build -o tusk
 # Cross-compile (example: Linux)
 GOOS=linux GOARCH=amd64 go build -o tusk-linux
 
-# With version and build info (in CI/CD)
-VERSION=${GITHUB_REF#refs/tags/}
+# With version info (mimics CI builds)
+VERSION=v1.2.3
 BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 GIT_COMMIT=$(git rev-parse HEAD)
 
@@ -101,12 +135,11 @@ go build \
   -o tusk
 ```
 
-- Tag with semantic version.
-- CI uses `make build-ci` to embed:
-  - `internal/version.Version`
-  - `internal/version.BuildTime`
-  - `internal/version.GitCommit`
-- Publish artifacts for supported platforms (TBD/goreleaser in future).
+To test the GoReleaser configuration locally:
+
+```bash
+goreleaser release --snapshot --clean
+```
 
 ## Troubleshooting
 
