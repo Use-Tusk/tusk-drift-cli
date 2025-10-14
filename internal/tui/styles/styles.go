@@ -84,6 +84,8 @@ var (
 	TableCellStyle = lipgloss.NewStyle().
 			PaddingLeft(1).
 			PaddingRight(1)
+
+	LinkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("32")).Bold(true).Underline(true)
 )
 
 func NoColor() bool {
