@@ -52,6 +52,27 @@ Where the CLI reads config from:
       <td>Shell command to start your service. Executed via <code>/bin/sh -c</code>. e.g., <code>npm run start</code>.</td>
     </tr>
     <tr>
+      <td><code>service.stop.command</code></td>
+      <td>string</td>
+      <td></td>
+      <td>no</td>
+      <td>Shell command to stop your service. If omitted, CLI uses process group termination (SIGTERM/SIGKILL). Useful for Docker: <code>docker compose down</code>.</td>
+    </tr>
+    <tr>
+      <td><code>service.communication.type</code></td>
+      <td>string</td>
+      <td><code>auto</code></td>
+      <td>no</td>
+      <td>Communication method between CLI and SDK: <code>auto</code> (detects Docker), <code>unix</code> (Unix socket), or <code>tcp</code> (TCP socket). Auto-detects <code>tcp</code> when start command contains "docker".</td>
+    </tr>
+    <tr>
+      <td><code>service.communication.tcp_port</code></td>
+      <td>number</td>
+      <td><code>9001</code></td>
+      <td>no</td>
+      <td>Port for CLI's mock server when using TCP communication (Docker mode). This is separate from <code>service.port</code>.</td>
+    </tr>
+    <tr>
       <td><code>service.readiness_check.command</code></td>
       <td>string</td>
       <td></td>
@@ -77,8 +98,60 @@ Where the CLI reads config from:
 
 Runtime environment variables set by the CLI for your service:
 
-- `TUSK_MOCK_SOCKET`: Unix socket path the SDK uses to talk to the CLI
+- `TUSK_MOCK_SOCKET`: Unix socket path (non-Docker mode)
+- `TUSK_MOCK_HOST`: Mock server host for TCP mode (Docker)
+- `TUSK_MOCK_PORT`: Mock server port for TCP mode (Docker)
 - `TUSK_DRIFT_MODE=REPLAY`: Signals the SDK to run in replay mode
+
+## Docker Support
+
+When using Docker or Docker Compose, the CLI automatically detects Docker commands and switches to TCP communication.
+
+### Requirements for Docker
+
+For Docker setups, additional steps are required for the SDK in your containerized app to communicate with the CLI.
+For Linux environments, you will need to add the `add-host` flag (if using `docker run`) or the `extra_hosts` parameter (if using Docker Compose) to resolve `host.docker.internal` to the IP address of the host machine.
+
+You should also add a `service.stop.command` in your config so Tusk knows how to stop the container when tests have complete. See [Service](#service) parameters above.
+
+See: [Docker example](#starting-your-service-with-docker-run).
+
+#### Docker Compose
+
+While Tusk replays traffic in your app as a standalone service, we do support Docker Compose setups as well.
+
+Create a `docker-compose.tusk-override.yml` file:
+
+```yaml
+services:
+  api:
+    environment:
+      TUSK_DRIFT_MODE: ${TUSK_DRIFT_MODE:-REPLAY}
+      TUSK_MOCK_HOST: ${TUSK_MOCK_HOST:-host.docker.internal}
+      TUSK_MOCK_PORT: ${TUSK_MOCK_PORT:-9001}
+
+    # Uncomment this if you are running it on Linux
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+```
+
+Then, your start command will be something like:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tusk-override.yml up
+```
+
+If you're recording your service started with Docker Compose, we recommend setting the `TUSK_DRIFT_MODE` to `RECORD` as an `env` parameter in your Docker Compose file (not in the command in your `start` parameter), so that this can be properly overridden during replay.
+
+See: [Docker Compose example](#starting-your-service-with-docker-compose).
+
+### How it works
+
+- **Your app's port** (`service.port`): Where your API listens for HTTP requests
+- **CLI's mock server port** (`service.communication.tcp_port`): Where the SDK connects to get mocks
+- The CLI auto-detects Docker from the start command and uses TCP instead of Unix sockets
+- Your service port is exposed to the host via Docker port mapping (normal `-p` flag)
+- The SDK inside the container reaches the CLI on the host via `host.docker.internal`
 
 ## Traces (local)
 
@@ -282,9 +355,9 @@ This will not affect CLI behavior. See SDK for more details:
 - `TUSK_RESULTS_DIR` → `results.dir`
 - `TUSK_RECORDING_SAMPLING_RATE` → `recording.sampling_rate`
 
-## Minimal examples
+## Minimal config examples
 
-Local:
+### Local example
 
 ```yaml
 service:
@@ -297,6 +370,7 @@ service:
     timeout: 30s
     interval: 2s
 
+# Parameters below are optional
 traces:
   dir: .tusk/traces
 
@@ -311,13 +385,75 @@ results:
   dir: .tusk/results
 ```
 
-Cloud:
+### Starting your service with `docker run`
+
+```yaml
+service:
+  name: my-service
+  port: 9000
+  start:
+    command: |
+      docker run -d \
+        --name my-app \
+        --add-host=host.docker.internal:host-gateway \
+        -p 9000:9000 \
+        -e TUSK_MOCK_HOST=host.docker.internal \
+        -e TUSK_MOCK_PORT=9001 \
+        -e TUSK_DRIFT_MODE=REPLAY \
+        my-app-image:latest
+  stop:
+    command: docker stop my-app && docker rm my-app
+  readiness_check:
+    command: curl http://localhost:9000/health
+    timeout: 45s
+    interval: 5s
+
+# Communication auto-detects TCP from "docker" in start command
+# Optionally configure explicitly:
+# communication:
+#   type: tcp
+#   tcp_port: 9001
+
+traces:
+  dir: .tusk/traces
+```
+
+`--add-host` is required when running on a Linux machine and is redundant for Mac/Windows.
+
+### Starting your service with Docker Compose
+
+```yaml
+service:
+  name: my-service
+  port: 9000
+  start:
+    command: docker compose -f docker-compose.yml -f docker-compose.tusk-override.yml up
+  stop:
+    command: docker compose down
+  readiness_check:
+    command: curl http://localhost:9000/health
+    timeout: 45s
+    interval: 5s
+
+# Communication auto-detects TCP from "docker" in start command
+# Optionally configure explicitly:
+# communication:
+#   type: tcp
+#   tcp_port: 9001
+
+traces:
+  dir: .tusk/traces
+```
+
+As a reminder, you need to create and pass in an override file in your start command (see [Docker Support](#docker-support) section above).
+
+### Cloud example
 
 ```yaml
 service:
   id: 1165f64c-5a5e-4586-a22a-2d7cab42af83
-  name: acme-backend
-  port: 3000
+  name: my-service
+  port: 9000
   start:
     command: npm run dev
   readiness_check:
@@ -328,3 +464,5 @@ service:
 tusk_api:
   url: https://app.usetusk.ai
 ```
+
+To run against traces to Tusk Drift Cloud, your config file must contain `service.id` and `tusk_api.url`.

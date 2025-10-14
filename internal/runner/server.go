@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
@@ -26,6 +27,13 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+)
+
+type CommunicationType string
+
+const (
+	CommunicationUnix CommunicationType = "unix"
+	CommunicationTCP  CommunicationType = "tcp"
 )
 
 // Server handles Unix socket communication with the SDK
@@ -46,6 +54,11 @@ type Server struct {
 	matchEvents        map[string][]MatchEvent
 	replayInbound      map[string]*core.Span
 	mockNotFoundEvents map[string][]MockNotFoundEvent
+
+	// For TCP communication (docker environments)
+	communicationType CommunicationType
+	tcpListener       net.Listener
+	tcpPort           int
 }
 
 // MessageType represents the type of message sent by the SDK
@@ -75,17 +88,42 @@ type MockNotFoundEvent struct {
 	ReplaySpan  *core.Span `json:"replaySpan"` // The outbound span that failed to find a mock
 }
 
+func isDockerCommand(cmd string) bool {
+	cmd = strings.ToLower(cmd)
+	cmd = strings.Join(strings.Fields(cmd), " ")
+
+	return strings.Contains(cmd, "docker ") ||
+		strings.Contains(cmd, "docker-compose ") ||
+		cmd == "docker" ||
+		cmd == "docker-compose"
+}
+
+func determineCommunicationType(cfg *config.ServiceConfig) CommunicationType {
+	commType := cfg.Communication.Type
+
+	// Auto-detect based on start command
+	if commType == "auto" {
+		if isDockerCommand(cfg.Start.Command) {
+			slog.Debug("Auto-detected Docker command, using TCP communication")
+			return CommunicationTCP
+		}
+		return CommunicationUnix
+	}
+
+	if commType == "tcp" {
+		return CommunicationTCP
+	}
+	return CommunicationUnix
+}
+
 // NewServer creates a new server instance
-func NewServer(serviceID string) (*Server, error) {
-	socketPath := filepath.Join(os.TempDir(), "tusk-connect.sock")
-
-	// Remove any existing socket file
-	_ = os.Remove(socketPath)
-
+func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &Server{
-		socketPath:         socketPath,
+	// Determine communication type
+	commType := determineCommunicationType(cfg)
+
+	server := &Server{
 		spans:              make(map[string][]*core.Span),
 		spanUsage:          make(map[string]map[string]bool),
 		ctx:                ctx,
@@ -95,18 +133,32 @@ func NewServer(serviceID string) (*Server, error) {
 		matchEvents:        make(map[string][]MatchEvent),
 		replayInbound:      make(map[string]*core.Span),
 		mockNotFoundEvents: make(map[string][]MockNotFoundEvent),
-	}, nil
+		communicationType:  commType,
+		tcpPort:            cfg.Communication.TCPPort,
+	}
+
+	return server, nil
 }
 
-// Start begins listening on the Unix socket
+// Start begins listening (Unix socket or TCP)
 func (ms *Server) Start() error {
+	if ms.communicationType == CommunicationTCP {
+		return ms.startTCP()
+	}
+	return ms.startUnix()
+}
+
+func (ms *Server) startUnix() error {
+	ms.socketPath = filepath.Join(os.TempDir(), "tusk-connect.sock")
+	_ = os.Remove(ms.socketPath)
+
 	listener, err := net.Listen("unix", ms.socketPath)
 	if err != nil {
 		return fmt.Errorf("failed to create Unix socket listener: %w", err)
 	}
 
 	ms.listener = listener
-	slog.Debug("Mock server started", "socket", ms.socketPath)
+	slog.Debug("Mock server started with Unix socket", "socket", ms.socketPath)
 
 	// Verify the socket file exists and is accessible
 	if _, err := os.Stat(ms.socketPath); err != nil {
@@ -125,6 +177,24 @@ func (ms *Server) Start() error {
 	return nil
 }
 
+func (ms *Server) startTCP() error {
+	addr := fmt.Sprintf("127.0.0.1:%d", ms.tcpPort)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to create TCP listener: %w", err)
+	}
+
+	ms.tcpListener = listener
+	ms.listener = listener
+	slog.Debug("Mock server started with TCP", "address", addr, "port", ms.tcpPort)
+
+	ms.wg.Add(1)
+	go ms.acceptConnections()
+	time.Sleep(100 * time.Millisecond)
+
+	return nil
+}
+
 // Stop shuts down the mock server
 func (ms *Server) Stop() error {
 	ms.cancel()
@@ -133,12 +203,25 @@ func (ms *Server) Stop() error {
 		_ = ms.listener.Close()
 	}
 
-	// Clean up socket file
-	_ = os.Remove(ms.socketPath)
+	// Clean up socket file only for Unix sockets
+	if ms.communicationType == CommunicationUnix {
+		_ = os.Remove(ms.socketPath)
+	}
 
 	ms.wg.Wait()
 	slog.Debug("Mock server stopped")
 	return nil
+}
+
+func (ms *Server) GetConnectionInfo() (string, int) {
+	if ms.communicationType == CommunicationTCP {
+		return "", ms.tcpPort
+	}
+	return ms.socketPath, 0
+}
+
+func (ms *Server) GetCommunicationType() CommunicationType {
+	return ms.communicationType
 }
 
 func (ms *Server) GetSocketPath() string {

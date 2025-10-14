@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
@@ -411,7 +412,8 @@ func TestBuildTraceTestResultsProto_WithMockNotFound(t *testing.T) {
 		t.Parallel()
 
 		// Create a mock server with mock-not-found events
-		server, err := NewServer("test-service")
+		cfg, _ := config.Get()
+		server, err := NewServer("test-service", &cfg.Service)
 		require.NoError(t, err)
 		defer func() { _ = server.Stop() }()
 
@@ -485,7 +487,8 @@ func TestBuildTraceTestResultsProto_WithMockNotFound(t *testing.T) {
 	t.Run("no mock-not-found events falls back to response mismatch", func(t *testing.T) {
 		t.Parallel()
 
-		server, err := NewServer("test-service")
+		cfg, _ := config.Get()
+		server, err := NewServer("test-service", &cfg.Service)
 		require.NoError(t, err)
 		defer func() { _ = server.Stop() }()
 

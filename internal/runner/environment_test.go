@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,7 +157,8 @@ func TestStopEnvironment(t *testing.T) {
 			setupFunc: func() *Executor {
 				e := NewExecutor()
 				// Create mock server
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 
@@ -180,7 +182,8 @@ func TestStopEnvironment(t *testing.T) {
 			setupFunc: func() *Executor {
 				e := NewExecutor()
 				// Create mock server
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 
@@ -327,7 +330,8 @@ func TestStopServer(t *testing.T) {
 			name: "stop_running_server",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 				return e
@@ -369,7 +373,8 @@ func TestWaitForSDKAcknowledgement(t *testing.T) {
 			name: "successful_acknowledgement",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 
@@ -398,7 +403,8 @@ func TestWaitForSDKAcknowledgement(t *testing.T) {
 			name: "failure_timeout",
 			setupFunc: func() *Executor {
 				e := NewExecutor()
-				server, _ := NewServer("test")
+				cfg, _ := config.Get()
+				server, _ := NewServer("test", &cfg.Service)
 				_ = server.Start()
 				e.server = server
 				// Don't simulate SDK connection, let it timeout
@@ -483,6 +489,74 @@ service:
 	// but that would require exposing internal server state or testing through behavior
 }
 
+func TestStartServerWithTCPPortCheck(t *testing.T) {
+	config.ResetForTesting()
+
+	// Start a listener on port 9005 to simulate it being in use
+	listener, err := net.Listen("tcp", "127.0.0.1:9005")
+	require.NoError(t, err)
+	defer func() { _ = listener.Close() }()
+
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "tusk.yaml")
+	configContent := `
+service:
+  id: test-port-check
+  port: 3000
+  start:
+    command: "docker compose up"
+  communication:
+    type: tcp
+    tcp_port: 9005
+` // Note: communication is now UNDER service
+	err = os.WriteFile(configPath, []byte(configContent), 0o600)
+	require.NoError(t, err)
+
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	e := NewExecutor()
+
+	// Should fail because TCP port is in use
+	err = e.StartServer()
+	require.Error(t, err, "Expected error when TCP port is in use")
+	assert.Contains(t, err.Error(), "TCP mock port 9005 is already in use")
+}
+
+func TestStartServerTCPModeSuccess(t *testing.T) {
+	config.ResetForTesting()
+
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "tusk.yaml")
+	configContent := `
+service:
+  id: test-tcp-success
+  port: 3000
+  start:
+    command: "docker compose up"
+  communication:
+    type: tcp
+    tcp_port: 9006
+` // Note: communication is now UNDER service, and using different port (9006)
+	err := os.WriteFile(configPath, []byte(configContent), 0o600)
+	require.NoError(t, err)
+
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	e := NewExecutor()
+
+	err = e.StartServer()
+	require.NoError(t, err)
+	defer func() { _ = e.StopServer() }()
+
+	assert.NotNil(t, e.server)
+	assert.Equal(t, CommunicationTCP, e.server.GetCommunicationType())
+
+	_, port := e.server.GetConnectionInfo()
+	assert.Equal(t, 9006, port)
+}
+
 func TestEnvironmentCleanupOnFailure(t *testing.T) {
 	config.ResetForTesting()
 
@@ -511,7 +585,8 @@ service:
 	// Server should be created but the environment start should have cleaned it up
 	// We can verify by checking if we can create a new server with the same service ID
 	// (if the old one wasn't cleaned up properly, this might fail)
-	newServer, err := NewServer("cleanup-test-service")
+	cfg, _ := config.Get()
+	newServer, err := NewServer("cleanup-test-service", &cfg.Service)
 	require.NoError(t, err)
 	defer func() { _ = newServer.Stop() }()
 

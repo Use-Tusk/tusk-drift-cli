@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"time"
 
@@ -64,9 +65,17 @@ func (e *Executor) StartServer() error {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
 
-	server, err := NewServer(cfg.Service.ID)
+	server, err := NewServer(cfg.Service.ID, &cfg.Service)
 	if err != nil {
 		return fmt.Errorf("failed to create mock server: %w", err)
+	}
+
+	// Check if TCP port is available before starting
+	if server.GetCommunicationType() == CommunicationTCP {
+		_, tcpPort := server.GetConnectionInfo()
+		if portInUse, err := checkTCPPortAvailable(tcpPort); err == nil && portInUse {
+			return fmt.Errorf("TCP mock port %d is already in use. Please choose a different port in config.yaml (communication.tcp_port)", tcpPort)
+		}
 	}
 
 	if err := server.Start(); err != nil {
@@ -80,7 +89,14 @@ func (e *Executor) StartServer() error {
 		server.SetSuiteSpans(e.suiteSpans)
 	}
 
-	slog.Debug("Mock server ready", "socket", server.GetSocketPath())
+	if server.GetCommunicationType() == CommunicationTCP {
+		_, port := server.GetConnectionInfo()
+		slog.Debug("Mock server ready", "type", "TCP", "port", port)
+	} else {
+		socketPath, _ := server.GetConnectionInfo()
+		slog.Debug("Mock server ready", "type", "Unix", "socket", socketPath)
+	}
+
 	return nil
 }
 
@@ -111,4 +127,15 @@ func (e *Executor) WaitForSDKAcknowledgement() error {
 		return err
 	}
 	return nil
+}
+
+func checkTCPPortAvailable(port int) (bool, error) {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		// Port is in use
+		return true, nil
+	}
+	_ = ln.Close()
+	return false, nil
 }

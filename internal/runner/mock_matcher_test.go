@@ -7,6 +7,7 @@ import (
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 
 	"github.com/stretchr/testify/assert"
@@ -75,7 +76,8 @@ func makeMockRequest(t *testing.T, pkg string, inputValueMap map[string]any, inp
 }
 
 func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -124,7 +126,8 @@ func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
 }
 
 func TestFindBestMatchInTrace_ReducedInputValueHash_MatchesWhenDirectHashDiffers(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -162,7 +165,8 @@ func TestFindBestMatchInTrace_ReducedInputValueHash_MatchesWhenDirectHashDiffers
 }
 
 func TestFindBestMatchInTrace_InputSchemaHash_WithHTTPShape(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -206,7 +210,8 @@ func TestFindBestMatchInTrace_InputSchemaHash_WithHTTPShape(t *testing.T) {
 }
 
 func TestSchemaMatchWithHttpShape_GraphQLNormalization(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -249,7 +254,8 @@ func TestSchemaMatchWithHttpShape_GraphQLNormalization(t *testing.T) {
 }
 
 func TestFindBestMatchAcrossTraces_GlobalValueHash(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -280,7 +286,8 @@ func TestFindBestMatchAcrossTraces_GlobalValueHash(t *testing.T) {
 }
 
 func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -317,7 +324,8 @@ func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
 // TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch tests that when multiple spans
 // match on schema, the matcher picks the one with the closest input value using Levenshtein similarity
 func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -389,7 +397,8 @@ func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) 
 // TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp tests that when similarity
 // scores are identical, the oldest span is picked
 func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -440,7 +449,8 @@ func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T
 // TestFindBestMatchInTrace_SimilarityScoring_NestedStructures tests similarity scoring
 // with nested maps and arrays
 func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -504,7 +514,8 @@ func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
 // TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates tests that when multiple
 // candidates exist, the top 5 alternatives are returned with their scores
 func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
@@ -595,7 +606,8 @@ func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing
 // TestFindBestMatchInTrace_SimilarityScoring_DeepNesting tests that similarity scoring works
 // correctly beyond depth 5 by stringifying deeply nested structures
 func TestFindBestMatchInTrace_SimilarityScoring_DeepNesting(t *testing.T) {
-	server, err := NewServer("svc")
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 

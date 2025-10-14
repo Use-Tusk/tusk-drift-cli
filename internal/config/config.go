@@ -36,15 +36,26 @@ type Config struct {
 }
 
 type ServiceConfig struct {
-	ID        string          `koanf:"id"`
-	Name      string          `koanf:"name"`
-	Port      int             `koanf:"port"`
-	Start     StartConfig     `koanf:"start"`
-	Readiness ReadinessConfig `koanf:"readiness_check"`
+	ID            string              `koanf:"id"`
+	Name          string              `koanf:"name"`
+	Port          int                 `koanf:"port"`
+	Start         StartConfig         `koanf:"start"`
+	Stop          StopConfig          `koanf:"stop"`
+	Readiness     ReadinessConfig     `koanf:"readiness_check"`
+	Communication CommunicationConfig `koanf:"communication"`
 }
 
 type StartConfig struct {
 	Command string `koanf:"command"`
+}
+
+type StopConfig struct {
+	Command string `koanf:"command"`
+}
+
+type CommunicationConfig struct {
+	Type    string `koanf:"type"`     // "auto", "unix", "tcp"
+	TCPPort int    `koanf:"tcp_port"` // Default: 9001
 }
 
 type ReadinessConfig struct {
@@ -172,6 +183,12 @@ func parseAndValidate() (*Config, error) {
 	if cfg.Traces.Dir == "" {
 		cfg.Traces.Dir = ".tusk/traces"
 	}
+	if cfg.Service.Communication.Type == "" {
+		cfg.Service.Communication.Type = "auto"
+	}
+	if cfg.Service.Communication.TCPPort == 0 {
+		cfg.Service.Communication.TCPPort = 9001
+	}
 
 	// Resolve directory paths relative to tusk root
 	cfg.Results.Dir = utils.ResolveTuskPath(cfg.Results.Dir)
@@ -195,6 +212,15 @@ func (cfg *Config) Validate() error {
 		if _, err := time.ParseDuration(cfg.TestExecution.Timeout); err != nil {
 			errs = append(errs, fmt.Errorf("test_execution.timeout invalid: %w", err))
 		}
+	}
+
+	validCommTypes := map[string]bool{"auto": true, "unix": true, "tcp": true}
+	if !validCommTypes[cfg.Service.Communication.Type] {
+		errs = append(errs, fmt.Errorf("service.communication.type must be 'auto', 'unix', or 'tcp', got %s", cfg.Service.Communication.Type))
+	}
+
+	if cfg.Service.Communication.TCPPort < 1 || cfg.Service.Communication.TCPPort > 65535 {
+		errs = append(errs, fmt.Errorf("service.communication.tcp_port must be between 1-65535, got %d", cfg.Service.Communication.TCPPort))
 	}
 
 	if len(errs) > 0 {
