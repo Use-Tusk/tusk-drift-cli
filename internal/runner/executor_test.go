@@ -147,6 +147,7 @@ func TestExecutor_SetSuiteSpans(t *testing.T) {
 
 func TestExecutor_RunTests(t *testing.T) {
 	executor := NewExecutor()
+	executor.serviceURL = "http://localhost:59999"  // Use a port that's definitely not in use
 	executor.SetTestTimeout(100 * time.Millisecond) // Short timeout for faster test failure
 
 	tests := []Test{
@@ -162,10 +163,11 @@ func TestExecutor_RunTests(t *testing.T) {
 	assert.NoError(t, err) // No error at the concurrent execution level
 	assert.Len(t, results, 2)
 
-	// But individual test results should show failures
+	// But individual test results should show failures with connection errors
 	for _, result := range results {
 		assert.False(t, result.Passed)
-		assert.NotEmpty(t, result.Error)
+		assert.NotEmpty(t, result.Error, "Expected connection error but got empty error")
+		assert.Contains(t, result.Error, "connect", "Expected connection error")
 	}
 }
 
@@ -332,7 +334,7 @@ func TestExecutor_RunSingleTest_InvalidRequestBody(t *testing.T) {
 	result, err := executor.RunSingleTest(test)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "expected body to be a string")
+	assert.Contains(t, err.Error(), "expected value to be a string")
 	assert.Equal(t, TestResult{}, result)
 }
 
@@ -351,7 +353,7 @@ func TestExecutor_RunSingleTest_InvalidBase64Body(t *testing.T) {
 	result, err := executor.RunSingleTest(test)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to decode base64 body")
+	assert.Contains(t, err.Error(), "failed to decode base64 value")
 	assert.Equal(t, TestResult{}, result)
 }
 

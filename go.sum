@@ -1,5 +1,5 @@
-github.com/Use-Tusk/tusk-drift-schemas v0.1.9 h1:4Nip89mKARfngvo6rgKEBhdtApJrZP9Z0Ltq4oGhwGk=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.9/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
+github.com/Use-Tusk/tusk-drift-schemas v0.1.11 h1:pmugIv0c8ZA4pEEtWii7OyttfoSEyzwTfMZp8u4rj2A=
+github.com/Use-Tusk/tusk-drift-schemas v0.1.11/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
 github.com/agnivade/levenshtein v1.0.3 h1:M5ZnqLOoZR8ygVq0FfkXsNOKzMCk0xRiow0R5+5VkQ0=
 github.com/agnivade/levenshtein v1.0.3/go.mod h1:4SFRZbbXWLF4MU1T9Qg0pGgH3Pjs+t6ie5efyrwRJXs=
 github.com/alecthomas/assert/v2 v2.7.0 h1:QtqSACNS3tF7oasA8CU6A6sXZSBDqnm7RfpLl9bZqbE=

@@ -175,20 +175,20 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 
 	var reqBody io.Reader
 	if test.Request.Body != nil {
-		// Extract body metadata from input schema
-		var bodyMetadata *RequestBodyMetadata
+		// Extract body schema from input schema
+		var bodySchema *core.JsonSchema
 		if len(test.Spans) > 0 {
 			// Root/server span has the request data
 			for _, span := range test.Spans {
-				if span.IsRootSpan {
-					bodyMetadata = ExtractRequestBodyMetadata(span.InputSchema, "body")
+				if span.IsRootSpan && span.InputSchema != nil && span.InputSchema.Properties != nil {
+					bodySchema = span.InputSchema.Properties["body"]
 					break
 				}
 			}
 		}
 
-		// Decode body using schema metadata
-		decodedBytes, _, err := DecodeBody(test.Request.Body, bodyMetadata)
+		// Decode body using schema (returns both bytes and parsed value)
+		decodedBytes, _, err := DecodeValueBySchema(test.Request.Body, bodySchema)
 		if err != nil {
 			return TestResult{}, fmt.Errorf("failed to decode request body: %w", err)
 		}

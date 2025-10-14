@@ -31,45 +31,43 @@ func unixMsToTimestamp(tsMs int64) *timestamppb.Timestamp {
 	return timestamppb.New(time.Unix(sec, nsec))
 }
 
-func makeSpan(t *testing.T, traceID, spanID, pkg string, inputValueMap, inputSchemaMap map[string]any, tsMs int64) *core.Span {
-	var inputValueStruct, inputSchemaStruct *structpb.Struct
+func makeSpan(t *testing.T, traceID, spanID, pkg string, inputValueMap map[string]any, inputSchema *core.JsonSchema, tsMs int64) *core.Span {
+	var inputValueStruct *structpb.Struct
 	var inputValueHash, inputSchemaHash string
 	if inputValueMap != nil {
 		inputValueStruct = toStruct(t, inputValueMap)
 		inputValueHash = utils.GenerateDeterministicHash(inputValueMap)
 	}
-	if inputSchemaMap != nil {
-		inputSchemaStruct = toStruct(t, inputSchemaMap)
-		inputSchemaHash = utils.GenerateDeterministicHash(inputSchemaMap)
+	if inputSchema != nil {
+		inputSchemaHash = utils.GenerateDeterministicHash(inputSchema)
 	}
 	return &core.Span{
 		TraceId:         traceID,
 		SpanId:          spanID,
 		PackageName:     pkg,
 		InputValue:      inputValueStruct,
-		InputSchema:     inputSchemaStruct,
+		InputSchema:     inputSchema,
 		InputValueHash:  inputValueHash,
 		InputSchemaHash: inputSchemaHash,
 		Timestamp:       unixMsToTimestamp(tsMs),
 	}
 }
 
-func makeMockRequest(t *testing.T, pkg string, inputValueMap, inputSchemaMap map[string]any) *core.GetMockRequest {
-	var inputValueStruct, inputSchemaStruct *structpb.Struct
+func makeMockRequest(t *testing.T, pkg string, inputValueMap map[string]any, inputSchema *core.JsonSchema) *core.GetMockRequest {
+	var inputValueStruct *structpb.Struct
 	var inputValueHash, inputSchemaHash string
 	if inputValueMap != nil {
 		inputValueStruct = toStruct(t, inputValueMap)
 		inputValueHash = utils.GenerateDeterministicHash(inputValueMap)
 	}
-	if inputSchemaMap != nil {
-		inputSchemaStruct = toStruct(t, inputSchemaMap)
-		inputSchemaHash = utils.GenerateDeterministicHash(inputSchemaMap)
+	if inputSchema != nil {
+		inputSchemaHash = utils.GenerateDeterministicHash(inputSchema)
 	}
 	return &core.GetMockRequest{
 		OutboundSpan: &core.Span{
 			PackageName:     pkg,
 			InputValue:      inputValueStruct,
-			InputSchema:     inputSchemaStruct,
+			InputSchema:     inputSchema,
 			InputValueHash:  inputValueHash,
 			InputSchemaHash: inputSchemaHash,
 		},
@@ -87,13 +85,13 @@ func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
 	pkg := "http"
 
 	inputValueMap := map[string]any{"method": "GET", "path": "/users"}
-	var inputSchemaMap map[string]any
+	var inputSchema *core.JsonSchema
 
-	spanOld := makeSpan(t, traceID, "s1", pkg, inputValueMap, inputSchemaMap, 1000)
-	spanNew := makeSpan(t, traceID, "s2", pkg, inputValueMap, inputSchemaMap, 2000)
+	spanOld := makeSpan(t, traceID, "s1", pkg, inputValueMap, inputSchema, 1000)
+	spanNew := makeSpan(t, traceID, "s2", pkg, inputValueMap, inputSchema, 2000)
 	server.LoadSpansForTrace(traceID, []*core.Span{spanNew, spanOld})
 
-	req := makeMockRequest(t, pkg, inputValueMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, inputValueMap, inputSchema)
 
 	match, level, err := mm.FindBestMatchInTrace(req, traceID)
 	require.NoError(t, err)
@@ -139,17 +137,19 @@ func TestFindBestMatchInTrace_ReducedInputValueHash_MatchesWhenDirectHashDiffers
 	// token has matchImportance 0; differing token values should not affect reduced hash
 	inputRequestMap := map[string]any{"method": "GET", "path": "/a", "token": "alpha"}
 	inputValueMap := map[string]any{"method": "GET", "path": "/a", "token": "beta"}
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"method": map[string]any{},
-			"path":   map[string]any{},
-			"token":  map[string]any{"matchImportance": 0.0},
+
+	matchImportanceZero := 0.0
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+			"token":  {MatchImportance: &matchImportanceZero},
 		},
 	}
 
-	span := makeSpan(t, traceID, "sR", pkg, inputValueMap, inputSchemaMap, 1000)
+	span := makeSpan(t, traceID, "sR", pkg, inputValueMap, inputSchema, 1000)
 	server.LoadSpansForTrace(traceID, []*core.Span{span})
-	req := makeMockRequest(t, pkg, inputRequestMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, inputRequestMap, inputSchema)
 
 	// Sanity: direct hashes differ
 	assert.NotEqual(t, utils.GenerateDeterministicHash(inputRequestMap), utils.GenerateDeterministicHash(inputValueMap))
@@ -183,16 +183,16 @@ func TestFindBestMatchInTrace_InputSchemaHash_WithHTTPShape(t *testing.T) {
 		"url":    "https://api.example.com/users?bar=9&foo=zzz",
 	}
 	// Simple schema (all fields important) to drive InputSchemaHash equality
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"method": map[string]any{},
-			"url":    map[string]any{},
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"url":    {},
 		},
 	}
 
-	span := makeSpan(t, traceID, "sH", pkg, inputValueMap, inputSchemaMap, 1000)
+	span := makeSpan(t, traceID, "sH", pkg, inputValueMap, inputSchema, 1000)
 	server.LoadSpansForTrace(traceID, []*core.Span{span})
-	req := makeMockRequest(t, pkg, inputRequestMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, inputRequestMap, inputSchema)
 
 	// Ensure value hashes differ so we test schema path (priority 5)
 	assert.NotEqual(t, span.InputValueHash, req.OutboundSpan.InputValueHash)
@@ -215,22 +215,22 @@ func TestSchemaMatchWithHttpShape_GraphQLNormalization(t *testing.T) {
 	require.NoError(t, err)
 	mm := NewMockMatcher(server)
 
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"body": map[string]any{
-				"properties": map[string]any{
-					"query": map[string]any{},
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"body": {
+				Properties: map[string]*core.JsonSchema{
+					"query": {},
 				},
 			},
 		},
 	}
-	inputSchemaHash := utils.GenerateDeterministicHash(inputSchemaMap)
+	inputSchemaHash := utils.GenerateDeterministicHash(inputSchema)
 
 	span := makeSpan(t, "trace-gql", "sg1", "https", map[string]any{
 		"body": map[string]any{
 			"query": "query { user(id:1) { id   name } }",
 		},
-	}, inputSchemaMap, 0)
+	}, inputSchema, 0)
 
 	// Same query with different whitespace; provided as JSON string body
 	reqData1 := MockMatcherRequestData{
@@ -261,14 +261,19 @@ func TestFindBestMatchAcrossTraces_GlobalValueHash(t *testing.T) {
 
 	pkg := "http"
 	inputValueMap := map[string]any{"method": "GET", "path": "/suite"}
-	inputSchemaMap := map[string]any{"properties": map[string]any{"method": map[string]any{}, "path": map[string]any{}}}
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+		},
+	}
 
-	spanA := makeSpan(t, "trace-A", "sa", pkg, inputValueMap, inputSchemaMap, 100)
-	spanB := makeSpan(t, "trace-B", "sb", pkg, map[string]any{"method": "POST", "path": "/suite"}, inputSchemaMap, 200)
+	spanA := makeSpan(t, "trace-A", "sa", pkg, inputValueMap, inputSchema, 100)
+	spanB := makeSpan(t, "trace-B", "sb", pkg, map[string]any{"method": "POST", "path": "/suite"}, inputSchema, 200)
 
 	server.SetSuiteSpans([]*core.Span{spanB, spanA})
 
-	req := makeMockRequest(t, pkg, inputValueMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, inputValueMap, inputSchema)
 
 	match, level, err := mm.FindBestMatchAcrossTraces(req, "irrelevant-trace", server.GetSuiteSpans())
 	require.NoError(t, err)
@@ -290,11 +295,12 @@ func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
 	pkg := "http"
 
 	// Schema includes a low-importance property 'ignored'
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"method":  map[string]any{},
-			"path":    map[string]any{},
-			"ignored": map[string]any{"matchImportance": 0.0},
+	matchImportanceZero := 0.0
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method":  {},
+			"path":    {},
+			"ignored": {MatchImportance: &matchImportanceZero},
 		},
 	}
 
@@ -302,9 +308,9 @@ func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
 	inputValueMap := map[string]any{"method": "GET", "path": "/reduced", "ignored": "Y"}
 
 	// Ensure schema hashes differ only if reduced (reduced should match)
-	span := makeSpan(t, traceID, "sRS", pkg, inputValueMap, inputSchemaMap, 1000)
+	span := makeSpan(t, traceID, "sRS", pkg, inputValueMap, inputSchema, 1000)
 	server.LoadSpansForTrace(traceID, []*core.Span{span})
-	req := makeMockRequest(t, pkg, inputRequestMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, inputRequestMap, inputSchema)
 
 	// Force non-match for value hashes
 	assert.NotEqual(t, span.InputValueHash, req.OutboundSpan.InputValueHash)
@@ -327,10 +333,10 @@ func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) 
 	pkg := "postgres"
 
 	// Schema that matches for SQL queries
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"query":      map[string]any{},
-			"parameters": map[string]any{},
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query":      {},
+			"parameters": {},
 		},
 	}
 
@@ -364,13 +370,13 @@ func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) 
 		},
 	}
 
-	span1 := makeSpan(t, traceID, "span-different", pkg, span1ValueMap, inputSchemaMap, 1000)
-	span2 := makeSpan(t, traceID, "span-similar", pkg, span2ValueMap, inputSchemaMap, 2000)
+	span1 := makeSpan(t, traceID, "span-different", pkg, span1ValueMap, inputSchema, 1000)
+	span2 := makeSpan(t, traceID, "span-similar", pkg, span2ValueMap, inputSchema, 2000)
 
 	// Load spans in reverse order to ensure timestamp isn't the primary factor
 	server.LoadSpansForTrace(traceID, []*core.Span{span1, span2})
 
-	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
 	// Both spans have same schema but different values
 	match, level, err := mm.FindBestMatchInTrace(req, traceID)
@@ -399,10 +405,10 @@ func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T
 	traceID := "trace-tiebreak"
 	pkg := "http"
 
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"method": map[string]any{},
-			"path":   map[string]any{},
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
 		},
 	}
 
@@ -423,13 +429,13 @@ func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T
 	}
 
 	// Create spans with different timestamps
-	spanOlder := makeSpan(t, traceID, "span-older", pkg, spanValueMap1, inputSchemaMap, 1000)
-	spanNewer := makeSpan(t, traceID, "span-newer", pkg, spanValueMap2, inputSchemaMap, 3000)
+	spanOlder := makeSpan(t, traceID, "span-older", pkg, spanValueMap1, inputSchema, 1000)
+	spanNewer := makeSpan(t, traceID, "span-newer", pkg, spanValueMap2, inputSchema, 3000)
 
 	// Load in random order
 	server.LoadSpansForTrace(traceID, []*core.Span{spanNewer, spanOlder})
 
-	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
 	match, level, err := mm.FindBestMatchInTrace(req, traceID)
 	require.NoError(t, err)
@@ -451,9 +457,9 @@ func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
 	traceID := "trace-nested"
 	pkg := "http"
 
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"body": map[string]any{},
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"body": {},
 		},
 	}
 
@@ -489,12 +495,12 @@ func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
 		},
 	}
 
-	span1 := makeSpan(t, traceID, "span-product", pkg, span1ValueMap, inputSchemaMap, 1000)
-	span2 := makeSpan(t, traceID, "span-user", pkg, span2ValueMap, inputSchemaMap, 2000)
+	span1 := makeSpan(t, traceID, "span-product", pkg, span1ValueMap, inputSchema, 1000)
+	span2 := makeSpan(t, traceID, "span-user", pkg, span2ValueMap, inputSchema, 2000)
 
 	server.LoadSpansForTrace(traceID, []*core.Span{span1, span2})
 
-	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
 	match, level, err := mm.FindBestMatchInTrace(req, traceID)
 	require.NoError(t, err)
@@ -516,10 +522,10 @@ func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing
 	traceID := "trace-top5"
 	pkg := "postgres"
 
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"query":      map[string]any{},
-			"parameters": map[string]any{},
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query":      {},
+			"parameters": {},
 		},
 	}
 
@@ -535,36 +541,36 @@ func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing
 		makeSpan(t, traceID, "span-best", pkg, map[string]any{
 			"query":      "UPDATE users SET name = $1 WHERE id = $2",
 			"parameters": []any{"Bob", 123},
-		}, inputSchemaMap, 1000),
+		}, inputSchema, 1000),
 		makeSpan(t, traceID, "span-second", pkg, map[string]any{
 			"query":      "UPDATE users SET name = $1 WHERE id = $3",
 			"parameters": []any{"Alice", 456},
-		}, inputSchemaMap, 2000),
+		}, inputSchema, 2000),
 		makeSpan(t, traceID, "span-third", pkg, map[string]any{
 			"query":      "UPDATE users SET email = $1 WHERE id = $2",
 			"parameters": []any{"test@example.com", 123},
-		}, inputSchemaMap, 3000),
+		}, inputSchema, 3000),
 		makeSpan(t, traceID, "span-fourth", pkg, map[string]any{
 			"query":      "UPDATE posts SET title = $1 WHERE id = $2",
 			"parameters": []any{"New Title", 123},
-		}, inputSchemaMap, 4000),
+		}, inputSchema, 4000),
 		makeSpan(t, traceID, "span-fifth", pkg, map[string]any{
 			"query":      "INSERT INTO users (name) VALUES ($1)",
 			"parameters": []any{"Alice"},
-		}, inputSchemaMap, 5000),
+		}, inputSchema, 5000),
 		makeSpan(t, traceID, "span-sixth", pkg, map[string]any{
 			"query":      "SELECT * FROM users WHERE id = $1",
 			"parameters": []any{123},
-		}, inputSchemaMap, 6000),
+		}, inputSchema, 6000),
 		makeSpan(t, traceID, "span-seventh", pkg, map[string]any{
 			"query":      "DELETE FROM users WHERE id = $1",
 			"parameters": []any{999},
-		}, inputSchemaMap, 7000),
+		}, inputSchema, 7000),
 	}
 
 	server.LoadSpansForTrace(traceID, spans)
 
-	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
 	match, level, err := mm.FindBestMatchInTrace(req, traceID)
 	require.NoError(t, err)
@@ -608,9 +614,9 @@ func TestFindBestMatchInTrace_SimilarityScoring_DeepNesting(t *testing.T) {
 	traceID := "trace-deep"
 	pkg := "http"
 
-	inputSchemaMap := map[string]any{
-		"properties": map[string]any{
-			"body": map[string]any{},
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"body": {},
 		},
 	}
 
@@ -684,12 +690,12 @@ func TestFindBestMatchInTrace_SimilarityScoring_DeepNesting(t *testing.T) {
 		},
 	}
 
-	span1 := makeSpan(t, traceID, "span-deep-different", pkg, span1Deep, inputSchemaMap, 1000)
-	span2 := makeSpan(t, traceID, "span-deep-similar", pkg, span2Deep, inputSchemaMap, 2000)
+	span1 := makeSpan(t, traceID, "span-deep-different", pkg, span1Deep, inputSchema, 1000)
+	span2 := makeSpan(t, traceID, "span-deep-similar", pkg, span2Deep, inputSchema, 2000)
 
 	server.LoadSpansForTrace(traceID, []*core.Span{span1, span2})
 
-	req := makeMockRequest(t, pkg, requestValueMap, inputSchemaMap)
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
 	match, level, err := mm.FindBestMatchInTrace(req, traceID)
 	require.NoError(t, err)
