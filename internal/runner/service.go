@@ -144,18 +144,19 @@ func (e *Executor) GetServiceLogPath() string {
 func (e *Executor) checkProcessOnPort(port int) (bool, error) {
 	slog.Debug("Checking for existing processes on port", "port", port)
 
-	// Try to listen on the port
-	addr := fmt.Sprintf(":%d", port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		// Port is in use
+	// Try to connect to the port (more reliable than binding)
+	addr := fmt.Sprintf("localhost:%d", port)
+	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+	if err == nil {
+		// Successfully connected - port is in use
+		_ = conn.Close()
 		slog.Debug("Port is already in use", "port", port)
 		return true, nil
 	}
 
-	// Port is available, close the listener
-	_ = ln.Close()
-	slog.Debug("Port is available", "port", port)
+	// Check if it's a connection refused (means port is available)
+	// vs other errors (network issues, etc.)
+	slog.Debug("Port appears to be available", "port", port, "error", err)
 	return false, nil
 }
 
@@ -200,7 +201,7 @@ func (e *Executor) waitForReadiness(cfg *config.Config) error {
 		time.Sleep(interval)
 	}
 
-	return fmt.Errorf("service failed to become ready within %v", timeout)
+	return fmt.Errorf("service failed to become ready within %v. You can increase the timeout in .tusk/config.yaml under service.readiness.timeout", timeout)
 }
 
 // SetDisableServiceLogs sets whether service logging should be disabled
