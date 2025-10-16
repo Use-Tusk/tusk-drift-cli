@@ -35,7 +35,7 @@ func inputLabelForStep(s onboardStep) string {
 }
 
 func (m *Model) serviceNameDefault() string {
-	if m.DockerType == dockerTypeFile && strings.TrimSpace(m.DockerAppName) != "" {
+	if (m.DockerType == dockerTypeFile || m.DockerType == dockerTypeCompose) && strings.TrimSpace(m.DockerAppName) != "" {
 		return m.DockerAppName
 	}
 	return inferServiceNameFromDir()
@@ -45,6 +45,11 @@ func (m *Model) servicePortDefault() string {
 	if m.DockerType == dockerTypeFile {
 		if inferred := inferDockerPort(); inferred != "" && inferred != "3000" {
 			return fmt.Sprintf("%s (detected from Dockerfile)", inferred)
+		}
+	}
+	if m.DockerType == dockerTypeCompose {
+		if inferred := inferDockerComposePort(); inferred != "" && inferred != "3000" {
+			return fmt.Sprintf("%s (detected from Docker Compose)", inferred)
 		}
 	}
 	return "3000"

@@ -37,33 +37,25 @@ func getDockerComposeServiceNames() ([]string, error) {
 
 func (m *Model) createDockerComposeOverrideFile() error {
 	overridePath := "docker-compose.tusk-override.yml"
-	if _, err := os.Stat(overridePath); err == nil {
-		return nil
-	}
 
-	serviceNames, err := getDockerComposeServiceNames()
-	if err != nil {
-		return err
-	}
-
-	targetService := m.ServiceName
-
-	found := false
-	for _, name := range serviceNames {
-		if name == targetService {
-			found = true
-			break
+	targetService := m.DockerComposeServiceName
+	if targetService == "" {
+		// Fallback: try to find service by Tusk service name or use first service
+		serviceNames, err := getDockerComposeServiceNames()
+		if err != nil {
+			return err
 		}
-	}
-	if !found && len(serviceNames) > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: Service '%s' not found in docker-compose.yml\n", targetService)
-		fmt.Fprintf(os.Stderr, "Available services: %s\n", strings.Join(serviceNames, ", "))
-		fmt.Fprintf(os.Stderr, "Creating override file with '%s' - you may need to edit it manually.\n\n", targetService)
+		if len(serviceNames) > 0 {
+			targetService = serviceNames[0]
+		} else {
+			return fmt.Errorf("no services found in docker-compose.yml")
+		}
 	}
 
 	var buf strings.Builder
 	buf.WriteString("# Tusk Drift override file for Docker Compose\n")
-	buf.WriteString(fmt.Sprintf("# Environment variables for service: %s\n\n", targetService))
+	buf.WriteString(fmt.Sprintf("# Environment variables for service: %s\n", targetService))
+	buf.WriteString("# Please double check that this is the correct service.\n\n")
 	buf.WriteString("services:\n")
 	buf.WriteString(fmt.Sprintf("  %s:\n", targetService))
 	buf.WriteString("    environment:\n")

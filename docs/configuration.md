@@ -296,7 +296,6 @@ For authentication in cloud mode, either use:
       <th>Key</th>
       <th>Type</th>
       <th>Default</th>
-      <th>Env override</th>
       <th>Description</th>
     </tr>
   </thead>
@@ -305,8 +304,19 @@ For authentication in cloud mode, either use:
       <td><code>recording.sampling_rate</code></td>
       <td>number</td>
       <td>0.1</td>
-      <td><code>TUSK_RECORDING_SAMPLING_RATE</code></td>
       <td>Target sampling fraction when recording traces.</td>
+    </tr>
+    <tr>
+      <td><code>recording.export_spans</code></td>
+      <td>boolean</td>
+      <td><code>false</code></td>
+      <td>Whether to export spans to the Tusk Drift Cloud. If false, spans are saved locally in <code>traces.dir</code></td>
+    </tr>
+    <tr>
+      <td><code>recording.export_env_var_recording</code></td>
+      <td>boolean</td>
+      <td><code>false</code></td>
+      <td>Whether to record and replay environment variables. Recommended for accurate replay behavior if your service's logic depends on environment variables.</td>
     </tr>
   </tbody>
 </table>

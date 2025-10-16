@@ -57,7 +57,9 @@ type TestExecution struct {
 }
 
 type Recording struct {
-	SamplingRate float64 `yaml:"sampling_rate"`
+	SamplingRate          float64 `yaml:"sampling_rate"`
+	ExportSpans           bool    `yaml:"export_spans"`
+	EnableEnvVarRecording bool    `yaml:"enable_env_var_recording"`
 }
 
 type Traces struct {
@@ -106,7 +108,9 @@ func (m *Model) getCurrentConfig() Config {
 			Timeout: "30s",
 		},
 		Recording: Recording{
-			SamplingRate: samplingRate,
+			SamplingRate:          samplingRate,
+			ExportSpans:           false,
+			EnableEnvVarRecording: true,
 		},
 	}
 
