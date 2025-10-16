@@ -108,6 +108,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case hasCompose && !hasDockerfile:
 					// Only compose exists - set type and skip the question
 					m.DockerType = dockerTypeCompose
+					m.DockerImageName = inferDockerImageName()
+					m.DockerAppName = strings.Split(m.DockerImageName, ":")[0]
+					m.DockerComposeServiceName = getFirstDockerComposeServiceName()
 					m.advance() // to dockerType (adds dockerSetup to history)
 					// Manually skip dockerType without adding to history
 					m.stepIdx = m.flow.NextIndex(m.stepIdx, m)
@@ -160,6 +163,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			if m.flow.Current(m.stepIdx).ID() == stepDockerType {
 				m.DockerType = dockerTypeCompose
+				m.DockerImageName = inferDockerImageName()
+				m.DockerAppName = strings.Split(m.DockerImageName, ":")[0]
+				m.DockerComposeServiceName = getFirstDockerComposeServiceName() // NEW
 				m.advance()
 				return m, nil
 			}
@@ -177,11 +183,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-
-		// Update viewport size when on confirm step
-		if m.flow.Current(m.stepIdx).ID() == stepConfirm {
-			m.updateViewportSize()
-		}
 		return m, nil
 	}
 
@@ -230,20 +231,4 @@ func (m *Model) focusActiveInput() {
 	if idx := m.flow.Current(m.stepIdx).InputIndex(); idx >= 0 {
 		m.inputs[idx].Focus()
 	}
-}
-
-func (m *Model) updateViewportSize() {
-	// Calculate available height for viewport
-	// Reserve space for: header (3 lines) + intro text (5 lines) + footer (1 line) + margins
-	headerHeight := 3
-	introHeight := 5 // TODO: can this be dyanmic?
-	footerHeight := 1
-	margins := 2
-
-	availableHeight := m.height - headerHeight - introHeight - footerHeight - margins
-	availableHeight = max(availableHeight, 5)
-
-	m.viewport.Width = m.width
-	m.viewport.Height = availableHeight
-	m.viewportReady = true
 }

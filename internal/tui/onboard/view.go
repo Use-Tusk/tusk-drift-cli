@@ -68,8 +68,8 @@ func (m *Model) View() string {
 		body.WriteString("Both Docker Compose and Dockerfile detected.\n")
 		body.WriteString(s.Question(m) + "\n")
 		body.WriteString(styles.DimStyle.Render(s.Description(m)) + "\n\n")
-		body.WriteString(styles.DimStyle.Render("Docker Compose: Use if you normally run `docker compose up`\n"))
-		body.WriteString(styles.DimStyle.Render("Dockerfile: Use if you normally run `docker run`\n"))
+		body.WriteString(styles.DimStyle.Render("Docker Compose: Use if you normally run `docker compose up`") + "\n")
+		body.WriteString(styles.DimStyle.Render("Dockerfile: Use if you normally run `docker run`") + "\n")
 
 	case stepConfirm:
 		cfg := m.getCurrentConfig()
@@ -78,22 +78,39 @@ func (m *Model) View() string {
 		enc.SetIndent(2)
 		_ = enc.Encode(cfg)
 		_ = enc.Close()
-		formatted := formatYAMLWithBlankLines([]byte(buf.String()))
+		yamlStr := formatYAMLWithBlankLines([]byte(buf.String()))
 
-		// Initialize viewport content if not already set or if config changed
-		if !m.viewportReady {
-			m.updateViewportSize()
+		// Render boxed YAML (actual viewport content)
+		content := styles.BoxStyle.Render(string(yamlStr))
+		contentHeight := lipgloss.Height(content)
+
+		// Measure layout pieces
+		top := header + "\n\n"
+		footerStr := m.currentFooter()
+		intro := m.confirmIntroText()
+		sep := "\n\n"
+		outro := m.confirmOutroText()
+
+		available := max(m.height-lipgloss.Height(top)-lipgloss.Height(footerStr), 0)
+		nonViewport := lipgloss.Height(intro) + lipgloss.Height(sep) + lipgloss.Height(outro)
+
+		// Max space viewport may take
+		viewportMax := max(available-nonViewport, 0)
+		viewportHeight := max(min(contentHeight, viewportMax), 1)
+
+		m.viewport.Width = m.width
+		m.viewport.Height = viewportHeight
+
+		if !m.viewportReady || m.lastViewportContent != content {
+			m.viewport.SetContent(content)
+			m.lastViewportContent = content
+			m.viewportReady = true
 		}
 
-		// Set viewport content
-		m.viewport.SetContent(styles.BoxStyle.Render(string(formatted)))
-
-		body.WriteString("Some configurations are pre-filled.\n")
-		body.WriteString("You may adjust them in the config file later if necesssary.\n")
-		body.WriteString("Refer to the documentation for more details:\n")
-		body.WriteString(styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md") + "\n\n")
-		body.WriteString(m.viewport.View() + "\n\n")
-		body.WriteString(fmt.Sprintf("Save this configuration to %s/%s? (y/n)\n", configDir, configFile))
+		body.WriteString(intro)
+		body.WriteString(m.viewport.View())
+		body.WriteString(sep)
+		body.WriteString(outro)
 
 	case stepDone:
 		if m.Err != nil {
@@ -101,25 +118,30 @@ func (m *Model) View() string {
 		} else {
 			body.WriteString(styles.SuccessStyle.Render(fmt.Sprintf("✅ Configuration saved to %s/%s", configDir, configFile)) + "\n\n")
 			next := fmt.Sprintf(`Next steps:
+
 1. Follow the instructions to get started with the SDK in your service:
    %s
    • Install the SDK
    • Initialize the SDK on your service
-   • Record your first traces`, styles.LinkStyle.Render("https://github.com/Use-Tusk/drift-node-sdk#installation"))
+   • Record your first traces
+`, styles.LinkStyle.Render("https://github.com/Use-Tusk/drift-node-sdk#installation"))
 			switch m.DockerType {
 			case dockerTypeCompose:
 				next += fmt.Sprintf(`
 2. A docker-compose.tusk-override.yml file has been created for you.
    Review it and uncomment extra_hosts if you're on Linux.
-   See: %s`, styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md#docker-support"))
+   See: %s
+`, styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md#docker-support"))
 			case dockerTypeFile:
 				next += `
 2. Review the Docker run command in your config.
-   Adjust the image name and ports if needed.`
+   Adjust the image name and ports if needed.
+`
 			}
 			next += fmt.Sprintf(`
 3. [Optional] Obtain an API key from Tusk Drift Cloud: %s
-   • Set your API key: export TUSK_API_KEY=your-key
+   • Set your API key: export TUSK_API_KEY=your-
+
 4. Run tests: tusk run (see --help for more options)
 `, styles.LinkStyle.Render("https://app.usetusk.ai/"))
 			body.WriteString(next)
@@ -172,19 +194,44 @@ func (m *Model) View() string {
 	if m.width > 0 && m.height > 0 {
 		top := header + "\n\n"
 		bodyStr := body.String()
-		want := max(m.height-lipgloss.Height(top)-lipgloss.Height(help), 0)
-		have := lipgloss.Height(bodyStr)
+		footerStr := m.currentFooter()
 
-		// For confirm step, viewport handles its own height, so don't pad
-		if m.flow.Current(m.stepIdx).ID() != stepConfirm {
-			if have < want {
-				bodyStr += strings.Repeat("\n", want-have+2)
-			}
+		page := top + bodyStr + footerStr
+		gap := m.height - lipgloss.Height(page)
+		if gap > 0 {
+			return top + bodyStr + strings.Repeat("\n", gap) + footerStr
 		}
-		return top + bodyStr + help
+		return page
 	}
 
 	return header + "\n\n" + body.String() + "\n\n" + help
+}
+
+func (m *Model) confirmIntroText() string {
+	var b strings.Builder
+	b.WriteString("Some configurations are pre-filled.\n")
+	b.WriteString("You may adjust them in the config file later if necesssary.\n")
+	b.WriteString("Refer to the documentation for more details:\n")
+	b.WriteString(styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md") + "\n\n")
+	return b.String()
+}
+
+func (m *Model) confirmOutroText() string {
+	var b strings.Builder
+	if m.DockerType == dockerTypeCompose {
+		b.WriteString("A docker-compose.tusk-override.yml file will be created.\n\n")
+	}
+	b.WriteString(fmt.Sprintf("Save this configuration to %s/%s? (y/n)\n", configDir, configFile))
+	return b.String()
+}
+
+func (m *Model) currentFooter() string {
+	helpText := m.flow.Current(m.stepIdx).Help(m)
+	cur := m.flow.Current(m.stepIdx).ID()
+	if len(m.history) > 0 && cur != stepIntro && cur != stepValidateRepo && cur != stepDone {
+		helpText = "ctrl+b/←: back • " + helpText
+	}
+	return components.Footer(m.width, helpText)
 }
 
 func (m *Model) summary() string {

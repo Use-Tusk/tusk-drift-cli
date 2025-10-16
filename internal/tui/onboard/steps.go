@@ -175,7 +175,7 @@ func (DockerTypeStep) Default(*Model) string  { return "" }
 func (DockerTypeStep) InputIndex() int        { return -1 }
 func (DockerTypeStep) Question(*Model) string { return "Are you using Docker Compose or Dockerfile?" }
 func (DockerTypeStep) Description(*Model) string {
-	return "Type 'c' for Docker Compose or 'd' for Dockerfile"
+	return "Press 'c' for Docker Compose or 'd' for Dockerfile"
 }
 func (DockerTypeStep) Help(*Model) string       { return "c: Docker Compose • d: Dockerfile • esc: quit" }
 func (DockerTypeStep) ShouldSkip(m *Model) bool { return !m.UseDocker }

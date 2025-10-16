@@ -47,8 +47,9 @@ type Model struct {
 	height  int
 
 	// Viewport for scrollable content (used in confirm step)
-	viewport      viewport.Model
-	viewportReady bool
+	viewport            viewport.Model
+	viewportReady       bool
+	lastViewportContent string // For preserving scroll
 
 	// State
 	ServiceName       string
@@ -60,10 +61,11 @@ type Model struct {
 	ReadinessInterval string
 	SamplingRate      string
 
-	UseDocker       bool
-	DockerType      dockerType
-	DockerImageName string
-	DockerAppName   string
+	UseDocker                bool
+	DockerType               dockerType
+	DockerImageName          string
+	DockerAppName            string
+	DockerComposeServiceName string // For docker compose override, may not be the same as ServiceName
 
 	SDKCompatible bool
 
