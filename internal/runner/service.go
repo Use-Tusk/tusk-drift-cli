@@ -140,7 +140,7 @@ func (e *Executor) GetServiceLogPath() string {
 
 // checkProcessOnPort checks if any process is listening on the specified port
 // Returns true if a process is found, false otherwise
-// This uses a connection-based approach to check if the port.
+// This uses a connection-based approach to check if the port is already in use.
 func (e *Executor) checkProcessOnPort(port int) (bool, error) {
 	slog.Debug("Checking for existing processes on port", "port", port)
 
