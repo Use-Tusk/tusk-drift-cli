@@ -3,7 +3,12 @@ set -e
 
 # Tusk Drift CLI Installer (Linux/macOS only)
 # For Windows, see: https://github.com/Use-Tusk/tusk-drift-cli#install
-# Usage: curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+# Usage (latest):
+#   curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+# Usage (specific version):
+#   curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh -s -- v0.10.0
+# Or via env var:
+#   curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | TUSK_VERSION=0.10.0 sh
 
 REPO="Use-Tusk/tusk-drift-cli"
 BINARY_NAME="tusk"
@@ -34,12 +39,23 @@ case "$ARCH" in
     ;;
 esac
 
-LATEST_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+# Determine version to install: use first arg or TUSK_VERSION env var; otherwise fallback to latest
+REQUESTED_VERSION="${1:-${TUSK_VERSION:-}}"
+if [ -n "$REQUESTED_VERSION" ]; then
+  case "$REQUESTED_VERSION" in
+    v*) VERSION_TAG="$REQUESTED_VERSION" ;;
+    *)  VERSION_TAG="v$REQUESTED_VERSION" ;;
+  esac
+else
+  VERSION_TAG=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+fi
 
-if [ -z "$LATEST_VERSION" ]; then
-  echo "Error: Unable to fetch latest version"
+if [ -z "$VERSION_TAG" ]; then
+  echo "Error: Unable to determine version to install"
   exit 1
 fi
+
+VERSION_NUMBER="${VERSION_TAG#v}"
 
 case "$OS" in
   linux)  OS_TITLE="Linux" ;;
@@ -47,9 +63,7 @@ case "$OS" in
   *)      OS_TITLE="$OS" ;;
 esac
 
-VERSION_NUMBER="${LATEST_VERSION#v}"
-
-DOWNLOAD_URL="https://github.com/$REPO/releases/download/${LATEST_VERSION}/tusk-drift-cli_${VERSION_NUMBER}_${OS_TITLE}_${ARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/${VERSION_TAG}/tusk-drift-cli_${VERSION_NUMBER}_${OS_TITLE}_${ARCH}.tar.gz"
 
 TMP_DIR=$(mktemp -d)
 cd "$TMP_DIR"
@@ -77,7 +91,7 @@ chmod +x "$INSTALL_DIR/$BINARY_NAME"
 cd - > /dev/null
 rm -rf "$TMP_DIR"
 
-echo "Tusk Drift CLI $LATEST_VERSION installed successfully!"
+echo "Tusk Drift CLI $VERSION_TAG installed successfully!"
 echo ""
 echo "Run 'tusk --help' to get started."
 
