@@ -168,6 +168,10 @@ If you have any questions, feel free to open an issue or reach us at [support@us
 - [Architecture overview](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 
+## Community
+
+Join our open source community on [Slack](https://join.slack.com/t/tusk-community/shared_invite/zt-3fve1s7ie-NAAUn~UpHsf1m_2tdoGjsQ).
+
 ## Development
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
