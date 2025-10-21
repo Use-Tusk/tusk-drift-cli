@@ -61,6 +61,7 @@ func (SDKCompatibilityStep) Description(*Model) string {
 	return `Tusk Drift Node SDK currently supports:
   • HTTP/HTTPS: All versions (Node.js built-in)
   • PG: pg@8.x, pg-pool@2.x-3.x
+	• Firestore: @google-cloud/firestore@7.x
   • Postgres: postgres@3.x
   • MySQL: mysql2@3.x
   • IORedis: ioredis@4.x-5.x
