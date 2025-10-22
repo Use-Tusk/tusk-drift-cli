@@ -80,7 +80,6 @@ jobs:
           EOF
 
       - name: Commit and push to gh-pages
-        working-directory: gh-pages
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
