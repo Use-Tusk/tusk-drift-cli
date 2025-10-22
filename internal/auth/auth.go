@@ -50,9 +50,9 @@ func NewAuthenticator() (*Authenticator, error) {
 	a := &Authenticator{
 		authFilePath:   authPath,
 		httpClient:     &http.Client{Timeout: 15 * time.Second},
-		domain:         utils.EnvDefault("TUSK_AUTH0_DOMAIN", "tusk-dev.us.auth0.com"),
+		domain:         utils.EnvDefault("TUSK_AUTH0_DOMAIN", "tusk.us.auth0.com"),
 		scope:          utils.EnvDefault("TUSK_AUTH0_SCOPE", "openid email offline_access"),
-		clientID:       utils.EnvDefault("TUSK_AUTH0_CLIENT_ID", "L9gLDU0uTEEdSb0CWVA9TURyNgiFYuki"),
+		clientID:       utils.EnvDefault("TUSK_AUTH0_CLIENT_ID", "gXktT8e38sBmmXGWCGeXMLpwlpeECJS5"),
 		audience:       utils.EnvDefault("TUSK_AUTH0_AUDIENCE", "drift-cli"),
 		ignoreSaveFile: os.Getenv("TUSK_AUTH_IGNORE_SAVED") != "",
 	}
