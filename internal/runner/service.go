@@ -35,7 +35,7 @@ func (e *Executor) StartService() error {
 	if err != nil {
 		slog.Debug("Failed to check for existing processes on port", "port", cfg.Service.Port, "error", err)
 	} else if processExists {
-		return fmt.Errorf("port %d is already in use", cfg.Service.Port)
+		return fmt.Errorf("port %d is already in use, if your service is already running you should stop it first", cfg.Service.Port)
 	}
 
 	slog.Debug("Starting service", "command", cfg.Service.Start.Command)
