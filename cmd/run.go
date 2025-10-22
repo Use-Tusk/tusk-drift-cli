@@ -205,6 +205,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			id, err := client.CreateDriftRun(context.Background(), req, authOptions)
 			if err != nil {
+				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
 				return fmt.Errorf("failed to create drift run: %w", err)
 			}
 
@@ -449,6 +450,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		fmt.Fprint(os.Stderr, executor.GetStartupFailureHelpMessage())
 		return fmt.Errorf("failed to start environment: %w", err)
 	}
 	defer func() {

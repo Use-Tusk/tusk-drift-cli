@@ -6,7 +6,9 @@ Tusk Drift is an API test record/replay system that lets you run realistic tests
 
 ![GitHub Release](https://img.shields.io/github/v/release/Use-Tusk/tusk-drift-cli)
 [![Build and test](https://github.com/Use-Tusk/tusk-drift-cli/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/Use-Tusk/tusk-drift-cli/actions/workflows/main.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Use-Tusk/tusk-drift-cli)](https://goreportcard.com/report/github.com/Use-Tusk/tusk-drift-cli)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<br>
 [![X URL](https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2Fusetusk&style=flat&logo=x&label=Tusk&color=BF40BF)](https://x.com/usetusk)
 [![Slack URL](https://img.shields.io/badge/slack-badge?style=flat&logo=slack&label=Tusk&color=BF40BF)](https://join.slack.com/t/tusk-community/shared_invite/zt-3fve1s7ie-NAAUn~UpHsf1m_2tdoGjsQ)
 
@@ -152,17 +154,6 @@ We recommend adding to your `.gitignore`:
 - `.tusk/results`
 - `.tusk/logs`
 - `.tusk/traces` (if you primarily intend to use Tusk Drift Cloud)
-
-## Troubleshooting
-
-- SDK connect failure: ensure your service uses the Tusk Drift SDK and is started by the CLI (so it sees `TUSK_MOCK_SOCKET`).
-- If your service starts using a Docker container, refer to [Docker configuration](docs/configuration.md#docker-support).
-- Port in use: the CLI will block if `service.port` is already taken. If using TCP to connect with SDK, use ensure `service.communication.tcp_port` is not in use.
-- Readiness: if `service.readiness_check.command` is omitted, the CLI waits ~10s before replay.
-- No mock found: check suite spans availability and matching rules; ensure traces exist for the trace being replayed.
-- For Cloud mode, ensure `service.id`, `tusk_api.url`, and `TUSK_API_KEY` or `tusk login` are set.
-
-If you have any questions, feel free to open an issue or reach us at [support@usetusk.ai](support@usetusk.ai).
 
 ## Resources
 
