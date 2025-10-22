@@ -69,9 +69,9 @@ jobs:
 
       - name: Update latest version
         run: |
-          echo "${{ github.ref_name }}" > gh-pages/latest.txt
+          echo "${{ github.ref_name }}" > latest.txt
 
-          cat > gh-pages/latest.json << EOF
+          cat > latest.json << EOF
           {
             "version": "${{ github.ref_name }}",
             "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
