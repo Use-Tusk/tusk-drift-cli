@@ -78,11 +78,48 @@ go test -v ./...
 go test -cover ./...
 ```
 
-## Releasing (maintainers)
+## Troubleshooting
+
+**"command not found" after go install:**
+
+- Add `$GOPATH/bin` to your PATH
+- Or use `go env GOPATH` to find the path
+
+**Module issues:**
+
+```bash
+go mod tidy    # Clean up dependencies
+```
+
+**Build cache issues:**
+
+```bash
+go clean -cache
+go clean -modcache
+```
+
+**Runtime issues:**
+
+- Port in use: stop any process on `service.port`.
+- Readiness failing: check `service.readiness_check.*` or add a health endpoint.
+- SDK connect failure: version mismatch or missing `TUSK_MOCK_SOCKET`.
+
+## For Maintainers
+
+### Development environment variables
+
+Create a `.env` file and add your environment variables.
+
+Testing auth to Tusk dev:
+
+- `TUSK_AUTH0_DOMAIN`
+- `TUSK_AUTH0_CLIENT_ID`
+
+### Releasing
 
 Releases are automated using [GoReleaser](https://goreleaser.com/) via GitHub Actions.
 
-### Creating a release
+#### Creating a release
 
 1. Tag the commit with a semantic version:
 
@@ -98,7 +135,7 @@ Releases are automated using [GoReleaser](https://goreleaser.com/) via GitHub Ac
    - Create a GitHub release with changelog
    - Upload all artifacts
 
-### Supported platforms
+#### Supported platforms
 
 The release workflow builds for:
 
@@ -112,7 +149,7 @@ All binaries include embedded version information:
 - `internal/version.BuildTime` — build timestamp  
 - `internal/version.GitCommit` — git commit hash
 
-### Building locally for distribution
+#### Building locally for distribution
 
 For local testing or manual builds:
 
@@ -140,29 +177,3 @@ To test the GoReleaser configuration locally:
 ```bash
 goreleaser release --snapshot --clean
 ```
-
-## Troubleshooting
-
-**"command not found" after go install:**
-
-- Add `$GOPATH/bin` to your PATH
-- Or use `go env GOPATH` to find the path
-
-**Module issues:**
-
-```bash
-go mod tidy    # Clean up dependencies
-```
-
-**Build cache issues:**
-
-```bash
-go clean -cache
-go clean -modcache
-```
-
-**Runtime issues:**
-
-- Port in use: stop any process on `service.port`.
-- Readiness failing: check `service.readiness_check.*` or add a health endpoint.
-- SDK connect failure: version mismatch or missing `TUSK_MOCK_SOCKET`.
