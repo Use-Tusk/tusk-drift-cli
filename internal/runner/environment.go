@@ -23,7 +23,6 @@ func (e *Executor) StartEnvironment() error {
 
 	logging.LogToService("Starting service...")
 	if err := e.StartService(); err != nil {
-		logging.LogToService(fmt.Sprintf("❌ Failed to start service: %v", err))
 		_ = e.StopServer()
 		return fmt.Errorf("start service: %w", err)
 	}

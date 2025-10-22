@@ -21,6 +21,9 @@ on:
         required: false
         default: '["1"]'
 
+permissions:
+  contents: read
+
 jobs:
   test-action:
     name: Tusk Test Runner

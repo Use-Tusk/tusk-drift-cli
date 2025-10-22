@@ -742,6 +742,12 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 		m.addServiceLog("Starting environment...")
 		if err := m.executor.StartEnvironment(); err != nil {
 			m.addServiceLog(fmt.Sprintf("❌ Failed to start environment: %v", err))
+
+			helpMsg := m.executor.GetStartupFailureHelpMessage()
+			for _, line := range strings.Split(strings.TrimSpace(helpMsg), "\n") {
+				m.addServiceLog(line)
+			}
+
 			return executionFailedMsg{reason: fmt.Sprintf("Failed to start environment: %v", err)}
 		}
 		m.serverStarted = true

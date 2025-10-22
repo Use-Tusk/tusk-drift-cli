@@ -143,6 +143,10 @@ func (e *Executor) SetSuiteSpans(spans []*core.Span) {
 	}
 }
 
+func (e *Executor) IsServiceLogsEnabled() bool {
+	return e.enableServiceLogs
+}
+
 func countPassedTests(results []TestResult) int {
 	count := 0
 	for _, result := range results {
@@ -151,6 +155,26 @@ func countPassedTests(results []TestResult) int {
 		}
 	}
 	return count
+}
+
+// GetStartupFailureHelpMessage returns a user-friendly help message when the service fails to start.
+// It explains how to use --enable-service-logs and shows where logs will be saved.
+func (e *Executor) GetStartupFailureHelpMessage() string {
+	var msg strings.Builder
+
+	msg.WriteString("\n")
+	msg.WriteString("💡 Tip: Use --enable-service-logs to see detailed service logs and diagnose startup issues.\n")
+	msg.WriteString("   Service logs show the stdout/stderr output from your service, which can help identify why the service failed to start.\n")
+
+	// Always show where logs would be saved
+	logsDir := utils.GetLogsDir()
+	if e.enableServiceLogs && e.serviceLogFile != nil {
+		msg.WriteString(fmt.Sprintf("📄 Service logs are available at: %s\n", e.serviceLogFile.Name()))
+	} else {
+		msg.WriteString(fmt.Sprintf("📁 Service logs will be saved to: %s/\n", logsDir))
+	}
+
+	return msg.String()
 }
 
 // RunSingleTest replays a single trace on the service under test.
