@@ -55,3 +55,35 @@ jobs:
     with:
       base64-subjects: "${{ needs.goreleaser.outputs.hashes }}"
       upload-assets: true
+
+  publish-version:
+    needs: [goreleaser]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Update latest version
+        run: |
+          echo "${{ github.ref_name }}" > gh-pages/latest.txt
+
+          cat > gh-pages/latest.json << EOF
+          {
+            "version": "${{ github.ref_name }}",
+            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "url": "https://github.com/Use-Tusk/tusk-drift-cli/releases/tag/${{ github.ref_name }}"
+          }
+          EOF
+
+      - name: Commit and push to gh-pages
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add latest.txt latest.json
+          git commit -m "Update latest version to ${{ github.ref_name }}" || echo "No changes to commit"
+          git push origin gh-pages
