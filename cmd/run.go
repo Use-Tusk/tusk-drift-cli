@@ -148,51 +148,23 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 
 		if ci {
-
-			// Validate required CI metadata
-			// TODO: this is GitHub-specific; add support for other CI providers
-			// TODO: we probably don't need all of these to be required
-			verifyCIMetadata := false
-			if verifyCIMetadata {
-				if commitSha == "" {
-					if v := os.Getenv("GITHUB_SHA"); v != "" {
-						commitSha = v
-					} else {
-						cmd.SilenceUsage = true
-						return fmt.Errorf("commit SHA is required in cloud mode. Set --commit-sha or GITHUB_SHA.")
-					}
-				}
-				if prNumber == "" {
-					if ref := os.Getenv("GITHUB_REF"); ref != "" {
-						// Only for pull request events
-						// Example: refs/pull/123/merge -> 123
-						prNumber = strings.Split(ref, "/")[2]
-					} else {
-						cmd.SilenceUsage = true
-						return fmt.Errorf("pull request number is required in cloud mode. Set --pr-number or GITHUB_PR_NUMBER.")
-					}
-				}
-				if _, err := strconv.Atoi(prNumber); err != nil {
-					cmd.SilenceUsage = true
-					return fmt.Errorf("pull request number must be a number: %w", err)
-				}
-				if branchName == "" {
-					if v := os.Getenv("GITHUB_REF_NAME"); v != "" {
-						branchName = v
-					} else {
-						cmd.SilenceUsage = true
-						return fmt.Errorf("branch name is required in cloud mode. Set --branch or GITHUB_REF_NAME.")
-					}
-				}
-				if externalCheckRunID == "" {
-					if v := os.Getenv("GITHUB_CHECK_RUN_ID"); v != "" {
-						externalCheckRunID = v
-					} else {
-						cmd.SilenceUsage = true
-						return fmt.Errorf("external check run ID is required in cloud mode. Set --external-check-run-id or GITHUB_CHECK_RUN_ID.")
-					}
-				}
+			ciMetadata := CIMetadata{
+				CommitSha:          commitSha,
+				PRNumber:           prNumber,
+				BranchName:         branchName,
+				ExternalCheckRunID: externalCheckRunID,
 			}
+
+			ciMetadata, err = validateCIMetadata(ciMetadata)
+			if err != nil {
+				cmd.SilenceUsage = true
+				return err
+			}
+
+			commitSha = ciMetadata.CommitSha
+			prNumber = ciMetadata.PRNumber
+			branchName = ciMetadata.BranchName
+			externalCheckRunID = ciMetadata.ExternalCheckRunID
 
 			req := &backend.CreateDriftRunRequest{
 				ObservableServiceId: cfg.Service.ID,
@@ -622,6 +594,92 @@ func makeLoadTestsFunc(
 		}
 		return tests, nil
 	}
+}
+
+type CIMetadata struct {
+	CommitSha          string
+	PRNumber           string
+	BranchName         string
+	ExternalCheckRunID string
+}
+
+// validateCIMetadata validates and populates CI metadata from environment variables
+// Only attempts to populate from environment variables when running in a recognized CI environment.
+func validateCIMetadata(metadata CIMetadata) (CIMetadata, error) {
+	// Note: we only detect GitHub/GitLab CI environments for now since they are the most common.
+	// Other CI providers can use flags to provide this metadata.
+	isGitHub := os.Getenv("GITHUB_ACTIONS") == "true"
+	isGitLab := os.Getenv("GITLAB_CI") == "true"
+	inCI := isGitHub || isGitLab
+
+	// Only populate from environment variables if in CI
+	if inCI {
+		if metadata.CommitSha == "" {
+			if isGitHub {
+				metadata.CommitSha = os.Getenv("GITHUB_SHA")
+			} else if isGitLab {
+				metadata.CommitSha = os.Getenv("CI_COMMIT_SHA")
+			}
+		}
+
+		if metadata.PRNumber == "" {
+			if isGitHub {
+				if ref := os.Getenv("GITHUB_REF"); ref != "" {
+					// Only for pull request events
+					// Example: refs/pull/123/merge -> 123
+					parts := strings.Split(ref, "/")
+					if len(parts) > 2 {
+						metadata.PRNumber = parts[2]
+					}
+				}
+			} else if isGitLab {
+				metadata.PRNumber = os.Getenv("CI_MERGE_REQUEST_IID")
+			}
+		}
+
+		if metadata.BranchName == "" {
+			if isGitHub {
+				metadata.BranchName = os.Getenv("GITHUB_REF_NAME")
+			} else if isGitLab {
+				// Prefer merge request source branch name when available
+				metadata.BranchName = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
+				if metadata.BranchName == "" {
+					metadata.BranchName = os.Getenv("CI_COMMIT_REF_NAME")
+				}
+			}
+		}
+
+		if metadata.ExternalCheckRunID == "" {
+			if isGitHub {
+				metadata.ExternalCheckRunID = os.Getenv("GITHUB_CHECK_RUN_ID")
+			} else if isGitLab {
+				// GitLab doesn't have an exact equivalent to check runs
+				// Use pipeline ID as the external identifier
+				metadata.ExternalCheckRunID = os.Getenv("CI_PIPELINE_ID")
+				if metadata.ExternalCheckRunID == "" {
+					metadata.ExternalCheckRunID = os.Getenv("CI_JOB_ID")
+				}
+			}
+		}
+	}
+
+	// Validate required fields (whether in CI or not)
+	if metadata.CommitSha == "" {
+		return metadata, fmt.Errorf("commit SHA is required. Provide via --commit-sha flag if not running in a CI environment.")
+	}
+	if metadata.PRNumber == "" {
+		return metadata, fmt.Errorf("pull/merge request number is required. Provide via --pr-number flag if not running in a CI environment.")
+	}
+	if _, err := strconv.Atoi(metadata.PRNumber); err != nil {
+		return metadata, fmt.Errorf("pull/merge request number must be an integer. You provided: '%s'.", metadata.PRNumber)
+	}
+	if metadata.BranchName == "" {
+		return metadata, fmt.Errorf("branch name is required. Provide via --branch flag if not running in a CI environment.")
+	}
+
+	// ExternalCheckRunID is optional - no validation needed
+
+	return metadata, nil
 }
 
 func stringPtr(s string) *string {
