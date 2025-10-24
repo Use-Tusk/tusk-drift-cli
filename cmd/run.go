@@ -301,6 +301,16 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	if !interactive {
+		if cloud && client != nil {
+			fmt.Fprintf(os.Stderr, "\n➤ Fetched %d tests from Tusk Drift Cloud", len(tests))
+		} else {
+			fmt.Fprintf(os.Stderr, "\n➤ Loaded %d tests from local traces", len(tests))
+		}
+
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+
 	// Provide suite spans before starting environment so SDK can mock pre-app calls
 	if !deferLoadTests {
 		if err := runner.PrepareAndSetSuiteSpans(
@@ -407,6 +417,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	if !interactive {
+		fmt.Fprintf(os.Stderr, "➤ Starting environment...\n")
+	}
+
 	// Beyond this point, we're running tests without the UI
 	if err = executor.StartEnvironment(); err != nil {
 		cmd.SilenceUsage = true
@@ -430,6 +444,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 			slog.Warn("Failed to stop environment", "error", stopErr)
 		}
 	}()
+
+	if !interactive {
+		fmt.Fprintf(os.Stderr, "  ✓ Environment ready\n")
+		fmt.Fprintf(os.Stderr, "➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency())
+	}
 
 	// Step 4: Run tests
 	results, err := executor.RunTests(tests)

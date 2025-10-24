@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
@@ -108,6 +109,8 @@ func PrepareAndSetSuiteSpans(
 			"Loading %d suite spans for matching (%d unique traces, %d pre-app-start)",
 			len(suiteSpans), uniqueTraceCount, preAppCount,
 		))
+	} else {
+		fmt.Fprintf(os.Stderr, "  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start)\n", len(suiteSpans), uniqueTraceCount, preAppCount)
 	}
 	slog.Debug("Prepared suite spans for matching",
 		"count", len(suiteSpans),
