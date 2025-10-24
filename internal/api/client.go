@@ -84,7 +84,8 @@ func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req 
 	}
 
 	if err := proto.Unmarshal(body, resp); err != nil {
-		return fmt.Errorf("decode proto: %w", err)
+		ct := httpResp.Header.Get("Content-Type")
+		return fmt.Errorf("decode proto: %w (status=%d content-type=%s first=%q...)", err, httpResp.StatusCode, ct, string(body[:min(120, len(body))]))
 	}
 
 	return nil
