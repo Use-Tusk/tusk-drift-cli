@@ -275,6 +275,67 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	return result, nil
 }
 
+func OutputSingleResult(result TestResult, test Test, format string, quiet bool) {
+	switch format {
+	case "json":
+		outputSingleJSON(result)
+	default:
+		outputSingleText(result, test, quiet)
+	}
+}
+
+func outputSingleJSON(result TestResult) {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	_ = encoder.Encode(result)
+}
+
+func outputSingleText(result TestResult, test Test, quiet bool) {
+	green := ""
+	orange := ""
+	yellow := ""
+	reset := ""
+
+	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
+		green = "\033[32m"
+		orange = "\033[38;5;208m"
+		yellow = "\033[33m"
+		reset = "\033[0m"
+	}
+
+	if result.Passed {
+		if !quiet {
+			fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s\n", green, result.TestID, result.Duration, reset)
+		}
+	} else {
+		fmt.Printf("%s● DEVIATION - %s (%dms)%s\n", orange, result.TestID, result.Duration, reset)
+
+		if len(result.Deviations) > 0 {
+			fmt.Printf("  Request: %s %s\n", test.Request.Method, test.Request.Path)
+			if len(test.Request.Headers) > 0 {
+				fmt.Printf("  Headers:\n")
+				for key, value := range test.Request.Headers {
+					fmt.Printf("    %s: %s\n", key, value)
+				}
+			}
+			if test.Request.Body != nil {
+				fmt.Printf("  Body: %v\n", test.Request.Body)
+			}
+			fmt.Println()
+
+			for _, dev := range result.Deviations {
+				fmt.Printf("  %sDeviation: %s%s\n", yellow, dev.Description, reset)
+				fmt.Printf("    Expected: %v\n", dev.Expected)
+				fmt.Printf("    Actual: %v\n", dev.Actual)
+			}
+		}
+
+		if result.Error != "" {
+			fmt.Printf("  Error: %s\n", result.Error)
+		}
+	}
+}
+
 func OutputResults(results []TestResult, tests []Test, format string, quiet bool) error {
 	switch format {
 	case "json":
@@ -284,16 +345,9 @@ func OutputResults(results []TestResult, tests []Test, format string, quiet bool
 	}
 }
 
-func outputJSON(results []TestResult) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(results)
-}
-
-func outputText(results []TestResult, tests []Test, quiet bool) error {
+func OutputResultsSummary(results []TestResult, format string, quiet bool) error {
 	passed := 0
 	failed := 0
-
 	for _, result := range results {
 		if result.Passed {
 			passed++
@@ -302,73 +356,59 @@ func outputText(results []TestResult, tests []Test, quiet bool) error {
 		}
 	}
 
+	if format == "json" {
+		fmt.Fprintf(os.Stderr, "\nTests: %d total, %d passed, %d failed\n",
+			len(results), passed, failed)
+
+		if failed > 0 {
+			return fmt.Errorf("%d tests with deviations", failed)
+		}
+		return nil
+	}
+
 	green := ""
 	orange := ""
-	yellow := ""
 	reset := ""
 
 	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
 		green = "\033[32m"
-		// This is a 256-color code for orange, previously we were using 16-color
-		// Some really old terminals may not support 256-color codes, but since we offer NO_COLOR it's ok to use it
 		orange = "\033[38;5;208m"
-		yellow = "\033[33m"
 		reset = "\033[0m"
 	}
 
-	fmt.Println()
-
-	// For quick test lookup by TraceID
-	testMap := make(map[string]Test)
-	for _, test := range tests {
-		testMap[test.TraceID] = test
-	}
-
-	for _, result := range results {
-		if result.Passed {
-			if !quiet {
-				fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s\n", green, result.TestID, result.Duration, reset)
-			}
-		} else {
-			fmt.Printf("%s● DEVIATION - %s (%dms)%s\n", orange, result.TestID, result.Duration, reset)
-
-			if len(result.Deviations) > 0 {
-				if test, exists := testMap[result.TestID]; exists {
-					fmt.Printf("  Request: %s %s\n", test.Request.Method, test.Request.Path)
-					if len(test.Request.Headers) > 0 {
-						fmt.Printf("  Headers:\n")
-						for key, value := range test.Request.Headers {
-							fmt.Printf("    %s: %s\n", key, value)
-						}
-					}
-					if test.Request.Body != nil {
-						fmt.Printf("  Body: %v\n", test.Request.Body)
-					}
-					fmt.Println()
-				}
-
-				for _, dev := range result.Deviations {
-					fmt.Printf("  %sDeviation: %s%s\n", yellow, dev.Description, reset)
-					fmt.Printf("    Expected: %v\n", dev.Expected)
-					fmt.Printf("    Actual: %v\n", dev.Actual)
-				}
-			}
-
-			if result.Error != "" {
-				fmt.Printf("  Error: %s\n", result.Error)
-			}
-		}
-	}
-
-	if quiet && failed > 0 {
-		fmt.Printf("\nTests: %d total, %s%d deviations%s\n", len(results), orange, failed, reset)
-	} else if !quiet {
-		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s\n\n", len(results), green, passed, reset, orange, failed, reset)
-	}
+	fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s\n\n",
+		len(results), green, passed, reset, orange, failed, reset)
 
 	if failed > 0 {
 		return fmt.Errorf("%d tests with deviations", failed)
 	}
 
 	return nil
+}
+
+func outputJSON(results []TestResult) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(results)
+}
+
+func outputText(results []TestResult, tests []Test, quiet bool) error {
+	fmt.Println()
+
+	// Build test map for lookups
+	testMap := make(map[string]Test)
+	for _, test := range tests {
+		testMap[test.TraceID] = test
+	}
+
+	for _, result := range results {
+		if test, exists := testMap[result.TestID]; exists {
+			outputSingleText(result, test, quiet)
+		} else {
+			// Fallback if test not found
+			outputSingleText(result, Test{}, quiet)
+		}
+	}
+
+	return OutputResultsSummary(results, "text", quiet)
 }

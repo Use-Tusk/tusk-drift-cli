@@ -213,6 +213,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		executor.SetResultsOutput(resultsDir)
 	}
+	if print {
+		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			runner.OutputSingleResult(res, test, outputFormat, quiet)
+		})
+	}
 
 	// Aggregation for results upload logs
 	var mu sync.Mutex
@@ -222,7 +227,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	// Per-test cloud upload while TUI is active (and also in headless)
 	if cloud && client != nil && ci {
+		// Save existing callback if print mode is enabled
+		existingCallback := func(res runner.TestResult, test runner.Test) {}
+		if print {
+			existingCallback = func(res runner.TestResult, test runner.Test) {
+				runner.OutputSingleResult(res, test, outputFormat, quiet)
+			}
+		}
+
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			if print {
+				existingCallback(res, test)
+			}
+
 			err := runner.UploadSingleTestResult(
 				context.Background(),
 				client,
@@ -447,7 +464,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	if !interactive {
 		fmt.Fprintf(os.Stderr, "  ✓ Environment ready\n")
-		fmt.Fprintf(os.Stderr, "➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency())
+		fmt.Fprintf(os.Stderr, "➤ Running %d tests (concurrency: %d)...\n\n", len(tests), executor.GetConcurrency())
 	}
 
 	// Step 4: Run tests
@@ -472,7 +489,16 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("test execution failed: %w", err)
 	}
 
-	outputErr := runner.OutputResults(results, tests, outputFormat, quiet)
+	_ = os.Stdout.Sync()
+	time.Sleep(1 * time.Millisecond)
+
+	var outputErr error
+	if print {
+		// Results already streamed, just print summary
+		outputErr = runner.OutputResultsSummary(results, outputFormat, quiet)
+	} else {
+		outputErr = runner.OutputResults(results, tests, outputFormat, quiet)
+	}
 
 	// Step 5: Upload results to backend if in cloud mode
 	// Do this before returning any error so CI status is always updated
