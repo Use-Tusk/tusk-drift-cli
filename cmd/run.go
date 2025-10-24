@@ -499,7 +499,7 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 		for {
 			req := &backend.GetAllTraceTestsRequest{
 				ObservableServiceId: serviceID,
-				PageSize:            100,
+				PageSize:            25,
 			}
 			if cur != "" {
 				req.PaginationCursor = &cur
@@ -526,7 +526,7 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 	for {
 		req := &backend.GetDriftRunTraceTestsRequest{
 			DriftRunId: driftRunID,
-			PageSize:   100,
+			PageSize:   25,
 		}
 		if cur != "" {
 			req.PaginationCursor = &cur
