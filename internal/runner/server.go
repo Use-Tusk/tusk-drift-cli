@@ -330,21 +330,21 @@ func (ms *Server) handleConnection(conn net.Conn) {
 		// Parse message length
 		messageLength := binary.BigEndian.Uint32(lengthBytes)
 		if messageLength > 1024*1024 { // 1MB limit
-			slog.Error("Message too large", "length", messageLength)
+			slog.Debug("Message too large", "length", messageLength)
 			return
 		}
 
 		// Read message data
 		messageData := make([]byte, messageLength)
 		if _, err := io.ReadFull(conn, messageData); err != nil {
-			slog.Error("Failed to read message data", "error", err)
+			slog.Debug("Failed to read message data", "error", err)
 			return
 		}
 
 		// Parse protobuf message
 		var sdkMsg core.SDKMessage
 		if err := proto.Unmarshal(messageData, &sdkMsg); err != nil {
-			slog.Error("Failed to parse protobuf message", "error", err)
+			slog.Debug("Failed to parse protobuf message", "error", err)
 			continue
 		}
 
@@ -357,7 +357,7 @@ func (ms *Server) handleConnection(conn net.Conn) {
 		case core.MessageType_MESSAGE_TYPE_INBOUND_SPAN:
 			ms.handleInboundReplaySpanProtobuf(&sdkMsg, conn)
 		default:
-			slog.Error("Unknown message type", "type", sdkMsg.Type)
+			slog.Debug("Unknown message type", "type", sdkMsg.Type)
 		}
 	}
 }
@@ -577,7 +577,7 @@ func (ms *Server) handleMockRequestProtobuf(msg *core.SDKMessage, conn net.Conn)
 	}
 
 	if err := ms.sendProtobufResponse(conn, cliMsg); err != nil {
-		slog.Error("Failed to send mock response", "error", err)
+		slog.Debug("Failed to send mock response", "error", err)
 	}
 }
 

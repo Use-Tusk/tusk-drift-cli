@@ -37,7 +37,7 @@ func NewClient(baseURL, apiKey string) *TuskClient {
 		baseURL: host + TestRunServiceAPIPath,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 60 * time.Second,
 		},
 	}
 }
@@ -78,13 +78,17 @@ func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req 
 	}
 	defer func() { _ = httpResp.Body.Close() }()
 
-	body, _ := io.ReadAll(httpResp.Body)
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return fmt.Errorf("read proto response body: %w", err)
+	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		return fmt.Errorf("http %d: %s", httpResp.StatusCode, string(body))
 	}
-
 	if err := proto.Unmarshal(body, resp); err != nil {
-		return fmt.Errorf("decode proto: %w", err)
+		ct := httpResp.Header.Get("Content-Type")
+		first := string(body[:min(120, len(body))])
+		return fmt.Errorf("decode proto: %w (status=%d content-type=%s first=%q...)", err, httpResp.StatusCode, ct, first)
 	}
 
 	return nil

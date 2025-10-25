@@ -31,6 +31,7 @@ var (
 	outputFormat      string
 	filter            string
 	quiet             bool
+	verbose           bool
 	concurrency       int
 	enableServiceLogs bool
 	saveResults       bool
@@ -68,6 +69,7 @@ func init() {
 	runCmd.Flags().StringVar(&outputFormat, "output-format", "text", `Output format (only works with --print): "text" (default) or "json" (single result) (choices: "text", "json")"`)
 	runCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
 	runCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Quiet output, only show deviations (only works with --print and --output-format text)")
+	runCmd.Flags().BoolVarP(&verbose, "verbose", "", false, "Verbose output, show detailed deviation information (only works with --print)")
 	runCmd.Flags().IntVar(&concurrency, "concurrency", 5, "Maximum number of concurrent tests. If set, overrides the concurrency setting in the config file.")
 	runCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
 	runCmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
@@ -213,6 +215,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		executor.SetResultsOutput(resultsDir)
 	}
+	if !interactive {
+		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			runner.OutputSingleResult(res, test, outputFormat, quiet, verbose)
+		})
+	}
 
 	// Aggregation for results upload logs
 	var mu sync.Mutex
@@ -222,7 +229,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	// Per-test cloud upload while TUI is active (and also in headless)
 	if cloud && client != nil && ci {
+		// Save existing callback if print mode is enabled
+		existingCallback := func(res runner.TestResult, test runner.Test) {}
+		if !interactive {
+			existingCallback = func(res runner.TestResult, test runner.Test) {
+				runner.OutputSingleResult(res, test, outputFormat, quiet, verbose)
+			}
+		}
+
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			if !interactive {
+				existingCallback(res, test)
+			}
+
 			err := runner.UploadSingleTestResult(
 				context.Background(),
 				client,
@@ -268,6 +287,8 @@ func runTests(cmd *cobra.Command, args []string) error {
 			traceTestID,
 			allCloudTraceTests || !ci,
 			filter,
+			false,
+			quiet,
 		)
 		tests, err = loadTests(context.Background())
 		if err != nil {
@@ -301,6 +322,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	if !interactive && !cloud {
+		fmt.Fprintf(os.Stderr, "\n➤ Loaded %d tests from local traces\n", len(tests))
+	}
+
 	// Provide suite spans before starting environment so SDK can mock pre-app calls
 	if !deferLoadTests {
 		if err := runner.PrepareAndSetSuiteSpans(
@@ -314,6 +339,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				TraceTestID: traceTestID,
 				AllTests:    tests,
 				Interactive: false,
+				Quiet:       quiet,
 			},
 			tests,
 		); err != nil {
@@ -321,25 +347,28 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	RegisterCleanup(func() {
+		slog.Debug("Cleanup: Cancelling running tests")
+		executor.CancelTests()
+
+		slog.Debug("Cleanup: Stopping services from signal handler")
+		if err := executor.StopEnvironment(); err != nil {
+			slog.Debug("Cleanup: Failed to stop environment", "error", err)
+		}
+
+		if cloud && client != nil {
+			statusReq := &backend.UpdateDriftRunCIStatusRequest{
+				DriftRunId:      driftRunID,
+				CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
+				CiStatusMessage: stringPtr("Test execution interrupted"),
+			}
+			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
+				slog.Debug("Failed to update CI status to FAILURE", "error", err)
+			}
+		}
+	})
+
 	if interactive {
-		RegisterCleanup(func() {
-			slog.Info("Cleanup: Stopping services from signal handler")
-			if err := executor.StopEnvironment(); err != nil {
-				slog.Warn("Cleanup: Failed to stop environment", "error", err)
-			}
-
-			if cloud && client != nil {
-				statusReq := &backend.UpdateDriftRunCIStatusRequest{
-					DriftRunId:      driftRunID,
-					CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
-					CiStatusMessage: stringPtr("Test execution interrupted"),
-				}
-				if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
-					slog.Warn("Failed to update CI status to FAILURE", "error", err)
-				}
-			}
-		})
-
 		initialLogs := []string{}
 		if driftRunID != "" {
 			initialLogs = append(initialLogs, fmt.Sprintf("Created Tusk Drift run: %s", driftRunID))
@@ -364,6 +393,8 @@ func runTests(cmd *cobra.Command, args []string) error {
 				traceTestID,
 				allCloudTraceTests || !ci,
 				filter,
+				true,
+				quiet,
 			),
 			OnBeforeEnvironmentStart: func(exec *runner.Executor, tests []runner.Test) error {
 				return runner.PrepareAndSetSuiteSpans(
@@ -407,6 +438,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	if !interactive && !quiet {
+		fmt.Fprintf(os.Stderr, "➤ Starting environment...\n")
+	}
+
 	// Beyond this point, we're running tests without the UI
 	if err = executor.StartEnvironment(); err != nil {
 		cmd.SilenceUsage = true
@@ -431,6 +466,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	if !interactive && !quiet {
+		fmt.Fprintf(os.Stderr, "  ✓ Environment ready\n")
+		fmt.Fprintf(os.Stderr, "➤ Running %d tests (concurrency: %d)...\n\n", len(tests), executor.GetConcurrency())
+	}
+
 	// Step 4: Run tests
 	results, err := executor.RunTests(tests)
 	if err != nil {
@@ -453,7 +493,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("test execution failed: %w", err)
 	}
 
-	outputErr := runner.OutputResults(results, tests, outputFormat, quiet)
+	_ = os.Stdout.Sync()
+	time.Sleep(1 * time.Millisecond)
+
+	var outputErr error
+	if !interactive {
+		// Results already streamed, just print summary
+		outputErr = runner.OutputResultsSummary(results, outputFormat, quiet)
+	}
 
 	// Step 5: Upload results to backend if in cloud mode
 	// Do this before returning any error so CI status is always updated
@@ -478,7 +525,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID, driftRunID, traceTestID string, allCloud bool) ([]runner.Test, error) {
+func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID, driftRunID, traceTestID string, allCloud bool, interactive bool, quiet bool) ([]runner.Test, error) {
 	if traceTestID != "" {
 		req := &backend.GetTraceTestRequest{
 			ObservableServiceId: serviceID,
@@ -491,15 +538,23 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 		return runner.ConvertTraceTestsToRunnerTests([]*backend.TraceTest{resp.TraceTest}), nil
 	}
 
+	var progress *utils.ProgressBar
+	if !interactive && !quiet {
+		progress = utils.NewProgressBar("Fetching tests")
+		progress.Start()
+		defer progress.Stop()
+	}
+
+	var (
+		all []*backend.TraceTest
+		cur string
+	)
+
 	if allCloud {
-		var (
-			all []*backend.TraceTest
-			cur string
-		)
 		for {
 			req := &backend.GetAllTraceTestsRequest{
 				ObservableServiceId: serviceID,
-				PageSize:            100,
+				PageSize:            25,
 			}
 			if cur != "" {
 				req.PaginationCursor = &cur
@@ -508,41 +563,62 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
 			}
+
+			// Set total on first request
+			if progress != nil && cur == "" {
+				progress.SetTotal(int(resp.TotalCount))
+			}
+
 			all = append(all, resp.TraceTests...)
+
+			if progress != nil {
+				progress.SetCurrent(len(all))
+			}
+
 			if next := resp.GetNextCursor(); next != "" {
 				cur = next
 				continue
 			}
 			break
 		}
-		logging.LogToService(fmt.Sprintf("Fetched %d trace tests from backend", len(all)))
-		return runner.ConvertTraceTestsToRunnerTests(all), nil
+	} else {
+		for {
+			req := &backend.GetDriftRunTraceTestsRequest{
+				DriftRunId: driftRunID,
+				PageSize:   25,
+			}
+			if cur != "" {
+				req.PaginationCursor = &cur
+			}
+			resp, err := client.GetDriftRunTraceTests(ctx, req, auth)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
+			}
+
+			// Set total on first request
+			if progress != nil && cur == "" {
+				progress.SetTotal(int(resp.TotalCount))
+			}
+
+			all = append(all, resp.TraceTests...)
+
+			if progress != nil {
+				progress.SetCurrent(len(all))
+			}
+
+			if next := resp.GetNextCursor(); next != "" {
+				cur = next
+				continue
+			}
+			break
+		}
 	}
 
-	var (
-		all []*backend.TraceTest
-		cur string
-	)
-	for {
-		req := &backend.GetDriftRunTraceTestsRequest{
-			DriftRunId: driftRunID,
-			PageSize:   100,
-		}
-		if cur != "" {
-			req.PaginationCursor = &cur
-		}
-		resp, err := client.GetDriftRunTraceTests(ctx, req, auth)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
-		}
-		all = append(all, resp.TraceTests...)
-		if next := resp.GetNextCursor(); next != "" {
-			cur = next
-			continue
-		}
-		break
+	if progress != nil {
+		progress.Finish(fmt.Sprintf("➤ Fetched %d trace tests from Tusk Drift Cloud", len(all)))
+	} else {
+		logging.LogToService(fmt.Sprintf("Fetched %d trace tests from Tusk Drift Cloud", len(all)))
 	}
-	logging.LogToService(fmt.Sprintf("Fetched %d trace tests from backend", len(all)))
 	return runner.ConvertTraceTestsToRunnerTests(all), nil
 }
 
@@ -556,6 +632,8 @@ func makeLoadTestsFunc(
 	traceTestID string,
 	allCloud bool,
 	filter string,
+	interactive bool,
+	quiet bool,
 ) func(ctx context.Context) ([]runner.Test, error) {
 	return func(ctx context.Context) ([]runner.Test, error) {
 		var tests []runner.Test
@@ -565,7 +643,7 @@ func makeLoadTestsFunc(
 			if traceID != "" && traceTestID == "" {
 				return nil, fmt.Errorf("specify --trace-test-id to run against a single trace test in Tusk Drift Cloud")
 			}
-			tests, err = loadCloudTests(ctx, client, auth, serviceID, driftRunID, traceTestID, allCloud)
+			tests, err = loadCloudTests(ctx, client, auth, serviceID, driftRunID, traceTestID, allCloud, interactive, quiet)
 			if err != nil {
 				return nil, err
 			}

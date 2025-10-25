@@ -557,63 +557,28 @@ func TestExecutor_WaitForSpanData(t *testing.T) {
 	assert.Less(t, duration, 200*time.Millisecond)
 }
 
-func TestOutputResults_JSON(t *testing.T) {
-	results := []TestResult{
-		{TestID: "test1", Passed: true, Duration: 100},
-		{TestID: "test2", Passed: false, Duration: 200, Error: "test error"},
-	}
-
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := OutputResults(results, nil, "json", false)
-
-	_ = w.Close()
-	os.Stdout = oldStdout
-
-	output, _ := io.ReadAll(r)
-
-	assert.NoError(t, err)
-
-	// Verify JSON output
-	var outputResults []TestResult
-	err = json.Unmarshal(output, &outputResults)
-	assert.NoError(t, err)
-	assert.Len(t, outputResults, 2)
-	assert.Equal(t, "test1", outputResults[0].TestID)
-	assert.True(t, outputResults[0].Passed)
-	assert.Equal(t, "test2", outputResults[1].TestID)
-	assert.False(t, outputResults[1].Passed)
-}
-
-func TestOutputResults_Text_WithFailures(t *testing.T) {
-	results := []TestResult{
-		{
-			TestID:   "test1",
-			Passed:   false,
-			Duration: 100,
-			Deviations: []Deviation{
-				{
-					Field:       "response.status",
-					Expected:    200,
-					Actual:      404,
-					Description: "Status code mismatch",
-				},
+func TestOutputSingleResult_Text_WithFailures_Verbose(t *testing.T) {
+	result := TestResult{
+		TestID:   "test1",
+		Passed:   false,
+		Duration: 100,
+		Deviations: []Deviation{
+			{
+				Field:       "response.status",
+				Expected:    200,
+				Actual:      404,
+				Description: "Status code mismatch",
 			},
 		},
 	}
 
-	tests := []Test{
-		{
-			TraceID: "test1",
-			Request: Request{
-				Method:  "GET",
-				Path:    "/api/test",
-				Headers: map[string]string{"Authorization": "Bearer token"},
-				Body:    map[string]string{"key": "value"},
-			},
+	test := Test{
+		TraceID: "test1",
+		Request: Request{
+			Method:  "GET",
+			Path:    "/api/test",
+			Headers: map[string]string{"Authorization": "Bearer token"},
+			Body:    map[string]string{"key": "value"},
 		},
 	}
 
@@ -622,7 +587,7 @@ func TestOutputResults_Text_WithFailures(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := OutputResults(results, tests, "text", false)
+	OutputSingleResult(result, test, "text", false, true) // verbose=true
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -630,7 +595,6 @@ func TestOutputResults_Text_WithFailures(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Error(t, err) // Should error when tests fail
 	assert.Contains(t, outputStr, "● DEVIATION - test1")
 	assert.Contains(t, outputStr, "GET /api/test")
 	assert.Contains(t, outputStr, "Authorization: Bearer token")
@@ -638,10 +602,9 @@ func TestOutputResults_Text_WithFailures(t *testing.T) {
 	assert.Contains(t, outputStr, "Deviation: Status code mismatch")
 	assert.Contains(t, outputStr, "Expected: 200")
 	assert.Contains(t, outputStr, "Actual: 404")
-	assert.Contains(t, outputStr, "1 deviations")
 }
 
-func TestOutputResults_Text_WithPasses(t *testing.T) {
+func TestOutputSingleResult_Text_WithPasses(t *testing.T) {
 	results := []TestResult{
 		{TestID: "test1", Passed: true, Duration: 100},
 		{TestID: "test2", Passed: true, Duration: 150},
@@ -651,7 +614,9 @@ func TestOutputResults_Text_WithPasses(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := OutputResults(results, nil, "text", false)
+	for _, result := range results {
+		OutputSingleResult(result, Test{TraceID: result.TestID}, "text", false, false)
+	}
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -659,14 +624,11 @@ func TestOutputResults_Text_WithPasses(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.NoError(t, err)
 	assert.Contains(t, outputStr, "✓ NO DEVIATION - test1")
 	assert.Contains(t, outputStr, "✓ NO DEVIATION - test2")
-	assert.Contains(t, outputStr, "2 passed")
-	assert.Contains(t, outputStr, "0 deviations")
 }
 
-func TestOutputResults_Text_Quiet_OnlyFailures(t *testing.T) {
+func TestOutputSingleResult_Text_Quiet_OnlyFailures(t *testing.T) {
 	results := []TestResult{
 		{TestID: "test1", Passed: true, Duration: 100},
 		{TestID: "test2", Passed: false, Duration: 200, Error: "error"},
@@ -676,7 +638,9 @@ func TestOutputResults_Text_Quiet_OnlyFailures(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := OutputResults(results, nil, "text", true) // quiet=true
+	for _, result := range results {
+		OutputSingleResult(result, Test{TraceID: result.TestID}, "text", true, false) // quiet=true
+	}
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -684,19 +648,54 @@ func TestOutputResults_Text_Quiet_OnlyFailures(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Error(t, err)                               // Should error when tests fail
 	assert.NotContains(t, outputStr, "✓ NO DEVIATION") // Should not show passed tests in quiet mode
 	assert.Contains(t, outputStr, "● DEVIATION - test2")
-	assert.Contains(t, outputStr, "1 deviations")
 }
 
-func TestOutputResults_Text_WithError(t *testing.T) {
-	results := []TestResult{
-		{
-			TestID:   "test1",
-			Passed:   false,
-			Duration: 100,
-			Error:    "Connection refused",
+func TestOutputSingleResult_Text_WithError(t *testing.T) {
+	result := TestResult{
+		TestID:   "test1",
+		Passed:   false,
+		Duration: 100,
+		Error:    "Connection refused",
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	OutputSingleResult(result, Test{TraceID: "test1"}, "text", false, false)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	output, _ := io.ReadAll(r)
+	outputStr := string(output)
+
+	assert.Contains(t, outputStr, "● DEVIATION - test1")
+	assert.Contains(t, outputStr, "Error: Connection refused")
+}
+
+func TestOutputSingleResult_Text_QuietSuppressesVerbose(t *testing.T) {
+	result := TestResult{
+		TestID:   "test1",
+		Passed:   false,
+		Duration: 100,
+		Deviations: []Deviation{
+			{
+				Field:       "response.status",
+				Expected:    200,
+				Actual:      404,
+				Description: "Status code mismatch",
+			},
+		},
+	}
+
+	test := Test{
+		TraceID: "test1",
+		Request: Request{
+			Method: "GET",
+			Path:   "/api/test",
 		},
 	}
 
@@ -704,7 +703,7 @@ func TestOutputResults_Text_WithError(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := OutputResults(results, nil, "text", false)
+	OutputSingleResult(result, test, "text", true, true) // Both quiet and verbose
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -712,9 +711,9 @@ func TestOutputResults_Text_WithError(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Error(t, err)
 	assert.Contains(t, outputStr, "● DEVIATION - test1")
-	assert.Contains(t, outputStr, "Error: Connection refused")
+	assert.NotContains(t, outputStr, "GET /api/test") // Details should be suppressed by quiet
+	assert.NotContains(t, outputStr, "Expected:")
 }
 
 func TestExecutor_RunSingleTest_WithServer(t *testing.T) {

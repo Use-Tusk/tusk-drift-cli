@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ type Executor struct {
 	ResultsFile       string // Will be set by the run command if --save-results is true
 	onTestCompleted   func(TestResult, Test)
 	suiteSpans        []*core.Span
+	cancelTests       context.CancelFunc
 }
 
 func NewExecutor() *Executor {
@@ -57,6 +59,12 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 		return []TestResult{}, nil
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Store cancel function so signal handler can call it
+	e.cancelTests = cancel
+
 	testChan := make(chan Test, len(tests))
 	resultChan := make(chan TestResult, len(tests))
 
@@ -64,20 +72,30 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 		go func(workerID int) {
 			for test := range testChan {
 				slog.Debug("Worker starting test", "workerID", workerID, "testID", test.TraceID)
-
-				result, err := e.RunSingleTest(test)
-				if err != nil {
-					result = TestResult{
-						TestID: test.TraceID,
-						Passed: false,
-						Error:  err.Error(),
+				select {
+				case <-ctx.Done():
+					// Context cancelled - mark as cancelled, not deviation
+					resultChan <- TestResult{
+						TestID:    test.TraceID,
+						Passed:    false,
+						Cancelled: true,
+						Error:     "Test execution interrupted",
 					}
-					slog.Error("Worker test failed", "workerID", workerID, "testID", test.TraceID, "error", err)
-				} else {
-					slog.Debug("Worker test completed", "workerID", workerID, "testID", test.TraceID, "passed", result.Passed)
+					return
+				default:
+					result, err := e.RunSingleTest(test)
+					if err != nil {
+						result = TestResult{
+							TestID: test.TraceID,
+							Passed: false,
+							Error:  err.Error(),
+						}
+						slog.Debug("Worker test failed", "workerID", workerID, "testID", test.TraceID, "error", err)
+					} else {
+						slog.Debug("Worker test completed", "workerID", workerID, "testID", test.TraceID, "passed", result.Passed)
+					}
+					resultChan <- result
 				}
-
-				resultChan <- result
 			}
 		}(workerID)
 	}
@@ -88,9 +106,22 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 	close(testChan)
 
 	results := make([]TestResult, 0, len(tests))
-	for range len(tests) {
-		result := <-resultChan
-		results = append(results, result)
+	for i := 0; i < len(tests); i++ {
+		select {
+		case result := <-resultChan:
+			results = append(results, result)
+		case <-ctx.Done():
+			// Interrupted - mark remaining tests as cancelled
+			for j := i; j < len(tests); j++ {
+				results = append(results, TestResult{
+					TestID:    tests[j].TraceID,
+					Passed:    false,
+					Cancelled: true,
+					Error:     "Test execution interrupted",
+				})
+			}
+			return results, nil
+		}
 	}
 
 	slog.Debug("Completed concurrent test execution",
@@ -140,6 +171,12 @@ func (e *Executor) SetSuiteSpans(spans []*core.Span) {
 	e.suiteSpans = spans
 	if e.server != nil && len(spans) > 0 {
 		e.server.SetSuiteSpans(spans)
+	}
+}
+
+func (e *Executor) CancelTests() {
+	if e.cancelTests != nil {
+		e.cancelTests()
 	}
 }
 
@@ -275,31 +312,24 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	return result, nil
 }
 
-func OutputResults(results []TestResult, tests []Test, format string, quiet bool) error {
+func OutputSingleResult(result TestResult, test Test, format string, quiet bool, verbose bool) {
 	switch format {
 	case "json":
-		return outputJSON(results)
+		outputSingleJSON(result)
 	default:
-		return outputText(results, tests, quiet)
+		outputSingleText(result, test, quiet, verbose)
 	}
 }
 
-func outputJSON(results []TestResult) error {
+func outputSingleJSON(result TestResult) {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(results)
+	_ = encoder.Encode(result)
 }
 
-func outputText(results []TestResult, tests []Test, quiet bool) error {
-	passed := 0
-	failed := 0
-
-	for _, result := range results {
-		if result.Passed {
-			passed++
-		} else {
-			failed++
-		}
+func outputSingleText(result TestResult, test Test, quiet bool, verbose bool) {
+	if result.Cancelled {
+		return
 	}
 
 	green := ""
@@ -309,61 +339,88 @@ func outputText(results []TestResult, tests []Test, quiet bool) error {
 
 	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
 		green = "\033[32m"
-		// This is a 256-color code for orange, previously we were using 16-color
-		// Some really old terminals may not support 256-color codes, but since we offer NO_COLOR it's ok to use it
 		orange = "\033[38;5;208m"
 		yellow = "\033[33m"
 		reset = "\033[0m"
 	}
 
-	fmt.Println()
+	if result.Passed {
+		if !quiet {
+			fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s\n", green, result.TestID, result.Duration, reset)
+		}
+	} else {
+		fmt.Printf("%s● DEVIATION - %s (%dms)%s\n", orange, result.TestID, result.Duration, reset)
 
-	// For quick test lookup by TraceID
-	testMap := make(map[string]Test)
-	for _, test := range tests {
-		testMap[test.TraceID] = test
+		if verbose && !quiet && len(result.Deviations) > 0 {
+			fmt.Printf("  Request: %s %s\n", test.Request.Method, test.Request.Path)
+			if len(test.Request.Headers) > 0 {
+				fmt.Printf("  Headers:\n")
+				for key, value := range test.Request.Headers {
+					fmt.Printf("    %s: %s\n", key, value)
+				}
+			}
+			if test.Request.Body != nil {
+				fmt.Printf("  Body: %v\n", test.Request.Body)
+			}
+			fmt.Println()
+
+			for _, dev := range result.Deviations {
+				fmt.Printf("  %sDeviation: %s%s\n", yellow, dev.Description, reset)
+				fmt.Printf("    Expected: %v\n", dev.Expected)
+				fmt.Printf("    Actual: %v\n", dev.Actual)
+			}
+		}
+
+		if result.Error != "" {
+			fmt.Printf("  Error: %s\n", result.Error)
+		}
 	}
+}
+
+func OutputResultsSummary(results []TestResult, format string, quiet bool) error {
+	passed := 0
+	failed := 0
+	cancelled := 0
 
 	for _, result := range results {
-		if result.Passed {
-			if !quiet {
-				fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s\n", green, result.TestID, result.Duration, reset)
-			}
-		} else {
-			fmt.Printf("%s● DEVIATION - %s (%dms)%s\n", orange, result.TestID, result.Duration, reset)
-
-			if len(result.Deviations) > 0 {
-				if test, exists := testMap[result.TestID]; exists {
-					fmt.Printf("  Request: %s %s\n", test.Request.Method, test.Request.Path)
-					if len(test.Request.Headers) > 0 {
-						fmt.Printf("  Headers:\n")
-						for key, value := range test.Request.Headers {
-							fmt.Printf("    %s: %s\n", key, value)
-						}
-					}
-					if test.Request.Body != nil {
-						fmt.Printf("  Body: %v\n", test.Request.Body)
-					}
-					fmt.Println()
-				}
-
-				for _, dev := range result.Deviations {
-					fmt.Printf("  %sDeviation: %s%s\n", yellow, dev.Description, reset)
-					fmt.Printf("    Expected: %v\n", dev.Expected)
-					fmt.Printf("    Actual: %v\n", dev.Actual)
-				}
-			}
-
-			if result.Error != "" {
-				fmt.Printf("  Error: %s\n", result.Error)
-			}
+		switch {
+		case result.Cancelled:
+			cancelled++
+		case result.Passed:
+			passed++
+		default:
+			failed++
 		}
 	}
 
-	if quiet && failed > 0 {
-		fmt.Printf("\nTests: %d total, %s%d deviations%s\n", len(results), orange, failed, reset)
-	} else if !quiet {
-		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s\n\n", len(results), green, passed, reset, orange, failed, reset)
+	if format == "json" {
+		fmt.Fprintf(os.Stderr, "\nTests: %d total, %d passed, %d failed\n",
+			len(results), passed, failed)
+
+		if failed > 0 {
+			return fmt.Errorf("%d tests with deviations", failed)
+		}
+		return nil
+	}
+
+	green := ""
+	orange := ""
+	reset := ""
+	gray := ""
+
+	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
+		green = "\033[32m"
+		orange = "\033[38;5;208m"
+		gray = "\033[90m"
+		reset = "\033[0m"
+	}
+
+	if cancelled > 0 {
+		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s, %s%d cancelled%s\n\n",
+			len(results), green, passed, reset, orange, failed, reset, gray, cancelled, reset)
+	} else {
+		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s\n\n",
+			len(results), green, passed, reset, orange, failed, reset)
 	}
 
 	if failed > 0 {

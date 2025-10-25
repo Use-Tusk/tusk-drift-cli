@@ -154,7 +154,7 @@ func runCleanup() {
 	cleanupMutex.Lock()
 	defer cleanupMutex.Unlock()
 
-	slog.Info("Running cleanup functions", "count", len(cleanupFuncs))
+	slog.Debug("Running cleanup functions", "count", len(cleanupFuncs))
 	for i, fn := range cleanupFuncs {
 		slog.Debug("Running cleanup function", "index", i)
 		fn()
@@ -170,7 +170,7 @@ func setupSignalHandling() {
 
 		go func() {
 			sig := <-c
-			slog.Info("Received signal, cleaning up", "signal", sig)
+			fmt.Fprintf(os.Stderr, "Received %s signal, cleaning up\n", sig)
 			runCleanup()
 			os.Exit(1)
 		}()

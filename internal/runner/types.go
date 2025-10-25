@@ -36,6 +36,7 @@ type Response struct {
 type TestResult struct {
 	TestID     string      `json:"test_id"`
 	Passed     bool        `json:"passed"`
+	Cancelled  bool        `json:"cancelled"`
 	Duration   int         `json:"duration"` // In milliseconds
 	Deviations []Deviation `json:"deviations,omitempty"`
 	Error      string      `json:"error,omitempty"`
