@@ -72,7 +72,7 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 						Passed: false,
 						Error:  err.Error(),
 					}
-					slog.Error("Worker test failed", "workerID", workerID, "testID", test.TraceID, "error", err)
+					slog.Debug("Worker test failed", "workerID", workerID, "testID", test.TraceID, "error", err)
 				} else {
 					slog.Debug("Worker test completed", "workerID", workerID, "testID", test.TraceID, "passed", result.Passed)
 				}
@@ -275,12 +275,12 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	return result, nil
 }
 
-func OutputSingleResult(result TestResult, test Test, format string, quiet bool) {
+func OutputSingleResult(result TestResult, test Test, format string, quiet bool, verbose bool) {
 	switch format {
 	case "json":
 		outputSingleJSON(result)
 	default:
-		outputSingleText(result, test, quiet)
+		outputSingleText(result, test, quiet, verbose)
 	}
 }
 
@@ -290,7 +290,7 @@ func outputSingleJSON(result TestResult) {
 	_ = encoder.Encode(result)
 }
 
-func outputSingleText(result TestResult, test Test, quiet bool) {
+func outputSingleText(result TestResult, test Test, quiet bool, verbose bool) {
 	green := ""
 	orange := ""
 	yellow := ""
@@ -310,7 +310,7 @@ func outputSingleText(result TestResult, test Test, quiet bool) {
 	} else {
 		fmt.Printf("%s● DEVIATION - %s (%dms)%s\n", orange, result.TestID, result.Duration, reset)
 
-		if len(result.Deviations) > 0 {
+		if verbose && !quiet && len(result.Deviations) > 0 {
 			fmt.Printf("  Request: %s %s\n", test.Request.Method, test.Request.Path)
 			if len(test.Request.Headers) > 0 {
 				fmt.Printf("  Headers:\n")
@@ -333,15 +333,6 @@ func outputSingleText(result TestResult, test Test, quiet bool) {
 		if result.Error != "" {
 			fmt.Printf("  Error: %s\n", result.Error)
 		}
-	}
-}
-
-func OutputResults(results []TestResult, tests []Test, format string, quiet bool) error {
-	switch format {
-	case "json":
-		return outputJSON(results)
-	default:
-		return outputText(results, tests, quiet)
 	}
 }
 
@@ -384,31 +375,4 @@ func OutputResultsSummary(results []TestResult, format string, quiet bool) error
 	}
 
 	return nil
-}
-
-func outputJSON(results []TestResult) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(results)
-}
-
-func outputText(results []TestResult, tests []Test, quiet bool) error {
-	fmt.Println()
-
-	// Build test map for lookups
-	testMap := make(map[string]Test)
-	for _, test := range tests {
-		testMap[test.TraceID] = test
-	}
-
-	for _, result := range results {
-		if test, exists := testMap[result.TestID]; exists {
-			outputSingleText(result, test, quiet)
-		} else {
-			// Fallback if test not found
-			outputSingleText(result, Test{}, quiet)
-		}
-	}
-
-	return OutputResultsSummary(results, "text", quiet)
 }

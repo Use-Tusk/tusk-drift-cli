@@ -26,6 +26,7 @@ type SuiteSpanOptions struct {
 	// Local options
 	AllTests    []Test // All tests loaded (for extracting spans)
 	Interactive bool   // Whether to log errors interactively
+	Quiet       bool   // Whether to suppress progress messages (only works with --print)
 }
 
 // BuildSuiteSpansForRun builds the suite spans for the run.
@@ -40,7 +41,7 @@ func BuildSuiteSpansForRun(
 
 	// If running a single cloud trace test, fetch all suite spans
 	if opts.IsCloudMode && opts.Client != nil && opts.TraceTestID != "" {
-		all, err := fetchAllSuiteSpans(ctx, opts.Client, opts.AuthOptions, opts.ServiceID)
+		all, err := fetchAllSuiteSpans(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 		if err != nil {
 			return nil, 0, 0, fmt.Errorf("fetch all suite spans: %w", err)
 		}
@@ -67,7 +68,7 @@ func BuildSuiteSpansForRun(
 	// Layer on pre-app-start spans if available
 	// Prepend these spans so they get considered first
 	if opts.IsCloudMode && opts.Client != nil {
-		preAppStartSpans, err := FetchPreAppStartSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID)
+		preAppStartSpans, err := FetchPreAppStartSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 		if err == nil && len(preAppStartSpans) > 0 {
 			suiteSpans = append(preAppStartSpans, suiteSpans...)
 		}
@@ -109,7 +110,7 @@ func PrepareAndSetSuiteSpans(
 			"Loading %d suite spans for matching (%d unique traces, %d pre-app-start)",
 			len(suiteSpans), uniqueTraceCount, preAppCount,
 		))
-	} else {
+	} else if !opts.Quiet {
 		fmt.Fprintf(os.Stderr, "  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start)\n", len(suiteSpans), uniqueTraceCount, preAppCount)
 	}
 	slog.Debug("Prepared suite spans for matching",
@@ -129,7 +130,16 @@ func FetchPreAppStartSpansFromCloud(
 	client *api.TuskClient,
 	auth api.AuthOptions,
 	serviceID string,
+	interactive bool,
+	quiet bool,
 ) ([]*core.Span, error) {
+	var progress *utils.ProgressBar
+	if !interactive && !quiet {
+		progress = utils.NewProgressBar("Fetching pre-app-start spans")
+		progress.Start()
+		defer progress.Stop()
+	}
+
 	var all []*core.Span
 	cur := ""
 	for {
@@ -145,13 +155,26 @@ func FetchPreAppStartSpansFromCloud(
 		if err != nil {
 			return nil, fmt.Errorf("get pre-app-start spans: %w", err)
 		}
+
 		all = append(all, resp.Spans...)
+
+		if progress != nil {
+			progress.SetCurrent(len(all))
+		}
+
 		if next := resp.GetNextCursor(); next != "" {
 			cur = next
 			continue
 		}
 		break
 	}
+
+	if progress != nil && len(all) > 0 {
+		progress.Finish(fmt.Sprintf("✓ Loaded %d pre-app-start spans", len(all)))
+	} else if progress != nil {
+		progress.Stop()
+	}
+
 	return all, nil
 }
 
@@ -192,9 +215,21 @@ func fetchAllSuiteSpans(
 	client *api.TuskClient,
 	auth api.AuthOptions,
 	serviceID string,
+	interactive bool,
+	quiet bool,
 ) ([]*core.Span, error) {
+	var progress *utils.ProgressBar
+	if !interactive && !quiet {
+		progress = utils.NewProgressBar("Fetching suite spans")
+		progress.Start()
+		defer progress.Stop()
+	}
+
 	var spans []*core.Span
 	cur := ""
+	totalTests := 0
+	fetchedTests := 0
+
 	for {
 		req := &backend.GetAllTraceTestsRequest{
 			ObservableServiceId: serviceID,
@@ -207,17 +242,35 @@ func fetchAllSuiteSpans(
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
 		}
+
+		// Set total on first request
+		if progress != nil && cur == "" {
+			totalTests = int(resp.TotalCount)
+			progress.SetTotal(totalTests)
+		}
+
 		for _, tt := range resp.TraceTests {
 			if len(tt.Spans) > 0 {
 				spans = append(spans, tt.Spans...)
 			}
 		}
+
+		fetchedTests += len(resp.TraceTests)
+		if progress != nil {
+			progress.SetCurrent(fetchedTests)
+		}
+
 		if next := resp.GetNextCursor(); next != "" {
 			cur = next
 			continue
 		}
 		break
 	}
+
+	if progress != nil {
+		progress.Finish(fmt.Sprintf("✓ Loaded %d suite spans from %d tests", len(spans), fetchedTests))
+	}
+
 	return spans, nil
 }
 
