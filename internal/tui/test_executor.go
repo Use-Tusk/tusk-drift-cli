@@ -47,6 +47,8 @@ type testExecutorModel struct {
 	results           []runner.TestResult
 	errors            []error
 	currentTestTraces map[string]bool
+	pendingTests      []int
+	nextTestIndex     int
 
 	// Components
 	testTable *components.TestTableComponent
@@ -257,6 +259,8 @@ func newTestExecutorModel(tests []runner.Test, executor *runner.Executor, opts *
 		completedCount:    0,
 		results:           make([]runner.TestResult, len(tests)),
 		errors:            make([]error, len(tests)),
+		pendingTests:      make([]int, 0),
+		nextTestIndex:     0,
 		testTable:         components.NewTestTableComponent(tests),
 		logPanel:          components.NewLogPanelComponent(),
 		header:            components.NewTestExecutionHeaderComponent(len(tests)),
@@ -422,9 +426,22 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		cmds = append(cmds, m.updateStats())
 
+		if m.nextTestIndex < len(m.tests) {
+			nextIndex := m.nextTestIndex
+			m.nextTestIndex++
+			cmds = append(cmds, func() tea.Msg {
+				return testStartedMsg{index: nextIndex, test: m.tests[nextIndex]}
+			})
+		}
+
 		if m.completedCount >= len(m.tests) {
+			if m.opts != nil && m.opts.OnAllCompleted != nil {
+				m.opts.OnAllCompleted(m.results, m.tests, m.executor)
+			}
 			cmds = append(cmds, m.completeExecution())
 		}
+
+		return m, tea.Batch(cmds...)
 
 	case executionCompleteMsg:
 		m.state = stateCompleted
@@ -766,15 +783,15 @@ func (m *testExecutorModel) startConcurrentTests() tea.Cmd {
 		concurrency := m.executor.GetConcurrency()
 		m.addServiceLog(fmt.Sprintf("🚀 Starting %d tests with max %d concurrency...\n", len(m.tests), concurrency))
 
-		// First emit testStartedMsg for all tests; actual execution is kicked off
-		// in the testStartedMsg handler to avoid races in currentTestTraces.
 		var cmds []tea.Cmd
-		for i := range m.tests {
+		for i := 0; i < concurrency && i < len(m.tests); i++ {
 			index := i
 			cmds = append(cmds, func() tea.Msg {
 				return testStartedMsg{index: index, test: m.tests[index]}
 			})
 		}
+
+		m.nextTestIndex = min(concurrency, len(m.tests))
 
 		return tea.Batch(cmds...)()
 	}
