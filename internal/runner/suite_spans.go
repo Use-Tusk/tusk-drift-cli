@@ -156,6 +156,10 @@ func FetchPreAppStartSpansFromCloud(
 			return nil, fmt.Errorf("get pre-app-start spans: %w", err)
 		}
 
+		if progress != nil && cur == "" && resp.TotalCount > 0 {
+			progress.SetTotal(int(resp.TotalCount))
+		}
+
 		all = append(all, resp.Spans...)
 
 		if progress != nil {

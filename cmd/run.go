@@ -347,25 +347,28 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	RegisterCleanup(func() {
+		slog.Debug("Cleanup: Cancelling running tests")
+		executor.CancelTests()
+
+		slog.Debug("Cleanup: Stopping services from signal handler")
+		if err := executor.StopEnvironment(); err != nil {
+			slog.Debug("Cleanup: Failed to stop environment", "error", err)
+		}
+
+		if cloud && client != nil {
+			statusReq := &backend.UpdateDriftRunCIStatusRequest{
+				DriftRunId:      driftRunID,
+				CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
+				CiStatusMessage: stringPtr("Test execution interrupted"),
+			}
+			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
+				slog.Debug("Failed to update CI status to FAILURE", "error", err)
+			}
+		}
+	})
+
 	if interactive {
-		RegisterCleanup(func() {
-			slog.Info("Cleanup: Stopping services from signal handler")
-			if err := executor.StopEnvironment(); err != nil {
-				slog.Warn("Cleanup: Failed to stop environment", "error", err)
-			}
-
-			if cloud && client != nil {
-				statusReq := &backend.UpdateDriftRunCIStatusRequest{
-					DriftRunId:      driftRunID,
-					CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
-					CiStatusMessage: stringPtr("Test execution interrupted"),
-				}
-				if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
-					slog.Warn("Failed to update CI status to FAILURE", "error", err)
-				}
-			}
-		})
-
 		initialLogs := []string{}
 		if driftRunID != "" {
 			initialLogs = append(initialLogs, fmt.Sprintf("Created Tusk Drift run: %s", driftRunID))

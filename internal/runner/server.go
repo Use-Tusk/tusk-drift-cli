@@ -577,7 +577,7 @@ func (ms *Server) handleMockRequestProtobuf(msg *core.SDKMessage, conn net.Conn)
 	}
 
 	if err := ms.sendProtobufResponse(conn, cliMsg); err != nil {
-		slog.Error("Failed to send mock response", "error", err)
+		slog.Debug("Failed to send mock response", "error", err)
 	}
 }
 
