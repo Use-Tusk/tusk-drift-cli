@@ -12,9 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
@@ -38,15 +40,25 @@ const (
 
 // Server handles Unix socket communication with the SDK
 type Server struct {
-	socketPath         string
-	listener           net.Listener
-	spans              map[string][]*core.Span
-	spanUsage          map[string]map[string]bool // traceId -> spanId -> isUsed
-	currentTestID      string
+	socketPath string
+	listener   net.Listener
+
+	// Hashes for fast lookup
+	spans                        map[string][]*core.Span
+	spanUsage                    map[string]map[string]bool         // traceId -> spanId -> isUsed
+	spansByPackage               map[string]map[string][]*core.Span // traceId -> packageName -> spans
+	suiteSpansByPackage          map[string][]*core.Span            // packageName -> spans (for suite spans)
+	spansByReducedValueHash      map[string]map[string][]*core.Span // traceId -> reducedValueHash -> spans
+	suiteSpansByReducedValueHash map[string][]*core.Span            // reducedValueHash -> spans (for suite)
+	spansByValueHash             map[string]map[string][]*core.Span // traceId -> valueHash -> spans
+	suiteSpansByValueHash        map[string][]*core.Span
+
+	currentTestID      atomic.Value
 	ctx                context.Context
 	cancel             context.CancelFunc
 	wg                 sync.WaitGroup
 	mu                 sync.RWMutex
+	connWriteMutex     sync.Mutex
 	sdkVersion         string
 	sdkConnected       bool
 	sdkConnectedChan   chan struct{}
@@ -124,8 +136,15 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 	commType := determineCommunicationType(cfg)
 
 	server := &Server{
-		spans:              make(map[string][]*core.Span),
-		spanUsage:          make(map[string]map[string]bool),
+		spans:                        make(map[string][]*core.Span),
+		spanUsage:                    make(map[string]map[string]bool),
+		spansByPackage:               make(map[string]map[string][]*core.Span),
+		suiteSpansByPackage:          make(map[string][]*core.Span),
+		spansByReducedValueHash:      make(map[string]map[string][]*core.Span),
+		suiteSpansByReducedValueHash: make(map[string][]*core.Span),
+		spansByValueHash:             make(map[string]map[string][]*core.Span),
+		suiteSpansByValueHash:        make(map[string][]*core.Span),
+
 		ctx:                ctx,
 		cancel:             cancel,
 		sdkConnected:       false,
@@ -235,9 +254,7 @@ func (ms *Server) GetSDKVersion() string {
 }
 
 func (ms *Server) SetCurrentTestID(id string) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-	ms.currentTestID = id
+	ms.currentTestID.Store(id)
 }
 
 func (ms *Server) WaitForSDKConnection(timeout time.Duration) error {
@@ -271,6 +288,57 @@ func (ms *Server) LoadSpansForTrace(traceID string, spans []*core.Span) {
 
 	ms.spans[traceID] = spans
 	ms.matchEvents[traceID] = nil
+
+	// Build package name index
+	ms.spansByPackage[traceID] = make(map[string][]*core.Span)
+	ms.spansByReducedValueHash[traceID] = make(map[string][]*core.Span)
+	ms.spansByValueHash[traceID] = make(map[string][]*core.Span)
+
+	for _, span := range spans {
+		// Package index
+		pkgName := span.PackageName
+		ms.spansByPackage[traceID][pkgName] = append(ms.spansByPackage[traceID][pkgName], span)
+
+		// Value hash index (already computed by SDK)
+		if span.InputValueHash != "" {
+			ms.spansByValueHash[traceID][span.InputValueHash] = append(ms.spansByValueHash[traceID][span.InputValueHash], span)
+		}
+
+		// Reduced value hash index (compute once here)
+		reducedHash := reducedInputValueHash(span)
+		if reducedHash != "" {
+			ms.spansByReducedValueHash[traceID][reducedHash] = append(ms.spansByReducedValueHash[traceID][reducedHash], span)
+		}
+	}
+
+	// Sort all indexed spans by timestamp (oldest first)
+	sortSpansByTimestamp := func(spans []*core.Span) {
+		sort.Slice(spans, func(i, j int) bool {
+			if spans[i].Timestamp == nil && spans[j].Timestamp == nil {
+				return spans[i].SpanId < spans[j].SpanId
+			}
+			if spans[i].Timestamp == nil {
+				return true
+			}
+			if spans[j].Timestamp == nil {
+				return false
+			}
+			return spans[i].Timestamp.AsTime().Before(spans[j].Timestamp.AsTime())
+		})
+	}
+
+	for pkg := range ms.spansByPackage[traceID] {
+		sortSpansByTimestamp(ms.spansByPackage[traceID][pkg])
+	}
+
+	for hash := range ms.spansByValueHash[traceID] {
+		sortSpansByTimestamp(ms.spansByValueHash[traceID][hash])
+	}
+
+	for hash := range ms.spansByReducedValueHash[traceID] {
+		sortSpansByTimestamp(ms.spansByReducedValueHash[traceID][hash])
+	}
+
 	slog.Debug("Loaded spans for trace", "traceID", traceID, "count", len(spans))
 }
 
@@ -278,12 +346,94 @@ func (ms *Server) SetSuiteSpans(spans []*core.Span) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	ms.suiteSpans = spans
+
+	// Build package name index
+	ms.suiteSpansByPackage = make(map[string][]*core.Span)
+	ms.suiteSpansByReducedValueHash = make(map[string][]*core.Span)
+	ms.suiteSpansByValueHash = make(map[string][]*core.Span)
+
+	for _, span := range spans {
+		// Package index
+		pkgName := span.PackageName
+		ms.suiteSpansByPackage[pkgName] = append(ms.suiteSpansByPackage[pkgName], span)
+
+		// Value hash index (already computed by SDK)
+		if span.InputValueHash != "" {
+			ms.suiteSpansByValueHash[span.InputValueHash] = append(ms.suiteSpansByValueHash[span.InputValueHash], span)
+		}
+
+		// Reduced value hash index (compute once here)
+		reducedHash := reducedInputValueHash(span)
+		if reducedHash != "" {
+			ms.suiteSpansByReducedValueHash[reducedHash] = append(ms.suiteSpansByReducedValueHash[reducedHash], span)
+		}
+	}
 }
 
 func (ms *Server) GetSuiteSpans() []*core.Span {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 	return ms.suiteSpans
+}
+
+func (ms *Server) GetSpansByPackageForTrace(traceID string, packageName string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	if pkgMap, exists := ms.spansByPackage[traceID]; exists {
+		return pkgMap[packageName]
+	}
+	return nil
+}
+
+func (ms *Server) GetSuiteSpansByPackage(packageName string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.suiteSpansByPackage[packageName]
+}
+
+func (ms *Server) GetSpansByValueHashForTrace(traceID string, valueHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	if hashMap, exists := ms.spansByValueHash[traceID]; exists {
+		return hashMap[valueHash]
+	}
+	return nil
+}
+
+func (ms *Server) GetSpansByReducedValueHashForTrace(traceID string, reducedHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	if hashMap, exists := ms.spansByReducedValueHash[traceID]; exists {
+		return hashMap[reducedHash]
+	}
+	return nil
+}
+
+func (ms *Server) GetSuiteSpansByValueHash(valueHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.suiteSpansByValueHash[valueHash]
+}
+
+func (ms *Server) GetSuiteSpansByReducedValueHash(reducedHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.suiteSpansByReducedValueHash[reducedHash]
+}
+
+func (ms *Server) CleanupTraceSpans(traceID string) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	delete(ms.spans, traceID)
+	delete(ms.spanUsage, traceID)
+	delete(ms.matchEvents, traceID)
+	delete(ms.mockNotFoundEvents, traceID)
+	delete(ms.spansByPackage, traceID)
+	delete(ms.spansByValueHash, traceID)
+	delete(ms.spansByReducedValueHash, traceID)
+
+	slog.Debug("Cleaned up spans for trace", "traceID", traceID)
 }
 
 // acceptConnections handles incoming socket connections
@@ -329,9 +479,14 @@ func (ms *Server) handleConnection(conn net.Conn) {
 
 		// Parse message length
 		messageLength := binary.BigEndian.Uint32(lengthBytes)
-		if messageLength > 1024*1024 { // 1MB limit
-			slog.Debug("Message too large", "length", messageLength)
-			return
+		if messageLength > 10*1024*1024 { // 10MB limit
+			slog.Warn("Message too large, skipping", "length", messageLength)
+			discardBuf := make([]byte, messageLength)
+			if _, err := io.ReadFull(conn, discardBuf); err != nil {
+				slog.Error("Failed to discard oversized message", "error", err)
+				return
+			}
+			continue // Skip this message but keep connection alive
 		}
 
 		// Read message data
@@ -353,7 +508,12 @@ func (ms *Server) handleConnection(conn net.Conn) {
 		case core.MessageType_MESSAGE_TYPE_SDK_CONNECT:
 			ms.handleSDKConnectProtobuf(&sdkMsg, conn)
 		case core.MessageType_MESSAGE_TYPE_MOCK_REQUEST:
-			ms.handleMockRequestProtobuf(&sdkMsg, conn)
+			// Handle mock requests concurrently to avoid blocking on expensive searches
+			ms.wg.Add(1)
+			go func(msg *core.SDKMessage) {
+				defer ms.wg.Done()
+				ms.handleMockRequestProtobuf(msg, conn)
+			}(&sdkMsg)
 		case core.MessageType_MESSAGE_TYPE_INBOUND_SPAN:
 			ms.handleInboundReplaySpanProtobuf(&sdkMsg, conn)
 		default:
@@ -378,6 +538,11 @@ func (ms *Server) sendProtobufResponse(conn net.Conn, msg proto.Message) error {
 	// Send length prefix
 	lengthBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthBytes, uint32(dataLen))
+
+	// Lock to ensure atomic write of length + data
+	ms.connWriteMutex.Lock()
+	defer ms.connWriteMutex.Unlock()
+
 	if _, err := conn.Write(lengthBytes); err != nil {
 		return fmt.Errorf("failed to write length: %w", err)
 	}
@@ -559,14 +724,45 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 
 // handleMockRequestProtobuf processes mock requests using protobuf
 func (ms *Server) handleMockRequestProtobuf(msg *core.SDKMessage, conn net.Conn) {
+	startTime := time.Now()
+
 	mockReq := msg.GetGetMockRequest()
 	if mockReq == nil {
 		slog.Error("Invalid mock request - no payload")
 		return
 	}
 
-	response := ms.findMock(mockReq)
-	response.RequestId = msg.RequestId
+	testID := mockReq.TestId
+	if testID == "" {
+		if stored := ms.currentTestID.Load(); stored != nil {
+			testID = stored.(string)
+		}
+	}
+
+	responseChan := make(chan *core.GetMockResponse, 1)
+	go func() {
+		response := ms.findMock(mockReq)
+		response.RequestId = msg.RequestId
+		responseChan <- response
+	}()
+
+	var response *core.GetMockResponse
+	select {
+	case response = <-responseChan:
+		// Success
+	case <-time.After(15 * time.Second):
+		slog.Error("Mock request timeout",
+			"requestId", msg.RequestId,
+			"testId", testID,
+			"package", mockReq.OutboundSpan.PackageName,
+			"duration", time.Since(startTime))
+
+		response = &core.GetMockResponse{
+			RequestId: msg.RequestId,
+			Found:     false,
+			Error:     fmt.Sprintf("mock search timed out after 15s for %s", mockReq.OutboundSpan.PackageName),
+		}
+	}
 
 	cliMsg := &core.CLIMessage{
 		Type:      core.MessageType_MESSAGE_TYPE_MOCK_REQUEST,
@@ -610,12 +806,12 @@ func (ms *Server) handleInboundReplaySpanProtobuf(msg *core.SDKMessage, conn net
 
 // findMock searches for a matching mock for the given request
 func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
-	ms.mu.RLock()
 	testID := req.TestId
 	if testID == "" {
-		testID = ms.currentTestID
+		if stored := ms.currentTestID.Load(); stored != nil {
+			testID = stored.(string)
+		}
 	}
-	ms.mu.RUnlock()
 
 	matcher := NewMockMatcher(ms)
 	var span *core.Span
@@ -631,9 +827,9 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 		ms.mu.RUnlock()
 
 		if !spansLoaded {
-			slog.Info("Spans not loaded for trace, attempting to load", "traceID", testID)
+			slog.Debug("Spans not loaded for trace, attempting to load", "traceID", testID)
 			if err := ms.loadSpansForTraceID(testID); err != nil {
-				slog.Error("Failed to load spans for trace", "traceID", testID, "error", err)
+				slog.Debug("Failed to load spans for trace", "traceID", testID, "error", err)
 				return &core.GetMockResponse{
 					Found: false,
 					Error: fmt.Sprintf("failed to load spans for trace %s: %v", testID, err),
@@ -649,6 +845,18 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 
 	// If no match found in trace (or no testID), try global fallback
 	if span == nil {
+		if testID == "" && req.OutboundSpan != nil && !req.OutboundSpan.IsPreAppStart {
+			slog.Debug("No test ID and not pre-app-start; skipping suite span search",
+				"package", req.OutboundSpan.PackageName,
+				"operation", req.Operation)
+
+			return &core.GetMockResponse{
+				Found: false,
+				Error: fmt.Sprintf("no mock found for background query %s %s (no testID)",
+					req.Operation, req.OutboundSpan.Name),
+			}
+		}
+
 		if testID != "" {
 			slog.Debug("No mock found in current trace; attempting global fallback",
 				"testID", testID, "package", req.OutboundSpan.PackageName, "operation", req.Operation, "error", err)

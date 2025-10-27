@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 )
 
 const (
@@ -129,4 +131,69 @@ func (p *ProgressBar) Finish(finalMessage string) {
 // Stop clears the progress bar without a final message
 func (p *ProgressBar) Stop() {
 	p.Finish("")
+}
+
+// ProgressTracker handles progress reporting for paginated fetches
+type ProgressTracker struct {
+	progress            *ProgressBar
+	interactive         bool
+	message             string
+	lastLoggedMilestone int
+	total               int
+}
+
+func NewProgressTracker(message string, interactive, quiet bool) *ProgressTracker {
+	pt := &ProgressTracker{
+		interactive: interactive,
+		message:     message,
+	}
+
+	if !interactive && !quiet {
+		pt.progress = NewProgressBar(message)
+		pt.progress.Start()
+	}
+
+	return pt
+}
+
+func (pt *ProgressTracker) SetTotal(total int) {
+	pt.total = total
+	if pt.progress != nil {
+		pt.progress.SetTotal(total)
+	} else if pt.interactive && total > 0 {
+		logging.LogToService(fmt.Sprintf("%s (0/%d)...", pt.message, total))
+	}
+}
+
+func (pt *ProgressTracker) Update(current int) {
+	if pt.progress != nil {
+		pt.progress.SetCurrent(current)
+	} else if pt.interactive && pt.total > 0 {
+		// Only log when crossing 25% milestones
+		percentage := float64(current) / float64(pt.total) * 100
+		currentMilestone := int(percentage/25) * 25
+
+		if currentMilestone > pt.lastLoggedMilestone {
+			logging.LogToService(fmt.Sprintf("%s (%d/%d, %d%%)...", pt.message, current, pt.total, currentMilestone))
+			pt.lastLoggedMilestone = currentMilestone
+		}
+	}
+}
+
+func (pt *ProgressTracker) Finish(finalMessage string) {
+	if pt.progress != nil {
+		if finalMessage != "" {
+			pt.progress.Finish(finalMessage)
+		} else {
+			pt.progress.Stop()
+		}
+	} else if pt.interactive && finalMessage != "" {
+		logging.LogToService(finalMessage)
+	}
+}
+
+func (pt *ProgressTracker) Stop() {
+	if pt.progress != nil {
+		pt.progress.Stop()
+	}
 }

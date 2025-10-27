@@ -133,12 +133,8 @@ func FetchPreAppStartSpansFromCloud(
 	interactive bool,
 	quiet bool,
 ) ([]*core.Span, error) {
-	var progress *utils.ProgressBar
-	if !interactive && !quiet {
-		progress = utils.NewProgressBar("Fetching pre-app-start spans")
-		progress.Start()
-		defer progress.Stop()
-	}
+	tracker := utils.NewProgressTracker("Fetching pre-app-start spans", interactive, quiet)
+	defer tracker.Stop()
 
 	var all []*core.Span
 	cur := ""
@@ -156,15 +152,12 @@ func FetchPreAppStartSpansFromCloud(
 			return nil, fmt.Errorf("get pre-app-start spans: %w", err)
 		}
 
-		if progress != nil && cur == "" && resp.TotalCount > 0 {
-			progress.SetTotal(int(resp.TotalCount))
+		if cur == "" && resp.TotalCount > 0 {
+			tracker.SetTotal(int(resp.TotalCount))
 		}
 
 		all = append(all, resp.Spans...)
-
-		if progress != nil {
-			progress.SetCurrent(len(all))
-		}
+		tracker.Update(len(all))
 
 		if next := resp.GetNextCursor(); next != "" {
 			cur = next
@@ -173,10 +166,8 @@ func FetchPreAppStartSpansFromCloud(
 		break
 	}
 
-	if progress != nil && len(all) > 0 {
-		progress.Finish(fmt.Sprintf("✓ Loaded %d pre-app-start spans", len(all)))
-	} else if progress != nil {
-		progress.Stop()
+	if len(all) > 0 {
+		tracker.Finish(fmt.Sprintf("✓ Loaded %d pre-app-start spans", len(all)))
 	}
 
 	return all, nil
@@ -222,16 +213,11 @@ func fetchAllSuiteSpans(
 	interactive bool,
 	quiet bool,
 ) ([]*core.Span, error) {
-	var progress *utils.ProgressBar
-	if !interactive && !quiet {
-		progress = utils.NewProgressBar("Fetching suite spans")
-		progress.Start()
-		defer progress.Stop()
-	}
+	tracker := utils.NewProgressTracker("Fetching suite spans", interactive, quiet)
+	defer tracker.Stop()
 
 	var spans []*core.Span
 	cur := ""
-	totalTests := 0
 	fetchedTests := 0
 
 	for {
@@ -248,9 +234,8 @@ func fetchAllSuiteSpans(
 		}
 
 		// Set total on first request
-		if progress != nil && cur == "" {
-			totalTests = int(resp.TotalCount)
-			progress.SetTotal(totalTests)
+		if cur == "" {
+			tracker.SetTotal(int(resp.TotalCount))
 		}
 
 		for _, tt := range resp.TraceTests {
@@ -260,9 +245,7 @@ func fetchAllSuiteSpans(
 		}
 
 		fetchedTests += len(resp.TraceTests)
-		if progress != nil {
-			progress.SetCurrent(fetchedTests)
-		}
+		tracker.Update(fetchedTests)
 
 		if next := resp.GetNextCursor(); next != "" {
 			cur = next
@@ -271,9 +254,7 @@ func fetchAllSuiteSpans(
 		break
 	}
 
-	if progress != nil {
-		progress.Finish(fmt.Sprintf("✓ Loaded %d suite spans from %d tests", len(spans), fetchedTests))
-	}
+	tracker.Finish(fmt.Sprintf("✓ Loaded %d suite spans from %d tests", len(spans), fetchedTests))
 
 	return spans, nil
 }

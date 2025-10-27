@@ -816,10 +816,18 @@ func TestExecutor_RunSingleTest_WithServer(t *testing.T) {
 
 	// Mock server with basic functionality - need to initialize all required maps
 	mockServer := &Server{
-		spans:       make(map[string][]*core.Span),
-		matchEvents: make(map[string][]MatchEvent),
-		spanUsage:   make(map[string]map[string]bool), // This was missing and causing the panic
-		mu:          sync.RWMutex{},
+		spans:                        make(map[string][]*core.Span),
+		matchEvents:                  make(map[string][]MatchEvent),
+		spanUsage:                    make(map[string]map[string]bool),
+		spansByPackage:               make(map[string]map[string][]*core.Span),
+		suiteSpansByPackage:          make(map[string][]*core.Span),
+		spansByReducedValueHash:      make(map[string]map[string][]*core.Span),
+		suiteSpansByReducedValueHash: make(map[string][]*core.Span),
+		spansByValueHash:             make(map[string]map[string][]*core.Span),
+		suiteSpansByValueHash:        make(map[string][]*core.Span),
+		mockNotFoundEvents:           make(map[string][]MockNotFoundEvent),
+		replayInbound:                make(map[string]*core.Span),
+		mu:                           sync.RWMutex{},
 	}
 	executor.server = mockServer
 
