@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -308,6 +309,34 @@ func (ms *Server) LoadSpansForTrace(traceID string, spans []*core.Span) {
 		if reducedHash != "" {
 			ms.spansByReducedValueHash[traceID][reducedHash] = append(ms.spansByReducedValueHash[traceID][reducedHash], span)
 		}
+	}
+
+	// Sort all indexed spans by timestamp (oldest first)
+	sortSpansByTimestamp := func(spans []*core.Span) {
+		sort.Slice(spans, func(i, j int) bool {
+			if spans[i].Timestamp == nil && spans[j].Timestamp == nil {
+				return spans[i].SpanId < spans[j].SpanId
+			}
+			if spans[i].Timestamp == nil {
+				return true
+			}
+			if spans[j].Timestamp == nil {
+				return false
+			}
+			return spans[i].Timestamp.AsTime().Before(spans[j].Timestamp.AsTime())
+		})
+	}
+
+	for pkg := range ms.spansByPackage[traceID] {
+		sortSpansByTimestamp(ms.spansByPackage[traceID][pkg])
+	}
+
+	for hash := range ms.spansByValueHash[traceID] {
+		sortSpansByTimestamp(ms.spansByValueHash[traceID][hash])
+	}
+
+	for hash := range ms.spansByReducedValueHash[traceID] {
+		sortSpansByTimestamp(ms.spansByReducedValueHash[traceID][hash])
 	}
 
 	slog.Debug("Loaded spans for trace", "traceID", traceID, "count", len(spans))
