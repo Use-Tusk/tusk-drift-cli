@@ -66,20 +66,8 @@ func NewMockMatcher(server *Server) *MockMatcher {
 
 // FindBestMatch implements the priority matching algorithm for spans within a trace
 func (mm *MockMatcher) FindBestMatchInTrace(req *core.GetMockRequest, traceID string) (*core.Span, *backend.MatchLevel, error) {
-	mm.server.mu.RLock()
-	spans, exists := mm.server.spans[traceID]
-	mm.server.mu.RUnlock()
+	filteredSpans := mm.server.GetSpansByPackageForTrace(traceID, req.OutboundSpan.PackageName)
 
-	if !exists {
-		return nil, nil, fmt.Errorf("no spans loaded for trace %s", traceID)
-	}
-
-	var filteredSpans []*core.Span
-	for _, span := range spans {
-		if span.PackageName == req.OutboundSpan.PackageName {
-			filteredSpans = append(filteredSpans, span)
-		}
-	}
 	if len(filteredSpans) == 0 {
 		return nil, nil, fmt.Errorf("no spans found for package name %s in trace %s", req.OutboundSpan.PackageName, traceID)
 	}
@@ -88,55 +76,23 @@ func (mm *MockMatcher) FindBestMatchInTrace(req *core.GetMockRequest, traceID st
 
 // FindBestMatchInSpans implements the priority matching algorithm for spans across a test suite
 func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, traceID string, spans []*core.Span) (*core.Span, *backend.MatchLevel, error) {
-	var filteredSpans []*core.Span
-	for _, span := range spans {
-		if span.PackageName == req.OutboundSpan.PackageName {
-			filteredSpans = append(filteredSpans, span)
-		}
-	}
-	if len(filteredSpans) == 0 {
-		return nil, nil, fmt.Errorf("no spans found for package name %s in provided set", req.OutboundSpan.PackageName)
-	}
-
 	// Priorities 10–11 over the whole suite (value hash, then reduced value hash)
-	var requestBody any
-	if req.OutboundSpan.InputValue != nil {
-		requestBody = req.OutboundSpan.InputValue.AsMap()
-	}
-	requestData := MockMatcherRequestData{
-		InputValue:      requestBody,
-		InputValueHash:  req.OutboundSpan.GetInputValueHash(),
-		InputSchema:     req.OutboundSpan.InputSchema,
-		InputSchemaHash: req.OutboundSpan.GetInputSchemaHash(),
-	}
 
-	sortedSpans := make([]*core.Span, len(filteredSpans))
-	copy(sortedSpans, filteredSpans)
-	sort.Slice(sortedSpans, func(i, j int) bool {
-		if sortedSpans[i].Timestamp == nil && sortedSpans[j].Timestamp == nil {
-			return sortedSpans[i].SpanId < sortedSpans[j].SpanId
-		}
-		if sortedSpans[i].Timestamp == nil {
-			return true
-		}
-		if sortedSpans[j].Timestamp == nil {
-			return false
-		}
-		return sortedSpans[i].Timestamp.AsTime().Before(sortedSpans[j].Timestamp.AsTime())
-	})
+	inputValueHash := req.OutboundSpan.GetInputValueHash()
 
 	// Priority 9: Check global spans from Tusk Drift Cloud
 	// TODO: not implemented
 
-	// Priority 10: Input value across all spans in test suite
-	if match := mm.findUnusedSpanByInputValueHash(requestData, sortedSpans); match != nil {
+	// Priority 10: Input value hash across suite (use index)
+	candidates := mm.server.GetSuiteSpansByValueHash(inputValueHash)
+	if match := mm.findFirstUnused(candidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
 			MatchDescription: "Suite unused span by input value hash",
 		}, nil
 	}
-	if match := mm.findUsedSpanByInputValueHash(requestData, sortedSpans); match != nil {
+	if match := mm.findFirstUsed(candidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
@@ -144,15 +100,17 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 		}, nil
 	}
 
-	// Priority 11: Reduced input value across all spans in test suite
-	if match := mm.findUnusedSpanByReducedInputValueHash(req, sortedSpans); match != nil {
+	// Priority 11: Reduced input value hash across suite (use index)
+	reducedHash := reducedRequestValueHash(req)
+	reducedCandidates := mm.server.GetSuiteSpansByReducedValueHash(reducedHash)
+	if match := mm.findFirstUnused(reducedCandidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
 			MatchDescription: "Suite unused span by input value hash with reduced schema",
 		}, nil
 	}
-	if match := mm.findUsedSpanByReducedInputValueHash(req, sortedSpans); match != nil {
+	if match := mm.findFirstUsed(reducedCandidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
@@ -211,9 +169,10 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 		"traceID", traceID,
 		"scope", scope)
 
-	// Priority 1: Unused span by input value hash
+	// Priority 1: Unused span by input value hash (use index)
 	slog.Debug("Trying Priority 1: Unused span by input value hash", "traceId", traceID)
-	if match := mm.findUnusedSpanByInputValueHash(requestData, sortedSpans); match != nil {
+	candidates := mm.server.GetSpansByValueHashForTrace(traceID, requestData.InputValueHash)
+	if match := mm.findFirstUnused(candidates); match != nil {
 		slog.Debug("Found unused span by input value hash", "spanName", match.Name)
 		mm.markSpanAsUsed(match)
 		return match, &backend.MatchLevel{
@@ -224,9 +183,9 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	}
 	slog.Debug("Priority 1 failed: No unused span by input value hash", "traceId", traceID)
 
-	// Priority 2: Used span by input value hash
+	// Priority 2: Used span by input value hash (use index)
 	slog.Debug("Trying Priority 2: Used span by input value hash", "traceId", traceID)
-	if match := mm.findUsedSpanByInputValueHash(requestData, sortedSpans); match != nil {
+	if match := mm.findFirstUsed(candidates); match != nil {
 		slog.Debug("Found used span by input value hash", "spanName", match.Name)
 		mm.markSpanAsUsed(match)
 		return match, &backend.MatchLevel{
@@ -237,9 +196,11 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	}
 	slog.Debug("Priority 2 failed: No used span by input value hash", "traceId", traceID)
 
-	// Priority 3: Unused span by input value hash with reduced schema
+	// Priority 3: Unused span by reduced input value hash (use index)
 	slog.Debug("Trying Priority 3: Unused span by input value hash with reduced schema", "traceId", traceID)
-	if match := mm.findUnusedSpanByReducedInputValueHash(req, sortedSpans); match != nil {
+	reducedHash := reducedRequestValueHash(req)
+	reducedCandidates := mm.server.GetSpansByReducedValueHashForTrace(traceID, reducedHash)
+	if match := mm.findFirstUnused(reducedCandidates); match != nil {
 		slog.Debug("Found unused span by input value hash with reduced schema", "spanName", match.Name)
 		mm.markSpanAsUsed(match)
 		return match, &backend.MatchLevel{
@@ -250,9 +211,9 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	}
 	slog.Debug("Priority 3 failed: No unused span by input value hash with reduced schema", "traceId", traceID)
 
-	// Priority 4: Used span by input value hash with reduced schema
+	// Priority 4: Used span by reduced input value hash (use index)
 	slog.Debug("Trying Priority 4: Used span by input value hash with reduced schema", "traceId", traceID)
-	if match := mm.findUsedSpanByReducedInputValueHash(req, sortedSpans); match != nil {
+	if match := mm.findFirstUsed(reducedCandidates); match != nil {
 		slog.Debug("Found used span by input value hash with reduced schema", "spanName", match.Name)
 		mm.markSpanAsUsed(match)
 		return match, &backend.MatchLevel{
@@ -262,6 +223,9 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 		}, nil
 	}
 	slog.Debug("Priority 4 failed: No used span by input value hash with reduced schema", "traceId", traceID)
+
+	// Priority 5-8: Schema-based matching still uses sortedSpans (by package)
+	// These don't have pre-computed hashes, so we keep the existing logic
 
 	// Priority 5: Unused span by input schema hash
 	slog.Debug("Trying Priority 5: Unused span by input schema hash", "traceId", traceID)
@@ -349,6 +313,46 @@ func (mm *MockMatcher) isUnused(span *core.Span) bool {
 
 func (mm *MockMatcher) isUsed(span *core.Span) bool {
 	return !mm.isUnused(span)
+}
+
+func (mm *MockMatcher) filterUnused(spans []*core.Span) []*core.Span {
+	if len(spans) == 0 {
+		return nil
+	}
+
+	mm.server.mu.RLock()
+	defer mm.server.mu.RUnlock()
+
+	var result []*core.Span
+	for _, span := range spans {
+		if traceUsage, exists := mm.server.spanUsage[span.TraceId]; exists {
+			if isUsed, exists := traceUsage[span.SpanId]; exists && isUsed {
+				continue // Skip used spans
+			}
+		}
+		// Span is unused
+		result = append(result, span)
+	}
+	return result
+}
+
+func (mm *MockMatcher) filterUsed(spans []*core.Span) []*core.Span {
+	if len(spans) == 0 {
+		return nil
+	}
+
+	mm.server.mu.RLock()
+	defer mm.server.mu.RUnlock()
+
+	var result []*core.Span
+	for _, span := range spans {
+		if traceUsage, exists := mm.server.spanUsage[span.TraceId]; exists {
+			if isUsed, exists := traceUsage[span.SpanId]; exists && isUsed {
+				result = append(result, span)
+			}
+		}
+	}
+	return result
 }
 
 // buildMatchLevelWithSimilarity creates a MatchLevel with similarity scoring data
@@ -601,20 +605,18 @@ func (mm *MockMatcher) findBestMatchBySimilarity(requestData MockMatcherRequestD
 	return scored[0].span, bestScore, topCandidates
 }
 
-func (mm *MockMatcher) findUnusedSpanByInputValueHash(requestData MockMatcherRequestData, spans []*core.Span) *core.Span {
-	for i := range spans {
-		if mm.isUnused(spans[i]) && spans[i].InputValueHash == requestData.InputValueHash {
-			return spans[i]
-		}
+func (mm *MockMatcher) findFirstUnused(spans []*core.Span) *core.Span {
+	unusedSpans := mm.filterUnused(spans)
+	if len(unusedSpans) > 0 {
+		return unusedSpans[0]
 	}
 	return nil
 }
 
-func (mm *MockMatcher) findUsedSpanByInputValueHash(requestData MockMatcherRequestData, spans []*core.Span) *core.Span {
-	for i := range spans {
-		if mm.isUsed(spans[i]) && spans[i].InputValueHash == requestData.InputValueHash {
-			return spans[i]
-		}
+func (mm *MockMatcher) findFirstUsed(spans []*core.Span) *core.Span {
+	usedSpans := mm.filterUsed(spans)
+	if len(usedSpans) > 0 {
+		return usedSpans[0]
 	}
 	return nil
 }
@@ -682,38 +684,6 @@ func (mm *MockMatcher) findUsedSpanByInputSchemaHash(requestData MockMatcherRequ
 		topCandidates:   topCandidates,
 		multipleMatches: true,
 	}
-}
-
-func (mm *MockMatcher) findUnusedSpanByReducedInputValueHash(req *core.GetMockRequest, spans []*core.Span) *core.Span {
-	target := reducedRequestValueHash(req)
-	if target == "" {
-		return nil
-	}
-	for i := range spans {
-		if !mm.isUnused(spans[i]) {
-			continue
-		}
-		if reducedInputValueHash(spans[i]) == target {
-			return spans[i]
-		}
-	}
-	return nil
-}
-
-func (mm *MockMatcher) findUsedSpanByReducedInputValueHash(req *core.GetMockRequest, spans []*core.Span) *core.Span {
-	target := reducedRequestValueHash(req)
-	if target == "" {
-		return nil
-	}
-	for i := range spans {
-		if !mm.isUsed(spans[i]) {
-			continue
-		}
-		if reducedInputValueHash(spans[i]) == target {
-			return spans[i]
-		}
-	}
-	return nil
 }
 
 func (mm *MockMatcher) findUnusedSpanByReducedInputSchemaHash(req *core.GetMockRequest, spans []*core.Span) spanMatchResult {

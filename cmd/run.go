@@ -538,12 +538,8 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 		return runner.ConvertTraceTestsToRunnerTests([]*backend.TraceTest{resp.TraceTest}), nil
 	}
 
-	var progress *utils.ProgressBar
-	if !interactive && !quiet {
-		progress = utils.NewProgressBar("Fetching tests")
-		progress.Start()
-		defer progress.Stop()
-	}
+	tracker := utils.NewProgressTracker("Fetching tests", interactive, quiet)
+	defer tracker.Stop()
 
 	var (
 		all []*backend.TraceTest
@@ -565,15 +561,12 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 			}
 
 			// Set total on first request
-			if progress != nil && cur == "" {
-				progress.SetTotal(int(resp.TotalCount))
+			if cur == "" {
+				tracker.SetTotal(int(resp.TotalCount))
 			}
 
 			all = append(all, resp.TraceTests...)
-
-			if progress != nil {
-				progress.SetCurrent(len(all))
-			}
+			tracker.Update(len(all))
 
 			if next := resp.GetNextCursor(); next != "" {
 				cur = next
@@ -596,15 +589,12 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 			}
 
 			// Set total on first request
-			if progress != nil && cur == "" {
-				progress.SetTotal(int(resp.TotalCount))
+			if cur == "" {
+				tracker.SetTotal(int(resp.TotalCount))
 			}
 
 			all = append(all, resp.TraceTests...)
-
-			if progress != nil {
-				progress.SetCurrent(len(all))
-			}
+			tracker.Update(len(all))
 
 			if next := resp.GetNextCursor(); next != "" {
 				cur = next
@@ -614,11 +604,7 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 		}
 	}
 
-	if progress != nil {
-		progress.Finish(fmt.Sprintf("➤ Fetched %d trace tests from Tusk Drift Cloud", len(all)))
-	} else {
-		logging.LogToService(fmt.Sprintf("Fetched %d trace tests from Tusk Drift Cloud", len(all)))
-	}
+	tracker.Finish(fmt.Sprintf("➤ Fetched %d trace tests from Tusk Drift Cloud", len(all)))
 	return runner.ConvertTraceTestsToRunnerTests(all), nil
 }
 

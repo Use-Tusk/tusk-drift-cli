@@ -346,7 +346,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errors = make([]error, len(m.tests))
 		m.testTable = components.NewTestTableComponent(m.tests)
 		m.header = components.NewTestExecutionHeaderComponent(len(m.tests))
-		m.addServiceLog(fmt.Sprintf("📦 Loaded %d tests", len(m.tests)))
 		if m.opts != nil && m.opts.StartAfterTestsLoaded {
 			if len(m.tests) == 0 {
 				return m, tea.Batch(m.updateStats(), func() tea.Msg { return executionFailedMsg{reason: "No tests to run"} })

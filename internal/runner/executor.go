@@ -232,6 +232,7 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 		// Help attribute outbound events to this test when SDK omits testId
 		e.server.SetCurrentTestID(test.TraceID)
 		defer e.server.SetCurrentTestID("")
+		defer e.server.CleanupTraceSpans(test.TraceID)
 	}
 
 	var reqBody io.Reader
@@ -295,9 +296,10 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 
 	if err != nil {
 		result := TestResult{
-			TestID: test.TraceID,
-			Passed: false,
-			Error:  err.Error(),
+			TestID:   test.TraceID,
+			Passed:   false,
+			Error:    err.Error(),
+			Duration: duration,
 		}
 		if e.onTestCompleted != nil {
 			e.onTestCompleted(result, test)
