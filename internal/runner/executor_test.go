@@ -235,6 +235,58 @@ func TestExecutor_RunTestsConcurrently(t *testing.T) {
 	}
 }
 
+func TestExecutor_RunTestsConcurrently_CallbackForAllTests(t *testing.T) {
+	// Create a server that only responds to some paths
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "success") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		} else if strings.Contains(r.URL.Path, "slow") {
+			time.Sleep(200 * time.Millisecond) // Will timeout
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	executor := NewExecutor()
+	executor.serviceURL = server.URL
+	executor.SetTestTimeout(50 * time.Millisecond)
+
+	var mu sync.Mutex
+	callbackCount := 0
+	callbackResults := make(map[string]TestResult)
+
+	executor.SetOnTestCompleted(func(result TestResult, test Test) {
+		mu.Lock()
+		defer mu.Unlock()
+		callbackCount++
+		callbackResults[test.TraceID] = result
+	})
+
+	tests := []Test{
+		{TraceID: "test-success-1", Request: Request{Method: "GET", Path: "/success"}},
+		{TraceID: "test-success-2", Request: Request{Method: "GET", Path: "/success"}},
+		{TraceID: "test-slow-1", Request: Request{Method: "GET", Path: "/slow"}},                         // Will timeout
+		{TraceID: "test-slow-2", Request: Request{Method: "GET", Path: "/slow"}},                         // Will timeout
+		{TraceID: "test-error-1", Request: Request{Method: "GET", Path: "http://localhost:59998/error"}}, // Connection error
+	}
+
+	results, err := executor.RunTestsConcurrently(tests, 3)
+
+	assert.NoError(t, err)
+	assert.Len(t, results, 5)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 5, callbackCount, "Callback should be called for all 5 tests including failures")
+
+	for _, test := range tests {
+		result, exists := callbackResults[test.TraceID]
+		assert.True(t, exists, "Callback should have been called for test %s", test.TraceID)
+		assert.Equal(t, test.TraceID, result.TestID)
+	}
+}
+
 func TestExecutor_RunSingleTest_WithMockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "test-trace-id", r.Header.Get("x-td-trace-id"))
@@ -434,6 +486,12 @@ func TestExecutor_RunSingleTest_WithTimeout(t *testing.T) {
 	executor.serviceURL = server.URL
 	executor.SetTestTimeout(50 * time.Millisecond) // Short timeout
 
+	// Add callback verification
+	var callbackCalled bool
+	executor.SetOnTestCompleted(func(result TestResult, test Test) {
+		callbackCalled = true
+	})
+
 	test := Test{
 		TraceID: "test-timeout",
 		Request: Request{
@@ -446,7 +504,12 @@ func TestExecutor_RunSingleTest_WithTimeout(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "timeout")
-	assert.Equal(t, TestResult{}, result)
+
+	assert.Equal(t, "test-timeout", result.TestID)
+	assert.False(t, result.Passed)
+	assert.NotEmpty(t, result.Error)
+	assert.Contains(t, strings.ToLower(result.Error), "timeout")
+	assert.True(t, callbackCalled, "Callback should be called even on timeout")
 }
 
 func TestExecutor_RunSingleTest_WithCallback(t *testing.T) {
@@ -486,6 +549,38 @@ func TestExecutor_RunSingleTest_WithCallback(t *testing.T) {
 	assert.True(t, callbackCalled)
 	assert.Equal(t, result.TestID, callbackResult.TestID)
 	assert.Equal(t, test.TraceID, callbackTest.TraceID)
+}
+
+func TestExecutor_RunSingleTest_CallbackOnConnectionError(t *testing.T) {
+	executor := NewExecutor()
+	executor.serviceURL = "http://localhost:59999" // Port that doesn't exist
+	executor.SetTestTimeout(100 * time.Millisecond)
+
+	var callbackCalled bool
+	var callbackResult TestResult
+	executor.SetOnTestCompleted(func(result TestResult, test Test) {
+		callbackCalled = true
+		callbackResult = result
+	})
+
+	test := Test{
+		TraceID: "test-connection-error",
+		Request: Request{
+			Method: "GET",
+			Path:   "/api/test",
+		},
+	}
+
+	_, err := executor.RunSingleTest(test)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "connect")
+
+	// Callback should still be called with error result
+	assert.True(t, callbackCalled, "Callback should be called even on connection error")
+	assert.Equal(t, "test-connection-error", callbackResult.TestID)
+	assert.False(t, callbackResult.Passed)
+	assert.NotEmpty(t, callbackResult.Error)
 }
 
 func TestCountPassedTests(t *testing.T) {

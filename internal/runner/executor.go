@@ -294,8 +294,17 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	duration := int(time.Since(startTime).Milliseconds())
 
 	if err != nil {
-		return TestResult{}, err
+		result := TestResult{
+			TestID: test.TraceID,
+			Passed: false,
+			Error:  err.Error(),
+		}
+		if e.onTestCompleted != nil {
+			e.onTestCompleted(result, test)
+		}
+		return result, err
 	}
+
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
 			slog.Warn("Failed to close response body", "error", err)
