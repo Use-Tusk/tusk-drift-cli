@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,7 +39,7 @@ func NewClient(baseURL, apiKey string) *TuskClient {
 		baseURL: host + TestRunServiceAPIPath,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 	}
 }
@@ -94,9 +96,45 @@ func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req 
 	return nil
 }
 
+func (c *TuskClient) makeProtoRequestWithRetry(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, maxRetries int) error {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			baseExpBackoff := 2 * math.Pow(2, float64(attempt-1))
+			jitter := 1 + rand.Float64() // #nosec G404
+			backoff := baseExpBackoff * jitter
+
+			maxBackoffSeconds := time.Duration(math.Min(15, backoff)) * time.Second
+
+			select {
+			case <-time.After(maxBackoffSeconds):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		err := c.makeProtoRequest(ctx, endpoint, req, resp, auth)
+		if err == nil {
+			return nil
+		}
+
+		// Check if error is retryable (502, 503, 504, network errors)
+		if strings.Contains(err.Error(), "http 502") ||
+			strings.Contains(err.Error(), "http 503") ||
+			strings.Contains(err.Error(), "http 504") {
+			lastErr = err
+			continue
+		}
+
+		// Non-retryable error
+		return err
+	}
+	return fmt.Errorf("max retries exceeded: %w", lastErr)
+}
+
 func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDriftRunRequest, auth AuthOptions) (string, error) {
 	var out backend.CreateDriftRunResponse
-	if err := c.makeProtoRequest(ctx, "create_drift_run", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "create_drift_run", in, &out, auth, 3); err != nil {
 		return "", err
 	}
 
@@ -111,7 +149,7 @@ func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDrift
 
 func (c *TuskClient) GetGlobalSpans(ctx context.Context, in *backend.GetGlobalSpansRequest, auth AuthOptions) (*backend.GetGlobalSpansResponseSuccess, error) {
 	var out backend.GetGlobalSpansResponse
-	if err := c.makeProtoRequest(ctx, "get_global_spans", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "get_global_spans", in, &out, auth, 3); err != nil {
 		return nil, err
 	}
 
@@ -126,7 +164,7 @@ func (c *TuskClient) GetGlobalSpans(ctx context.Context, in *backend.GetGlobalSp
 
 func (c *TuskClient) GetPreAppStartSpans(ctx context.Context, in *backend.GetPreAppStartSpansRequest, auth AuthOptions) (*backend.GetPreAppStartSpansResponseSuccess, error) {
 	var out backend.GetPreAppStartSpansResponse
-	if err := c.makeProtoRequest(ctx, "get_pre_app_start_spans", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "get_pre_app_start_spans", in, &out, auth, 3); err != nil {
 		return nil, err
 	}
 
@@ -141,7 +179,7 @@ func (c *TuskClient) GetPreAppStartSpans(ctx context.Context, in *backend.GetPre
 
 func (c *TuskClient) GetDriftRunTraceTests(ctx context.Context, in *backend.GetDriftRunTraceTestsRequest, auth AuthOptions) (*backend.GetDriftRunTraceTestsResponseSuccess, error) {
 	var out backend.GetDriftRunTraceTestsResponse
-	if err := c.makeProtoRequest(ctx, "get_drift_run_trace_tests", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "get_drift_run_trace_tests", in, &out, auth, 3); err != nil {
 		return nil, err
 	}
 
@@ -156,7 +194,7 @@ func (c *TuskClient) GetDriftRunTraceTests(ctx context.Context, in *backend.GetD
 
 func (c *TuskClient) GetAllTraceTests(ctx context.Context, in *backend.GetAllTraceTestsRequest, auth AuthOptions) (*backend.GetAllTraceTestsResponseSuccess, error) {
 	var out backend.GetAllTraceTestsResponse
-	if err := c.makeProtoRequest(ctx, "get_all_trace_tests", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "get_all_trace_tests", in, &out, auth, 3); err != nil {
 		return nil, err
 	}
 
@@ -171,7 +209,7 @@ func (c *TuskClient) GetAllTraceTests(ctx context.Context, in *backend.GetAllTra
 
 func (c *TuskClient) GetTraceTest(ctx context.Context, in *backend.GetTraceTestRequest, auth AuthOptions) (*backend.GetTraceTestResponseSuccess, error) {
 	var out backend.GetTraceTestResponse
-	if err := c.makeProtoRequest(ctx, "get_trace_test", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "get_trace_test", in, &out, auth, 3); err != nil {
 		return nil, err
 	}
 
@@ -190,7 +228,7 @@ func (c *TuskClient) GetTraceTest(ctx context.Context, in *backend.GetTraceTestR
 
 func (c *TuskClient) UploadTraceTestResults(ctx context.Context, in *backend.UploadTraceTestResultsRequest, auth AuthOptions) error {
 	var out backend.UploadTraceTestResultsResponse
-	if err := c.makeProtoRequest(ctx, "upload_trace_test_results", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "upload_trace_test_results", in, &out, auth, 3); err != nil {
 		return err
 	}
 
@@ -205,7 +243,7 @@ func (c *TuskClient) UploadTraceTestResults(ctx context.Context, in *backend.Upl
 
 func (c *TuskClient) UpdateDriftRunCIStatus(ctx context.Context, in *backend.UpdateDriftRunCIStatusRequest, auth AuthOptions) error {
 	var out backend.UpdateDriftRunCIStatusResponse
-	if err := c.makeProtoRequest(ctx, "update_drift_run_ci_status", in, &out, auth); err != nil {
+	if err := c.makeProtoRequestWithRetry(ctx, "update_drift_run_ci_status", in, &out, auth, 3); err != nil {
 		return err
 	}
 
@@ -216,44 +254,4 @@ func (c *TuskClient) UpdateDriftRunCIStatus(ctx context.Context, in *backend.Upd
 		return fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
 	return fmt.Errorf("invalid response")
-}
-
-// Legacy methods - TODO: Remove these once we've migrated to protobuf everywhere
-func (c *TuskClient) GetTests(serviceID string) ([]TestRecording, error) {
-	return []TestRecording{
-		{
-			ID:        "api-test-1",
-			ServiceID: serviceID,
-			TraceID:   "trace-123",
-			Method:    "GET",
-			Path:      "/api/users",
-			Timestamp: time.Now(),
-		},
-		{
-			ID:        "api-test-2",
-			ServiceID: serviceID,
-			TraceID:   "trace-456",
-			Method:    "POST",
-			Path:      "/api/users",
-			Timestamp: time.Now(),
-		},
-	}, nil
-}
-
-func (c *TuskClient) GetTest(testID string) (*TestRecording, error) {
-	return &TestRecording{
-		ID:        testID,
-		ServiceID: "service-123",
-		TraceID:   "trace-789",
-		Method:    "GET",
-		Path:      "/api/test",
-		Timestamp: time.Now(),
-	}, nil
-}
-
-func (c *TuskClient) UploadResults(results []TestResult) error {
-	fmt.Printf("Uploading %d test results to Tusk API...\n", len(results))
-	time.Sleep(500 * time.Millisecond)
-	fmt.Println("Results uploaded successfully")
-	return nil
 }
