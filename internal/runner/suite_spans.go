@@ -141,7 +141,7 @@ func FetchPreAppStartSpansFromCloud(
 	for {
 		req := &backend.GetPreAppStartSpansRequest{
 			ObservableServiceId: serviceID,
-			PageSize:            200,
+			PageSize:            50,
 		}
 		if cur != "" {
 			req.PaginationCursor = &cur
@@ -223,7 +223,7 @@ func fetchAllSuiteSpans(
 	for {
 		req := &backend.GetAllTraceTestsRequest{
 			ObservableServiceId: serviceID,
-			PageSize:            100,
+			PageSize:            50,
 		}
 		if cur != "" {
 			req.PaginationCursor = &cur
