@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -42,15 +43,24 @@ func init() {
 
 func listTests(cmd *cobra.Command, args []string) error {
 	_ = config.Load(cfgFile)
+	cfg, getConfigErr := config.Get()
 
 	executor := runner.NewExecutor()
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
+
+	if getConfigErr == nil && cfg.TestExecution.Concurrency > 0 {
+		executor.SetConcurrency(cfg.TestExecution.Concurrency)
+	}
+	if getConfigErr == nil && cfg.TestExecution.Timeout != "" {
+		if d, err := time.ParseDuration(cfg.TestExecution.Timeout); err == nil {
+			executor.SetTestTimeout(d)
+		}
+	}
 
 	var tests []runner.Test
 	var err error
 	var client *api.TuskClient
 	var authOptions api.AuthOptions
-	var cfg *config.Config
 
 	if cloud {
 		client, authOptions, cfg, err = api.SetupCloud(context.Background(), true)
