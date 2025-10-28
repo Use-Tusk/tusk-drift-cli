@@ -724,45 +724,14 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 
 // handleMockRequestProtobuf processes mock requests using protobuf
 func (ms *Server) handleMockRequestProtobuf(msg *core.SDKMessage, conn net.Conn) {
-	startTime := time.Now()
-
 	mockReq := msg.GetGetMockRequest()
 	if mockReq == nil {
 		slog.Error("Invalid mock request - no payload")
 		return
 	}
 
-	testID := mockReq.TestId
-	if testID == "" {
-		if stored := ms.currentTestID.Load(); stored != nil {
-			testID = stored.(string)
-		}
-	}
-
-	responseChan := make(chan *core.GetMockResponse, 1)
-	go func() {
-		response := ms.findMock(mockReq)
-		response.RequestId = msg.RequestId
-		responseChan <- response
-	}()
-
-	var response *core.GetMockResponse
-	select {
-	case response = <-responseChan:
-		// Success
-	case <-time.After(15 * time.Second):
-		slog.Error("Mock request timeout",
-			"requestId", msg.RequestId,
-			"testId", testID,
-			"package", mockReq.OutboundSpan.PackageName,
-			"duration", time.Since(startTime))
-
-		response = &core.GetMockResponse{
-			RequestId: msg.RequestId,
-			Found:     false,
-			Error:     fmt.Sprintf("mock search timed out after 15s for %s", mockReq.OutboundSpan.PackageName),
-		}
-	}
+	response := ms.findMock(mockReq)
+	response.RequestId = msg.RequestId
 
 	cliMsg := &core.CLIMessage{
 		Type:      core.MessageType_MESSAGE_TYPE_MOCK_REQUEST,
@@ -845,18 +814,6 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 
 	// If no match found in trace (or no testID), try global fallback
 	if span == nil {
-		if testID == "" && req.OutboundSpan != nil && !req.OutboundSpan.IsPreAppStart {
-			slog.Debug("No test ID and not pre-app-start; skipping suite span search",
-				"package", req.OutboundSpan.PackageName,
-				"operation", req.Operation)
-
-			return &core.GetMockResponse{
-				Found: false,
-				Error: fmt.Sprintf("no mock found for background query %s %s (no testID)",
-					req.Operation, req.OutboundSpan.Name),
-			}
-		}
-
 		if testID != "" {
 			slog.Debug("No mock found in current trace; attempting global fallback",
 				"testID", testID, "package", req.OutboundSpan.PackageName, "operation", req.Operation, "error", err)

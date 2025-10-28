@@ -78,6 +78,7 @@ func (mm *MockMatcher) FindBestMatchInTrace(req *core.GetMockRequest, traceID st
 func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, traceID string, spans []*core.Span) (*core.Span, *backend.MatchLevel, error) {
 	// Priorities 10–11 over the whole suite (value hash, then reduced value hash)
 
+	requestIsPreAppStart := req.OutboundSpan.IsPreAppStart
 	inputValueHash := req.OutboundSpan.GetInputValueHash()
 
 	// Priority 9: Check global spans from Tusk Drift Cloud
@@ -85,14 +86,15 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 
 	// Priority 10: Input value hash across suite (use index)
 	candidates := mm.server.GetSuiteSpansByValueHash(inputValueHash)
-	if match := mm.findFirstUnused(candidates); match != nil {
+	filteredCandidates := mm.filterByPreAppStart(candidates, requestIsPreAppStart)
+	if match := mm.findFirstUnused(filteredCandidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
 			MatchDescription: "Suite unused span by input value hash",
 		}, nil
 	}
-	if match := mm.findFirstUsed(candidates); match != nil {
+	if match := mm.findFirstUsed(filteredCandidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
@@ -103,14 +105,16 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 	// Priority 11: Reduced input value hash across suite (use index)
 	reducedHash := reducedRequestValueHash(req)
 	reducedCandidates := mm.server.GetSuiteSpansByReducedValueHash(reducedHash)
-	if match := mm.findFirstUnused(reducedCandidates); match != nil {
+	filteredReducedCandidates := mm.filterByPreAppStart(reducedCandidates, requestIsPreAppStart)
+
+	if match := mm.findFirstUnused(filteredReducedCandidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
 			MatchDescription: "Suite unused span by input value hash with reduced schema",
 		}, nil
 	}
-	if match := mm.findFirstUsed(reducedCandidates); match != nil {
+	if match := mm.findFirstUsed(filteredReducedCandidates); match != nil {
 		return match, &backend.MatchLevel{
 			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
 			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
@@ -350,6 +354,22 @@ func (mm *MockMatcher) filterUsed(spans []*core.Span) []*core.Span {
 			if isUsed, exists := traceUsage[span.SpanId]; exists && isUsed {
 				result = append(result, span)
 			}
+		}
+	}
+	return result
+}
+
+// filterByPreAppStart filters spans to match the request's isPreAppStart status
+// This ensures pre-app-start requests only match pre-app-start spans, and vice versa
+func (mm *MockMatcher) filterByPreAppStart(spans []*core.Span, requestIsPreAppStart bool) []*core.Span {
+	if len(spans) == 0 {
+		return nil
+	}
+
+	var result []*core.Span
+	for _, span := range spans {
+		if span.IsPreAppStart == requestIsPreAppStart {
+			result = append(result, span)
 		}
 	}
 	return result
