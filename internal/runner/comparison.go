@@ -21,11 +21,20 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 		return TestResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Parse response body as JSON if possible
+	// Parse response body based on content-type to match how expected value was decoded
 	var actualBody any
 	if len(bodyBytes) > 0 {
-		if err := json.Unmarshal(bodyBytes, &actualBody); err != nil {
-			// If not JSON, store as string
+		contentType := actualResp.Header.Get("Content-Type")
+		mainType := strings.Split(contentType, ";")[0]
+		mainType = strings.TrimSpace(strings.ToLower(mainType))
+
+		// Only try JSON parsing if content-type indicates JSON
+		// For other content types (text/plain, text/html, etc.), keep as raw string
+		if mainType == "application/json" || mainType == "" {
+			if err := json.Unmarshal(bodyBytes, &actualBody); err != nil {
+				actualBody = string(bodyBytes)
+			}
+		} else {
 			actualBody = string(bodyBytes)
 		}
 	}
