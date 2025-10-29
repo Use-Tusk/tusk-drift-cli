@@ -316,7 +316,7 @@ func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
 	assert.NotEqual(t, span.InputValueHash, req.OutboundSpan.InputValueHash)
 
 	// Reduced schema hash should align; function under test computes reduced from schema itself
-	result := mm.findUnusedSpanByReducedInputSchemaHash(req, []*core.Span{span})
+	result := mm.findUnusedSpanByReducedInputSchemaHash(req, []*core.Span{span}, traceID)
 	require.NotNil(t, result.span)
 	assert.Equal(t, "sRS", result.span.SpanId)
 }
