@@ -519,6 +519,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	if outputErr != nil {
 		cmd.SilenceUsage = true
+		// In CI mode, don't fail on test deviations - only fail on execution/upload errors
+		// As long as all tests ran and results were uploaded successfully, we want the CI workflow to pass.
+		if ci && cloud {
+			return nil
+		}
 		return outputErr
 	}
 
