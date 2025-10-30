@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 	"github.com/stretchr/testify/require"
 )
 
@@ -121,72 +122,104 @@ comparison:
 	require.Equal(t, "response.body", res.Deviations[0].Field)
 }
 
-func TestCompareAndGenerateResult_TextPlainWithJSONString(t *testing.T) {
+func TestCompareAndGenerateResult_PlainTextDecodedType(t *testing.T) {
 	executor := &Executor{}
 
-	// Expected body: when decoded from span with decodedType=PLAIN_TEXT,
-	// it returns the raw string including the quotes
-	// (This is what DecodeValueBySchema returns for PLAIN_TEXT)
+	// When decodedType=PLAIN_TEXT, the body should be treated as a raw string
+	// Even if it contains valid JSON syntax, it should NOT be parsed
 	expectedBody := `"Pull request reminders sent successfully"`
 
 	test := Test{
-		TraceID: "t-text-plain",
+		TraceID: "t-plain-text-decoded-type",
+		Spans: []*core.Span{
+			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_PLAIN_TEXT),
+		},
 		Response: Response{
 			Status:  200,
-			Headers: map[string]string{"Content-Type": "text/plain; charset=utf-8"},
+			Headers: map[string]string{},
 			Body:    expectedBody,
 		},
 	}
 
-	// Actual response: Express returns a JSON-encoded string with text/plain content-type
+	// Actual response contains a JSON-encoded string, but should be treated as plain text
 	actualResponseBody := `"Pull request reminders sent successfully"`
-	resp := makeResponse(200, map[string]string{"Content-Type": "text/plain; charset=utf-8"}, actualResponseBody)
+	resp := makeResponse(200, nil, actualResponseBody)
 
 	res, err := executor.compareAndGenerateResult(test, resp, 45)
 	require.NoError(t, err)
-	require.True(t, res.Passed, "text/plain response with JSON-encoded string should match")
+	require.True(t, res.Passed, "PLAIN_TEXT decodedType should treat body as raw string")
 	require.Empty(t, res.Deviations)
-	require.Equal(t, "t-text-plain", res.TestID)
-	require.Equal(t, 45, res.Duration)
 }
 
-func TestCompareAndGenerateResult_TextPlainVsJSON(t *testing.T) {
+func TestCompareAndGenerateResult_PlainTextDecodedType_JSONLikeContent(t *testing.T) {
 	executor := &Executor{}
 
-	// Test that text/plain is not parsed as JSON
+	// When decodedType=PLAIN_TEXT, even JSON-like content should be treated as string
 	expectedBody := `{"key": "value"}`
 
 	test := Test{
-		TraceID: "t-text-plain-json",
+		TraceID: "t-plain-text-json-like",
+		Spans: []*core.Span{
+			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_PLAIN_TEXT),
+		},
 		Response: Response{
 			Status:  200,
-			Headers: map[string]string{"Content-Type": "text/plain"},
+			Headers: map[string]string{},
 			Body:    expectedBody,
 		},
 	}
 
 	actualResponseBody := `{"key": "value"}`
-	resp := makeResponse(200, map[string]string{"Content-Type": "text/plain"}, actualResponseBody)
+	resp := makeResponse(200, nil, actualResponseBody)
 
 	res, err := executor.compareAndGenerateResult(test, resp, 10)
 	require.NoError(t, err)
-	require.True(t, res.Passed, "text/plain with JSON-like content should be treated as string")
+	require.True(t, res.Passed, "PLAIN_TEXT decodedType should not parse JSON")
 	require.Empty(t, res.Deviations)
 }
 
-func TestCompareAndGenerateResult_MissingContentType(t *testing.T) {
+func TestCompareAndGenerateResult_JSONDecodedType(t *testing.T) {
 	executor := &Executor{}
 
-	// When content-type is missing, SDK sets decodedType=UNSPECIFIED
-	// which tries JSON parsing first, then falls back to string
-	// So our expected value here is the parsed JSON
+	// When decodedType=JSON, body should be parsed as JSON
+	expectedBody := map[string]any{"status": "success"}
+
+	test := Test{
+		TraceID: "t-json-decoded-type",
+		Spans: []*core.Span{
+			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_JSON),
+		},
+		Response: Response{
+			Status:  200,
+			Headers: map[string]string{},
+			Body:    expectedBody,
+		},
+	}
+
+	actualResponseBody := `{"status": "success"}`
+	resp := makeResponse(200, nil, actualResponseBody)
+
+	res, err := executor.compareAndGenerateResult(test, resp, 20)
+	require.NoError(t, err)
+	require.True(t, res.Passed, "JSON decodedType should parse as JSON")
+	require.Empty(t, res.Deviations)
+}
+
+func TestCompareAndGenerateResult_UnspecifiedDecodedType(t *testing.T) {
+	executor := &Executor{}
+
+	// When decodedType=UNSPECIFIED, tries JSON parsing first, falls back to string
+	// Valid JSON should be parsed
 	expectedBody := map[string]any{"ok": true}
 
 	test := Test{
-		TraceID: "t-no-content-type",
+		TraceID: "t-unspecified-decoded-type",
+		Spans: []*core.Span{
+			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_UNSPECIFIED),
+		},
 		Response: Response{
 			Status:  200,
-			Headers: map[string]string{}, // No content-type
+			Headers: map[string]string{},
 			Body:    expectedBody,
 		},
 	}
@@ -196,31 +229,59 @@ func TestCompareAndGenerateResult_MissingContentType(t *testing.T) {
 
 	res, err := executor.compareAndGenerateResult(test, resp, 15)
 	require.NoError(t, err)
-	require.True(t, res.Passed, "missing content-type should default to JSON parsing")
+	require.True(t, res.Passed, "UNSPECIFIED decodedType should try JSON parsing")
 	require.Empty(t, res.Deviations)
 }
 
-func TestCompareAndGenerateResult_JSONContentType(t *testing.T) {
+func TestCompareAndGenerateResult_UnspecifiedDecodedType_FallbackToString(t *testing.T) {
 	executor := &Executor{}
 
-	// With application/json content-type, body should be parsed as JSON
-	expectedBody := map[string]any{"status": "success"}
+	// When decodedType=UNSPECIFIED and content is not valid JSON, should fall back to string
+	expectedBody := "not valid json"
 
 	test := Test{
-		TraceID: "t-json-content-type",
+		TraceID: "t-unspecified-fallback",
+		Spans: []*core.Span{
+			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_UNSPECIFIED),
+		},
 		Response: Response{
 			Status:  200,
-			Headers: map[string]string{"Content-Type": "application/json"},
+			Headers: map[string]string{},
 			Body:    expectedBody,
 		},
 	}
 
-	actualResponseBody := `{"status": "success"}`
-	resp := makeResponse(200, map[string]string{"Content-Type": "application/json"}, actualResponseBody)
+	actualResponseBody := "not valid json"
+	resp := makeResponse(200, nil, actualResponseBody)
 
-	res, err := executor.compareAndGenerateResult(test, resp, 20)
+	res, err := executor.compareAndGenerateResult(test, resp, 12)
 	require.NoError(t, err)
-	require.True(t, res.Passed, "application/json should parse as JSON")
+	require.True(t, res.Passed, "UNSPECIFIED decodedType should fall back to string for non-JSON")
+	require.Empty(t, res.Deviations)
+}
+
+func TestCompareAndGenerateResult_NoSpans_DefaultsToUnspecified(t *testing.T) {
+	executor := &Executor{}
+
+	// When test.Spans is empty, should default to UNSPECIFIED behavior
+	expectedBody := map[string]any{"data": "test"}
+
+	test := Test{
+		TraceID: "t-no-spans",
+		Spans:   []*core.Span{}, // Empty spans
+		Response: Response{
+			Status:  200,
+			Headers: map[string]string{},
+			Body:    expectedBody,
+		},
+	}
+
+	actualResponseBody := `{"data": "test"}`
+	resp := makeResponse(200, nil, actualResponseBody)
+
+	res, err := executor.compareAndGenerateResult(test, resp, 8)
+	require.NoError(t, err)
+	require.True(t, res.Passed, "Empty spans should default to UNSPECIFIED (tries JSON)")
 	require.Empty(t, res.Deviations)
 }
 

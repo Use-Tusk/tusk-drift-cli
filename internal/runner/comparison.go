@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
 
 // compareAndGenerateResult compares the actual HTTP response with expected results
@@ -21,21 +21,24 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 		return TestResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Parse response body based on content-type to match how expected value was decoded
+	// Extract decodedType from the server span's output schema
+	// This ensures we parse the actual response the same way we parsed the expected value
+	var decodedType core.DecodedType = core.DecodedType_DECODED_TYPE_UNSPECIFIED
+	for _, span := range test.Spans {
+		if span.IsRootSpan && span.OutputSchema != nil && span.OutputSchema.Properties != nil {
+			bodySchema := span.OutputSchema.Properties["body"]
+			if bodySchema != nil && bodySchema.DecodedType != nil {
+				decodedType = *bodySchema.DecodedType
+				break
+			}
+		}
+	}
+
 	var actualBody any
 	if len(bodyBytes) > 0 {
-		contentType := actualResp.Header.Get("Content-Type")
-		mainType := strings.Split(contentType, ";")[0]
-		mainType = strings.TrimSpace(strings.ToLower(mainType))
-
-		// Only try JSON parsing if content-type indicates JSON
-		// For other content types (text/plain, text/html, etc.), keep as raw string
-		if mainType == "application/json" || mainType == "" {
-			if err := json.Unmarshal(bodyBytes, &actualBody); err != nil {
-				actualBody = string(bodyBytes)
-			}
-		} else {
-			actualBody = string(bodyBytes)
+		actualBody, err = parseDecodedBytes(bodyBytes, decodedType)
+		if err != nil {
+			return TestResult{}, fmt.Errorf("failed to parse actual response body: %w", err)
 		}
 	}
 
