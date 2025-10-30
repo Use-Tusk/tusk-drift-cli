@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -31,6 +32,20 @@ func makeResponse(status int, headers map[string]string, body string) *http.Resp
 		StatusCode: status,
 		Header:     h,
 		Body:       io.NopCloser(bytes.NewBufferString(body)),
+	}
+}
+
+// makeSpanWithOutputSchema creates a span with an output schema that specifies the decoded type.
+func makeSpanWithOutputSchema(decodedType core.DecodedType) *core.Span {
+	return &core.Span{
+		IsRootSpan: true,
+		OutputSchema: &core.JsonSchema{
+			Properties: map[string]*core.JsonSchema{
+				"body": {
+					DecodedType: &decodedType,
+				},
+			},
+		},
 	}
 }
 
