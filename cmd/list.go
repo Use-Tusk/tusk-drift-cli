@@ -13,7 +13,6 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
-	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
 //go:embed short_docs/list.md
@@ -68,30 +67,15 @@ func listTests(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		var (
-			all []*backend.TraceTest
-			cur string
-		)
-		for {
-			req := &backend.GetAllTraceTestsRequest{
-				ObservableServiceId: cfg.Service.ID,
-				PageSize:            100,
-			}
-			if cur != "" {
-				req.PaginationCursor = &cur
-			}
-			resp, err := client.GetAllTraceTests(context.Background(), req, authOptions)
-			if err != nil {
-				return fmt.Errorf("failed to fetch trace tests from backend: %w", err)
-			}
-			all = append(all, resp.TraceTests...)
-			if next := resp.GetNextCursor(); next != "" {
-				cur = next
-				continue
-			}
-			break
+		suiteOpts := runner.SuiteSpanOptions{
+			IsCloudMode: cloud,
+			Client:      client,
+			AuthOptions: authOptions,
+			Interactive: true,
+			ServiceID:   cfg.Service.ID,
 		}
-		tests = runner.ConvertTraceTestsToRunnerTests(all)
+
+		return tui.ShowTestListLoading(executor, suiteOpts, client, authOptions, cfg.Service.ID)
 	} else {
 		_ = config.Load("")
 		cfg, getConfigErr := config.Get()
