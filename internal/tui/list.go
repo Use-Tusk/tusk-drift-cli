@@ -32,6 +32,7 @@ type listModel struct {
 	selectedTest *runner.Test
 	columns      []table.Column
 	suiteOpts    runner.SuiteSpanOptions
+	err          error
 }
 
 func ShowTestList(tests []runner.Test) error {
@@ -119,6 +120,10 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case testsLoadFailedMsg:
+		m.err = msg.err
+		return m, tea.Quit
+
 	case tea.KeyMsg:
 		switch m.state {
 		case listView:
@@ -250,10 +255,16 @@ func (m *listModel) resizeColumns(totalWidth int) {
 }
 
 func (m *listModel) View() string {
+	header := components.Title(m.width, "AVAILABLE TESTS")
+
 	switch m.state {
 	case listView:
-		header := components.Title(m.width, "AVAILABLE TESTS")
-		help := components.Footer(m.width, "↑/↓: navigate • g: go to top • G: go to bottom • enter: run test (with default run options) • q: quit")
+		testCount := fmt.Sprintf("%d TESTS", len(m.tests))
+		helpText := "↑/↓: navigate • g: go to top • G: go to bottom • enter: run test (with default run options) • q: quit"
+
+		footer := fmt.Sprintf("%s • %s", testCount, helpText)
+		help := components.Footer(m.width, footer)
+
 		return fmt.Sprintf("%s\n\n%s\n\n%s", header, m.table.View(), help)
 	case testExecutionView:
 		if m.testExecutor != nil {
