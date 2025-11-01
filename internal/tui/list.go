@@ -120,54 +120,6 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case testsLoadedMsg:
-		if len(msg.tests) == 0 {
-			return m, tea.Quit
-		}
-
-		rows := []table.Row{}
-		for i, test := range msg.tests {
-			timestamp := test.Timestamp
-			if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
-				timestamp = t.Local().Format("2006-01-02 15:04:05 MST")
-			} else if len(timestamp) >= 19 {
-				timestamp = timestamp[:10] + " " + timestamp[11:19]
-			}
-
-			displayType := test.DisplayType
-			if displayType == "" {
-				displayType = test.Type
-			}
-			displayPath := test.DisplayName
-			if displayPath == "" {
-				displayPath = test.Path
-			}
-
-			rows = append(rows, table.Row{
-				fmt.Sprintf("%d", i+1),
-				test.TraceID,
-				displayType,
-				displayPath,
-				test.Status,
-				fmt.Sprintf("%dms", test.Duration),
-				timestamp,
-			})
-		}
-
-		m.tests = msg.tests
-		m.table.SetRows(rows)
-		m.state = listView
-
-		// Apply window dimensions to table as we're transitioning to list view
-		if m.width > 0 {
-			m.resizeColumns(m.width)
-		}
-		if m.height > 0 {
-			m.table.SetHeight(m.height - 5)
-		}
-
-		return m, nil
-
 	case testsLoadFailedMsg:
 		m.err = msg.err
 		return m, tea.Quit
