@@ -17,6 +17,8 @@ var (
 	}()
 
 	SecondaryColor = "55"
+
+	WarningColor = "214"
 )
 
 var (
@@ -37,7 +39,7 @@ var (
 			Foreground(lipgloss.Color("196"))
 
 	WarningStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("214"))
+			Foreground(lipgloss.Color(WarningColor))
 
 	DimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245"))
@@ -62,8 +64,15 @@ var (
 
 	BoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(PrimaryColor)).
 			Padding(1, 2)
+
+	InfoBoxStyle = BoxStyle.
+			BorderForeground(lipgloss.Color(PrimaryColor))
+
+	WarningBoxStyle = BoxStyle.
+			BorderForeground(lipgloss.Color(WarningColor))
+
+	TextCenterStyle = lipgloss.NewStyle().Align(lipgloss.Center)
 
 	InputStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).

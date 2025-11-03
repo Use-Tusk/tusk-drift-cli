@@ -59,13 +59,18 @@ func (lp *LogPanelComponent) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (lp *LogPanelComponent) View(width, height int) string {
+	lp.logMutex.Lock()
+	defer lp.logMutex.Unlock()
+
 	// Safety checks for dimensions
 	if width <= 0 {
-		width = 50 // Fallback width
+		width = 50
 	}
 	if height <= 0 {
-		height = 20 // Fallback height
+		height = 10
 	}
+
+	lp.updateViewport()
 
 	viewportWidth := width - 4   // Account for borders (2) and padding (2)
 	viewportHeight := height - 3 // Space for title and borders
@@ -92,7 +97,7 @@ func (lp *LogPanelComponent) View(width, height int) string {
 		BorderForeground(borderColor).
 		PaddingLeft(1).
 		PaddingRight(1).
-		Width(width)
+		MaxWidth(width)
 
 	// Determine title and content
 	title := "Service Logs"

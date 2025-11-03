@@ -81,7 +81,7 @@ func (m *Model) View() string {
 		yamlStr := formatYAMLWithBlankLines([]byte(buf.String()))
 
 		// Render boxed YAML (actual viewport content)
-		content := styles.BoxStyle.Render(string(yamlStr))
+		content := styles.InfoBoxStyle.Render(string(yamlStr))
 		contentHeight := lipgloss.Height(content)
 
 		// Measure layout pieces
@@ -165,7 +165,7 @@ func (m *Model) View() string {
 
 		if len(def) > 60 || strings.Contains(def, "\n") || strings.Contains(def, "\\") {
 			body.WriteString(styles.DimStyle.Render("Default value:") + "\n")
-			body.WriteString(styles.BoxStyle.Render(def) + "\n\n")
+			body.WriteString(styles.InfoBoxStyle.Render(def) + "\n\n")
 			body.WriteString(styles.DimStyle.Render("Press enter to use default, or type your custom command:") + "\n")
 		} else {
 			body.WriteString(styles.DimStyle.Render("Default value: "+def) + "\n")
