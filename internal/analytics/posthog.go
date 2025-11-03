@@ -17,6 +17,7 @@ type PostHogClient struct {
 
 // NewPostHogClient creates a new PostHog client
 func NewPostHogClient() *PostHogClient {
+	// #nosec G101 -- This is a public PostHog API key, safe to hardcode
 	apiKey := "phc_mUFon9ykhVY9tga0zS6TPQ7FQloQNO91PQRtXdAREqz"
 
 	client, err := posthog.NewWithConfig(apiKey, posthog.Config{
