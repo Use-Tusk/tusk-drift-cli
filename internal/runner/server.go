@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
@@ -71,6 +72,9 @@ type Server struct {
 	communicationType CommunicationType
 	tcpListener       net.Listener
 	tcpPort           int
+
+	// Analytics
+	posthogClient *analytics.PostHogClient
 }
 
 // MessageType represents the type of message sent by the SDK
@@ -154,6 +158,7 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		mockNotFoundEvents: make(map[string][]MockNotFoundEvent),
 		communicationType:  commType,
 		tcpPort:            cfg.Communication.TCPPort,
+		posthogClient:      analytics.NewPostHogClient(),
 	}
 
 	return server, nil
@@ -228,6 +233,14 @@ func (ms *Server) Stop() error {
 	}
 
 	ms.wg.Wait()
+
+	// Flush and close PostHog client
+	if ms.posthogClient != nil {
+		if err := ms.posthogClient.Close(); err != nil {
+			slog.Error("Failed to close PostHog client", "error", err)
+		}
+	}
+
 	slog.Debug("Mock server stopped")
 	return nil
 }
@@ -516,6 +529,8 @@ func (ms *Server) handleConnection(conn net.Conn) {
 			}(&sdkMsg)
 		case core.MessageType_MESSAGE_TYPE_INBOUND_SPAN:
 			ms.handleInboundReplaySpanProtobuf(&sdkMsg, conn)
+		case core.MessageType_MESSAGE_TYPE_ALERT:
+			ms.handleAlertProtobuf(&sdkMsg)
 		default:
 			slog.Debug("Unknown message type", "type", sdkMsg.Type)
 		}
@@ -771,6 +786,57 @@ func (ms *Server) handleInboundReplaySpanProtobuf(msg *core.SDKMessage, conn net
 			SendInboundSpanForReplayResponse: &core.SendInboundSpanForReplayResponse{Success: true},
 		},
 	})
+}
+
+func (ms *Server) handleAlertProtobuf(msg *core.SDKMessage) {
+	req := msg.GetSendAlertRequest()
+	if req == nil {
+		slog.Error("Invalid alert request")
+		return
+	}
+
+	switch alert := req.Alert.(type) {
+	case *core.SendAlertRequest_VersionMismatch:
+		ms.handleInstrumentationVersionMismatchAlert(alert.VersionMismatch)
+	case *core.SendAlertRequest_UnpatchedDependency:
+		ms.handleUnpatchedDependencyAlert(alert.UnpatchedDependency)
+	default:
+		slog.Debug("Unknown alert type")
+	}
+}
+
+func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.InstrumentationVersionMismatchAlert) {
+	slog.Info("Instrumentation version mismatch alert",
+		"module", alert.ModuleName,
+		"requestedVersion", alert.RequestedVersion,
+		"supportedVersions", alert.SupportedVersions)
+
+	// Send to PostHog
+	if ms.posthogClient != nil {
+		ms.posthogClient.CaptureInstrumentationVersionMismatch(
+			alert.ModuleName,
+			alert.RequestedVersion,
+			alert.SupportedVersions,
+		)
+	} else {
+		slog.Debug("PostHog client not initialized, skipping instrumentation version mismatch alert")
+	}
+}
+
+func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependencyAlert) {
+	slog.Info("Unpatched dependency alert",
+		"traceTestServerSpanId", alert.TraceTestServerSpanId,
+		"stackTrace", alert.StackTrace)
+
+	// Send to PostHog
+	if ms.posthogClient != nil {
+		ms.posthogClient.CaptureUnpatchedDependency(
+			alert.TraceTestServerSpanId,
+			alert.StackTrace,
+		)
+	} else {
+		slog.Debug("PostHog client not initialized, skipping unpatched dependency alert")
+	}
 }
 
 // findMock searches for a matching mock for the given request
