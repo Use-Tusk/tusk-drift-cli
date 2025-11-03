@@ -7,11 +7,13 @@ import (
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
 type viewState int
@@ -33,6 +35,7 @@ type listModel struct {
 	columns      []table.Column
 	suiteOpts    runner.SuiteSpanOptions
 	err          error
+	sizeWarning  *components.TerminalSizeWarning
 }
 
 func ShowTestList(tests []runner.Test) error {
@@ -96,12 +99,13 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, su
 	t.SetStyles(s)
 
 	m := &listModel{
-		table:     t,
-		tests:     tests,
-		executor:  executor,
-		state:     listView,
-		columns:   columns,
-		suiteOpts: suiteOpts,
+		table:       t,
+		tests:       tests,
+		executor:    executor,
+		state:       listView,
+		columns:     columns,
+		suiteOpts:   suiteOpts,
+		sizeWarning: components.NewListViewSizeWarning(),
 	}
 
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
@@ -125,6 +129,17 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case tea.KeyMsg:
+		if m.state == listView && m.sizeWarning.ShouldShow(m.width, m.height) {
+			switch msg.String() {
+			case "enter", "d", "D":
+				m.sizeWarning.Dismiss()
+				return m, nil
+			case "q", "ctrl+c", "esc":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		switch m.state {
 		case listView:
 			switch msg.String() {
@@ -191,8 +206,17 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
+		oldWidth := m.width
+		oldHeight := m.height
 		m.width = msg.Width
 		m.height = msg.Height
+
+		wasLargeEnough := !m.sizeWarning.IsTooSmall(oldWidth, oldHeight)
+		isNowTooSmall := m.sizeWarning.IsTooSmall(m.width, m.height)
+
+		if wasLargeEnough && isNowTooSmall {
+			m.sizeWarning.Reset()
+		}
 
 		if m.state == listView {
 			m.resizeColumns(msg.Width)
@@ -255,17 +279,39 @@ func (m *listModel) resizeColumns(totalWidth int) {
 }
 
 func (m *listModel) View() string {
-	header := components.Title(m.width, "AVAILABLE TESTS")
-
 	switch m.state {
 	case listView:
-		testCount := fmt.Sprintf("%d TESTS", len(m.tests))
-		helpText := "↑/↓: navigate • g: go to top • G: go to bottom • enter: run test (with default run options) • q: quit"
+		if m.sizeWarning.ShouldShow(m.width, m.height) {
+			return m.sizeWarning.View(m.width, m.height)
+		}
 
-		footer := fmt.Sprintf("%s • %s", testCount, helpText)
+		header := components.Title(m.width, "AVAILABLE TESTS")
+		testCount := fmt.Sprintf("%d TESTS", len(m.tests))
+		separator := " • "
+
+		// Calculate available width for help text
+		// Account for: testCount + separator
+		usedWidth := lipgloss.Width(testCount) + lipgloss.Width(separator)
+		availableWidthForHelp := m.width - usedWidth
+
+		// Ensure some space for help text
+		availableWidthForHelp = max(availableWidthForHelp, 20)
+
+		helpText := utils.TruncateWithEllipsis("↑/↓: navigate • g: go to top • G: go to bottom • enter: run test (with default run options) • q: quit", availableWidthForHelp)
+
+		footer := fmt.Sprintf("%s%s%s", testCount, separator, helpText)
 		help := components.Footer(m.width, footer)
 
-		return fmt.Sprintf("%s\n\n%s\n\n%s", header, m.table.View(), help)
+		var infoSection string
+		if m.width < components.ListViewMinRecommendedWidth {
+			infoMsg := "Narrow terminal detected. Some columns may be truncated. Expand window for better visibility."
+			wrappedInfo := utils.WrapText(infoMsg, m.width)
+			infoStyle := styles.DimStyle.Italic(true)
+			infoSection = "\n" + infoStyle.Render(wrappedInfo)
+		}
+
+		return fmt.Sprintf("%s\n\n%s\n%s\n%s", header, m.table.View(), infoSection, help)
+
 	case testExecutionView:
 		if m.testExecutor != nil {
 			return m.testExecutor.View()

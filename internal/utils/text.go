@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
@@ -296,4 +298,58 @@ func formatJSONForDiff(v any) string {
 	}
 
 	return string(b)
+}
+
+func TruncateWithEllipsis(text string, maxWidth int) string {
+	visibleLength := runewidth.StringWidth(stripANSI(text))
+
+	if visibleLength <= maxWidth {
+		return text
+	}
+
+	if maxWidth <= 3 {
+		return "..."
+	}
+
+	targetWidth := maxWidth - 3
+
+	// For ANSI-aware truncation, we preserve escape sequences
+	// while only counting visible characters
+	var result strings.Builder
+	displayWidth := 0
+	i := 0
+
+	for i < len(text) && displayWidth < targetWidth {
+		// Check for ANSI escape sequence
+		if i+1 < len(text) && text[i] == '\x1b' && text[i+1] == '[' {
+			// Copy the entire ANSI sequence without counting it
+			j := i + 2
+			for j < len(text) && text[j] != 'm' {
+				j++
+			}
+			if j < len(text) {
+				j++ // Include the 'm'
+			}
+			result.WriteString(text[i:j])
+			i = j
+			continue
+		}
+
+		// Regular character - decode and count display width
+		r, size := utf8.DecodeRuneInString(text[i:])
+		if r != utf8.RuneError {
+			charWidth := runewidth.RuneWidth(r)
+			// Only add the character if it fits
+			if displayWidth+charWidth <= targetWidth {
+				result.WriteRune(r)
+				displayWidth += charWidth
+			} else {
+				// Character would exceed limit, stop here
+				break
+			}
+		}
+		i += size
+	}
+
+	return result.String() + "..."
 }

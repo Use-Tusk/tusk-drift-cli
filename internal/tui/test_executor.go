@@ -63,6 +63,8 @@ type testExecutorModel struct {
 	serverStarted  bool
 	serviceStarted bool
 
+	sizeWarning *components.TerminalSizeWarning
+
 	copyModeViewport viewport.Model
 	copyNotice       bool
 
@@ -266,6 +268,7 @@ func newTestExecutorModel(tests []runner.Test, executor *runner.Executor, opts *
 		header:            components.NewTestExecutionHeaderComponent(len(tests)),
 		width:             120, // Default width
 		height:            30,  // Default height
+		sizeWarning:       components.NewTestViewSizeWarning(),
 		opts:              opts,
 	}
 
@@ -325,11 +328,34 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		oldWidth := m.width
+		oldHeight := m.height
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// Reset dismissed flag if window becomes large enough, then small again
+		wasLargeEnough := !m.sizeWarning.IsTooSmall(oldWidth, oldHeight)
+		isNowTooSmall := m.sizeWarning.IsTooSmall(m.width, m.height)
+
+		if wasLargeEnough && isNowTooSmall {
+			m.sizeWarning.Reset()
+		}
+
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.sizeWarning.ShouldShow(m.width, m.height) {
+			switch msg.String() {
+			case "enter", "d", "D":
+				m.sizeWarning.Dismiss()
+				return m, nil
+			case "q", "ctrl+c", "esc":
+				m.cleanup()
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		switch m.viewMode {
 		case tableNavigation:
 			return m.handleTableNavigation(msg)
@@ -596,6 +622,10 @@ func (m *testExecutorModel) getFooterText() string {
 }
 
 func (m *testExecutorModel) View() string {
+	if m.sizeWarning.ShouldShow(m.width, m.height) {
+		return m.sizeWarning.View(m.width, m.height)
+	}
+
 	if m.viewMode == logCopyMode {
 		return m.fullScreenLogView()
 	}
@@ -651,10 +681,15 @@ func (m *testExecutorModel) horizontalLayout() string {
 
 	header := m.header.View(m.width)
 
-	left := components.Footer(m.width, m.getFooterText())
+	// Truncate help text if necessary
+	helpText := utils.TruncateWithEllipsis(m.getFooterText(), m.width)
+	left := components.Footer(m.width, helpText)
 	footer := left
 	if m.copyNotice {
 		right := m.displayCopyText()
+		availableWidth := m.width - lipgloss.Width(right) - 1
+		helpText = utils.TruncateWithEllipsis(m.getFooterText(), availableWidth)
+		left = components.Footer(availableWidth, helpText)
 		space := max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
 		footer = left + strings.Repeat(" ", space) + right
 	}
@@ -687,27 +722,44 @@ func (m *testExecutorModel) horizontalLayout() string {
 
 func (m *testExecutorModel) verticalLayout() string {
 	headerHeight := 4
-	footerHeight := 1 // Footer only takes 1 line, not 2
-	availableHeight := m.height - headerHeight - footerHeight
+	footerHeight := 1
+	contentHeight := m.height - headerHeight - footerHeight
 
 	header := m.header.View(m.width)
 
-	left := components.Footer(m.width, m.getFooterText())
+	helpText := utils.TruncateWithEllipsis(m.getFooterText(), m.width)
+	left := components.Footer(m.width, helpText)
 	footer := left
 	if m.copyNotice {
 		right := m.displayCopyText()
+		availableWidth := m.width - lipgloss.Width(right) - 1
+		helpText = utils.TruncateWithEllipsis(m.getFooterText(), availableWidth)
+		left = components.Footer(availableWidth, helpText)
 		space := max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
 		footer = left + strings.Repeat(" ", space) + right
 	}
 
-	tableHeight := availableHeight / 2
-	logHeight := availableHeight - tableHeight
+	infoMsg := "Vertical layout enabled for narrow terminal. Seeing weird formatting? Make this window wider for horizontal layout."
+	wrappedInfo := utils.WrapText(infoMsg, m.width)
+	infoStyle := styles.DimStyle.Italic(true)
+	styledInfo := infoStyle.Render(wrappedInfo)
+
+	// Split content height between table and log
+	tableHeight := contentHeight / 2
+	logHeight := contentHeight - tableHeight
 
 	tableView := m.testTable.View(m.width, tableHeight)
 	logView := m.logPanel.View(m.width, logHeight)
 
-	// Calculate spacing to push footer to the very last line
-	totalUsedLines := headerHeight + tableHeight + logHeight + footerHeight
+	// Calculate actual heights of rendered components
+	actualHeaderHeight := lipgloss.Height(header)
+	actualTableHeight := lipgloss.Height(tableView)
+	actualLogHeight := lipgloss.Height(logView)
+	actualInfoHeight := lipgloss.Height(styledInfo)
+	actualFooterHeight := lipgloss.Height(footer)
+
+	// Calculate spacing needed to push footer section to bottom
+	totalUsedLines := actualHeaderHeight + actualTableHeight + actualLogHeight + actualInfoHeight + actualFooterHeight
 	remainingLines := m.height - totalUsedLines
 
 	var spacing string
@@ -715,7 +767,15 @@ func (m *testExecutorModel) verticalLayout() string {
 		spacing = strings.Repeat("\n", remainingLines)
 	}
 
-	return header + "\n" + tableView + "\n" + logView + spacing + "\n" + footer
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		tableView,
+		"", // Empty line for visual separation
+		logView,
+		spacing,
+		styledInfo,
+		footer,
+	)
 }
 
 func (m *testExecutorModel) addServiceLog(line string) {

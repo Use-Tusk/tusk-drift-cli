@@ -141,6 +141,8 @@ Interactive TUI (default when attached to a terminal):
 tusk run
 ```
 
+The TUI is best viewed in a window size of at least 150 x 40.
+
 Run headless mode with JSON output for a single test:
 
 ```bash

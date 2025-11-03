@@ -3,7 +3,9 @@ package utils
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -145,4 +147,76 @@ func TestFormatJSONDiff_DifferentValues(t *testing.T) {
 
 	assert.True(t, foundMinusValue1, "expected value 'value1' should appear on a line starting with '-'")
 	assert.True(t, foundPlusValue2, "actual value 'value2' should appear on a line starting with '+'")
+}
+
+func TestTruncateWithEllipsis_NoTruncation(t *testing.T) {
+	text := "hello world"
+	got := TruncateWithEllipsis(text, 20)
+	assert.Equal(t, "hello world", got, "text shorter than maxWidth should not be truncated")
+}
+
+func TestTruncateWithEllipsis_ExactWidth(t *testing.T) {
+	text := "hello"
+	got := TruncateWithEllipsis(text, 5)
+	assert.Equal(t, "hello", got, "text exactly at maxWidth should not be truncated")
+}
+
+func TestTruncateWithEllipsis_NeedsTruncation(t *testing.T) {
+	text := "hello world test"
+	got := TruncateWithEllipsis(text, 10)
+	assert.Equal(t, "hello w...", got, "text should be truncated to 7 chars + '...'")
+	assert.Len(t, got, 10, "truncated text should be exactly maxWidth")
+}
+
+func TestTruncateWithEllipsis_WithANSICodes(t *testing.T) {
+	red := "\033[31m"
+	green := "\033[32m"
+	reset := "\033[0m"
+	text := red + "hello" + reset + " " + green + "world" + reset + " test"
+
+	got := TruncateWithEllipsis(text, 10)
+	visibleText := stripANSI(got)
+	assert.Equal(t, 10, len(visibleText), "visible length should be exactly maxWidth")
+	assert.True(t, strings.HasSuffix(visibleText, "..."), "should end with ellipsis")
+}
+
+func TestTruncateWithEllipsis_UTF8MultibyteCharacters(t *testing.T) {
+	text := "Hello 世界 test"
+	got := TruncateWithEllipsis(text, 10)
+
+	assert.True(t, strings.HasSuffix(got, "..."), "should end with ellipsis")
+
+	// When dealing with wide characters, we might not hit exactly maxWidth
+	// because we can't split a 2-column character
+	visibleLen := runewidth.StringWidth(stripANSI(got))
+	assert.LessOrEqual(t, visibleLen, 10, "visible length should not exceed maxWidth")
+	assert.GreaterOrEqual(t, visibleLen, 10-2, "visible length should be close to maxWidth (within 2 columns for wide chars)")
+
+	assert.True(t, utf8.ValidString(got), "result should be valid UTF-8")
+}
+
+func TestTruncateWithEllipsis_OnlyEmojis(t *testing.T) {
+	text := "🎉🎊🎈🎁🎀"
+	got := TruncateWithEllipsis(text, 4)
+
+	assert.True(t, strings.HasSuffix(got, "..."), "should end with ellipsis")
+	assert.True(t, utf8.ValidString(got), "result should be valid UTF-8")
+}
+
+func TestTruncateWithEllipsis_EmptyString(t *testing.T) {
+	got := TruncateWithEllipsis("", 10)
+	assert.Equal(t, "", got, "empty string should remain empty")
+}
+
+func TestTruncateWithEllipsis_ANSIAtTruncationPoint(t *testing.T) {
+	// Test case where ANSI code appears right at the truncation point
+	red := "\033[31m"
+	reset := "\033[0m"
+	text := "hello" + red + " world" + reset
+
+	got := TruncateWithEllipsis(text, 8)
+	assert.True(t, strings.HasSuffix(stripANSI(got), "..."), "should end with ellipsis")
+
+	visibleText := stripANSI(got)
+	assert.Equal(t, 8, len(visibleText), "visible length should be maxWidth")
 }
