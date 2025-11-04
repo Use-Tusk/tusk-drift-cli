@@ -21,6 +21,7 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
@@ -139,6 +140,26 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 	// Determine communication type
 	commType := determineCommunicationType(cfg)
 
+	// Get config for API base URL
+	fullConfig, err := config.Get()
+	var apiBaseURL string
+	if err == nil {
+		apiBaseURL = fullConfig.TuskAPI.URL
+	}
+
+	// Get API key from environment
+	apiKey := config.GetAPIKey()
+
+	// Try to get bearer token and client ID from auth
+	var bearerToken, clientID string
+	authenticator, err := auth.NewAuthenticator()
+	if err == nil {
+		if err := authenticator.TryExistingAuth(ctx); err == nil {
+			bearerToken = authenticator.AccessToken
+		}
+	}
+	clientID = os.Getenv("TUSK_CLIENT_ID")
+
 	server := &Server{
 		spans:                        make(map[string][]*core.Span),
 		spanUsage:                    make(map[string]map[string]bool),
@@ -158,7 +179,7 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		mockNotFoundEvents: make(map[string][]MockNotFoundEvent),
 		communicationType:  commType,
 		tcpPort:            cfg.Communication.TCPPort,
-		posthogClient:      analytics.NewPostHogClient(),
+		posthogClient:      analytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID),
 	}
 
 	return server, nil
@@ -809,7 +830,9 @@ func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.Instrume
 	slog.Info("Instrumentation version mismatch alert",
 		"module", alert.ModuleName,
 		"requestedVersion", alert.RequestedVersion,
-		"supportedVersions", alert.SupportedVersions)
+		"supportedVersions", alert.SupportedVersions,
+		"sdkVersion", alert.SdkVersion,
+	)
 
 	// Send to PostHog
 	if ms.posthogClient != nil {
@@ -817,6 +840,7 @@ func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.Instrume
 			alert.ModuleName,
 			alert.RequestedVersion,
 			alert.SupportedVersions,
+			alert.SdkVersion,
 		)
 	} else {
 		slog.Debug("PostHog client not initialized, skipping instrumentation version mismatch alert")
@@ -826,13 +850,16 @@ func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.Instrume
 func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependencyAlert) {
 	slog.Info("Unpatched dependency alert",
 		"traceTestServerSpanId", alert.TraceTestServerSpanId,
-		"stackTrace", alert.StackTrace)
+		"stackTrace", alert.StackTrace,
+		"sdkVersion", alert.SdkVersion,
+	)
 
 	// Send to PostHog
 	if ms.posthogClient != nil {
 		ms.posthogClient.CaptureUnpatchedDependency(
 			alert.TraceTestServerSpanId,
 			alert.StackTrace,
+			alert.SdkVersion,
 		)
 	} else {
 		slog.Debug("PostHog client not initialized, skipping unpatched dependency alert")
