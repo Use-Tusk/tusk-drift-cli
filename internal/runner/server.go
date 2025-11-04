@@ -21,7 +21,6 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
@@ -140,32 +139,6 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 	// Determine communication type
 	commType := determineCommunicationType(cfg)
 
-	// Get config for API base URL
-	fullConfig, err := config.Get()
-	var apiBaseURL string
-	if err == nil {
-		apiBaseURL = fullConfig.TuskAPI.URL
-	}
-
-	// Get API key from environment
-	apiKey := config.GetAPIKey()
-
-	// Try to get bearer token and client ID from auth
-	var bearerToken, clientID string
-	authenticator, err := auth.NewAuthenticator()
-	if err == nil {
-		if err := authenticator.TryExistingAuth(ctx); err == nil {
-			bearerToken = authenticator.AccessToken
-		}
-	}
-	clientID = os.Getenv("TUSK_CLIENT_ID")
-
-	// Get telemetry setting - default to true (opt-out)
-	enableTelemetry := true
-	if fullConfig.Replay.EnableTelemetry != nil {
-		enableTelemetry = *fullConfig.Replay.EnableTelemetry
-	}
-
 	server := &Server{
 		spans:                        make(map[string][]*core.Span),
 		spanUsage:                    make(map[string]map[string]bool),
@@ -185,7 +158,6 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		mockNotFoundEvents: make(map[string][]MockNotFoundEvent),
 		communicationType:  commType,
 		tcpPort:            cfg.Communication.TCPPort,
-		posthogClient:      analytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry),
 	}
 
 	return server, nil
@@ -197,6 +169,41 @@ func (ms *Server) Start() error {
 		return ms.startTCP()
 	}
 	return ms.startUnix()
+}
+
+// GetPostHogClient returns the PostHog client, initializing it lazily if needed
+func (ms *Server) GetPostHogClient() *analytics.PostHogClient {
+	if ms.posthogClient != nil {
+		return ms.posthogClient
+	}
+
+	var apiBaseURL string
+	var apiKey string
+	var clientID string
+	enableTelemetry := true // Default to enabled (opt-out)
+
+	// Try to get config - but don't fail if not available yet
+	fullConfig, err := config.Get()
+	if err == nil && fullConfig != nil {
+		apiBaseURL = fullConfig.TuskAPI.URL
+		if fullConfig.Replay.EnableTelemetry != nil {
+			enableTelemetry = *fullConfig.Replay.EnableTelemetry
+		}
+	}
+
+	// Get API key from environment (this works even without config loaded)
+	apiKey = config.GetAPIKey()
+
+	// Try to get bearer token from auth
+	var bearerToken string
+	// Note: We can't easily get auth here without creating a dependency issue
+	// The auth token will be set via another mechanism if needed
+
+	// Get client ID from environment
+	clientID = os.Getenv("TUSK_CLIENT_ID")
+
+	ms.posthogClient = analytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry)
+	return ms.posthogClient
 }
 
 func (ms *Server) startUnix() error {
@@ -841,8 +848,8 @@ func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.Instrume
 	)
 
 	// Send to PostHog
-	if ms.posthogClient != nil {
-		ms.posthogClient.CaptureInstrumentationVersionMismatch(
+	if client := ms.GetPostHogClient(); client != nil {
+		client.CaptureInstrumentationVersionMismatch(
 			alert.ModuleName,
 			alert.RequestedVersion,
 			alert.SupportedVersions,
@@ -861,8 +868,8 @@ func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependency
 	)
 
 	// Send to PostHog
-	if ms.posthogClient != nil {
-		ms.posthogClient.CaptureUnpatchedDependency(
+	if client := ms.GetPostHogClient(); client != nil {
+		client.CaptureUnpatchedDependency(
 			alert.TraceTestServerSpanId,
 			alert.StackTrace,
 			alert.SdkVersion,
