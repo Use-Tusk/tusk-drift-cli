@@ -14,18 +14,19 @@ import (
 
 // PostHogClient wraps the PostHog client for analytics tracking
 type PostHogClient struct {
-	client       posthog.Client
-	userEmail    string
-	tuskClient   *api.TuskClient
-	apiKey       string
-	bearerToken  string
-	clientID     string
-	authInfo     *backend.GetAuthInfoResponse
-	authInfoOnce sync.Once
+	client          posthog.Client
+	userEmail       string
+	tuskClient      *api.TuskClient
+	apiKey          string
+	bearerToken     string
+	clientID        string
+	authInfo        *backend.GetAuthInfoResponse
+	authInfoOnce    sync.Once
+	enableTelemetry bool
 }
 
 // NewPostHogClient creates a new PostHog client
-func NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID string) *PostHogClient {
+func NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID string, enableTelemetry bool) *PostHogClient {
 	// #nosec G101 -- This is a public PostHog API key, safe to hardcode
 	posthogAPIKey := "phc_mUFon9ykhVY9tga0zS6TPQ7FQloQNO91PQRtXdAREqz"
 
@@ -40,7 +41,7 @@ func NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID string) *PostHog
 	// Try to load user identity from auth
 	userEmail := getUserEmail()
 
-	slog.Debug("PostHog client initialized", "userEmail", userEmail)
+	slog.Debug("PostHog client initialized", "userEmail", userEmail, "telemetryEnabled", enableTelemetry)
 
 	var tuskClient *api.TuskClient
 	if apiBaseURL != "" {
@@ -48,12 +49,13 @@ func NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID string) *PostHog
 	}
 
 	return &PostHogClient{
-		client:      client,
-		userEmail:   userEmail,
-		tuskClient:  tuskClient,
-		apiKey:      apiKey,
-		bearerToken: bearerToken,
-		clientID:    clientID,
+		client:          client,
+		userEmail:       userEmail,
+		tuskClient:      tuskClient,
+		apiKey:          apiKey,
+		bearerToken:     bearerToken,
+		clientID:        clientID,
+		enableTelemetry: enableTelemetry,
 	}
 }
 
@@ -140,6 +142,12 @@ func (p *PostHogClient) CaptureInstrumentationVersionMismatch(
 		return
 	}
 
+	// Check if telemetry is enabled
+	if !p.enableTelemetry {
+		slog.Debug("Telemetry disabled, skipping version mismatch event")
+		return
+	}
+
 	// Fetch auth info lazily (only once)
 	ctx := context.Background()
 	p.fetchAuthInfo(ctx)
@@ -210,6 +218,12 @@ func (p *PostHogClient) CaptureUnpatchedDependency(
 	sdkVersion string,
 ) {
 	if p == nil || p.client == nil {
+		return
+	}
+
+	// Check if telemetry is enabled
+	if !p.enableTelemetry {
+		slog.Debug("Telemetry disabled, skipping unpatched dependency event")
 		return
 	}
 

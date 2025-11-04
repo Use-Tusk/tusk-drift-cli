@@ -160,6 +160,12 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 	}
 	clientID = os.Getenv("TUSK_CLIENT_ID")
 
+	// Get telemetry setting - default to true (opt-out)
+	enableTelemetry := true
+	if fullConfig.Replay.EnableTelemetry != nil {
+		enableTelemetry = *fullConfig.Replay.EnableTelemetry
+	}
+
 	server := &Server{
 		spans:                        make(map[string][]*core.Span),
 		spanUsage:                    make(map[string]map[string]bool),
@@ -179,7 +185,7 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		mockNotFoundEvents: make(map[string][]MockNotFoundEvent),
 		communicationType:  commType,
 		tcpPort:            cfg.Communication.TCPPort,
-		posthogClient:      analytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID),
+		posthogClient:      analytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry),
 	}
 
 	return server, nil

@@ -325,6 +325,33 @@ This will not affect CLI behavior. See SDK for more details:
 
 - [Node](https://github.com/Use-Tusk/drift-node-sdk)
 
+## Replay
+
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>replay.enable_telemetry</code></td>
+      <td>boolean</td>
+      <td><code>true</code></td>
+      <td>
+        Enable telemetry during replay mode. When enabled, the CLI sends diagnostic alerts to Tusk when SDK issues are detected (e.g., unpatched dependencies or instrumentation version mismatches).
+        <br><br>
+        <strong>What's sent:</strong> Module name, version information, and stack traces. No sensitive data (e.g., request/response bodies) is ever sent.
+        <br><br>
+        <strong>Purpose:</strong> Helps the Tusk team improve SDK compatibility and fix issues. Set to <code>false</code> to opt out.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
 ## Results
 
 <table>
