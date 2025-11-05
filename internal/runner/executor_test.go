@@ -290,7 +290,10 @@ func TestExecutor_RunTestsConcurrently_CallbackForAllTests(t *testing.T) {
 func TestExecutor_RunSingleTest_WithMockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "test-trace-id", r.Header.Get("x-td-trace-id"))
-		assert.Equal(t, "{}", r.Header.Get("x-td-env-vars"))
+
+		// When there are no env vars, the fetch header should NOT be present
+		fetchEnvVars := r.Header.Get("x-td-fetch-env-vars")
+		assert.Empty(t, fetchEnvVars)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -437,13 +440,9 @@ func TestExecutor_RunSingleTest_WithAbsoluteURL(t *testing.T) {
 
 func TestExecutor_RunSingleTest_WithEnvVars(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		envVars := r.Header.Get("x-td-env-vars")
-		assert.NotEmpty(t, envVars)
-
-		var envData map[string]string
-		err := json.Unmarshal([]byte(envVars), &envData)
-		assert.NoError(t, err)
-		assert.Equal(t, "test-value", envData["TEST_VAR"])
+		// Check that the fetch env vars header is set
+		fetchEnvVars := r.Header.Get("x-td-fetch-env-vars")
+		assert.Equal(t, "true", fetchEnvVars)
 
 		w.WriteHeader(http.StatusOK)
 	}))
