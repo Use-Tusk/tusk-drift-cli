@@ -565,6 +565,8 @@ func (ms *Server) handleConnection(conn net.Conn) {
 			ms.handleInboundReplaySpanProtobuf(&sdkMsg, conn)
 		case core.MessageType_MESSAGE_TYPE_ALERT:
 			ms.handleAlertProtobuf(&sdkMsg)
+		case core.MessageType_MESSAGE_TYPE_ENV_VAR_REQUEST:
+			ms.handleEnvVarRequestProtobuf(&sdkMsg, conn)
 		default:
 			slog.Debug("Unknown message type", "type", sdkMsg.Type)
 		}
@@ -877,6 +879,75 @@ func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependency
 	} else {
 		slog.Debug("PostHog client not initialized, skipping unpatched dependency alert")
 	}
+}
+
+func (ms *Server) handleEnvVarRequestProtobuf(msg *core.SDKMessage, conn net.Conn) {
+	req := msg.GetEnvVarRequest()
+	if req == nil {
+		slog.Error("Invalid env var request - no payload")
+		return
+	}
+
+	traceTestServerSpanId := req.TraceTestServerSpanId
+
+	slog.Debug("Received env var request", "traceTestServerSpanId", traceTestServerSpanId)
+
+	// Look up ENV_VARS from test metadata by trace ID
+	envVars := ms.getEnvVarsForTrace(traceTestServerSpanId)
+
+	response := &core.EnvVarResponse{
+		EnvVars: envVars,
+	}
+
+	cliMsg := &core.CLIMessage{
+		Type:      core.MessageType_MESSAGE_TYPE_ENV_VAR_REQUEST,
+		RequestId: msg.RequestId,
+		Payload: &core.CLIMessage_EnvVarResponse{
+			EnvVarResponse: response,
+		},
+	}
+
+	if err := ms.sendProtobufResponse(conn, cliMsg); err != nil {
+		slog.Debug("Failed to send env var response", "error", err)
+	} else {
+		slog.Debug("Sent env var response", "traceTestServerSpanId", traceTestServerSpanId, "envVarCount", len(envVars))
+	}
+}
+
+func (ms *Server) getEnvVarsForTrace(traceID string) map[string]string {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+
+	// Look up the original trace spans that were loaded
+	spans, exists := ms.spans[traceID]
+	if !exists || len(spans) == 0 {
+		slog.Debug("No spans found for trace", "traceID", traceID)
+		return make(map[string]string)
+	}
+
+	// Find the root span (it contains ENV_VARS in metadata)
+	for _, span := range spans {
+		if span.IsRootSpan && span.Metadata != nil {
+			if envVarsValue, exists := span.Metadata.Fields["ENV_VARS"]; exists {
+				// Convert protobuf struct to map[string]string
+				if envVarsMap := envVarsValue.AsInterface(); envVarsMap != nil {
+					if m, ok := envVarsMap.(map[string]interface{}); ok {
+						result := make(map[string]string)
+						for k, v := range m {
+							if str, ok := v.(string); ok {
+								result[k] = str
+							}
+						}
+						slog.Debug("Found env vars for trace", "traceID", traceID, "envVarCount", len(result))
+						return result
+					}
+				}
+			}
+		}
+	}
+
+	slog.Debug("No env vars found for trace", "traceID", traceID)
+	return make(map[string]string) // Empty map if not found
 }
 
 // findMock searches for a matching mock for the given request

@@ -269,16 +269,10 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 
 	req.Header.Set("x-td-trace-id", test.TraceID)
 
-	// Extract ENV_VARS from metadata, default to empty object if not present
-	envVars := "{}"
-	if envVarsValue, exists := test.Metadata["ENV_VARS"]; exists {
-		if envVarsBytes, err := json.Marshal(envVarsValue); err == nil {
-			envVars = string(envVarsBytes)
-		}
+	// Only set fetch header if there are actually env vars to fetch
+	if _, hasEnvVars := test.Metadata["ENV_VARS"]; hasEnvVars {
+		req.Header.Set("x-td-fetch-env-vars", "true")
 	}
-
-	slog.Debug("Setting env vars", "envVars", envVars)
-	req.Header.Set("x-td-env-vars", envVars)
 
 	if test.Request.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
