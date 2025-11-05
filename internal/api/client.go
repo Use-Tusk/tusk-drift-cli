@@ -75,8 +75,13 @@ func NewClient(baseURL, apiKey string) *TuskClient {
 }
 
 // Helper method to make protobuf requests
-func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions) error {
-	fullURL := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
+// If overrideBaseURL is provided, it's used instead of c.baseURL
+func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, overrideBaseURL ...string) error {
+	baseURL := c.baseURL
+	if len(overrideBaseURL) > 0 && overrideBaseURL[0] != "" {
+		baseURL = overrideBaseURL[0]
+	}
+	fullURL := fmt.Sprintf("%s/%s", baseURL, endpoint)
 
 	bin, err := proto.Marshal(req)
 	if err != nil {
@@ -126,7 +131,7 @@ func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req 
 	return nil
 }
 
-func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, config RetryConfig) error {
+func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, config RetryConfig, overrideBaseURL ...string) error {
 	var lastErr error
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
@@ -142,7 +147,7 @@ func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, endpoi
 			}
 		}
 
-		err := c.makeProtoRequest(ctx, endpoint, req, resp, auth)
+		err := c.makeProtoRequest(ctx, endpoint, req, resp, auth, overrideBaseURL...)
 		if err == nil {
 			return nil
 		}
@@ -283,4 +288,19 @@ func (c *TuskClient) UpdateDriftRunCIStatus(ctx context.Context, in *backend.Upd
 		return fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
 	return fmt.Errorf("invalid response")
+}
+
+func (c *TuskClient) GetAuthInfo(ctx context.Context, in *backend.GetAuthInfoRequest, auth AuthOptions) (*backend.GetAuthInfoResponse, error) {
+	var out backend.GetAuthInfoResponse
+
+	// Build the base URL for client_service instead of test_run_service
+	baseURL := strings.TrimSuffix(c.baseURL, TestRunServiceAPIPath)
+	clientServiceBaseURL := baseURL + "/api/drift/client_service"
+
+	// Use the common makeProtoRequest helper with overridden base URL
+	if err := c.makeProtoRequest(ctx, "get_auth_info", in, &out, auth, clientServiceBaseURL); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
 }

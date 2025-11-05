@@ -31,6 +31,7 @@ type Config struct {
 	Comparison    ComparisonConfig    `koanf:"comparison"`
 	TestExecution TestExecutionConfig `koanf:"test_execution"`
 	Recording     RecordingConfig     `koanf:"recording"`
+	Replay        ReplayConfig        `koanf:"replay"`
 	Traces        TracesConfig        `koanf:"traces"`
 	Results       ResultsConfig       `koanf:"results"`
 }
@@ -83,6 +84,10 @@ type ComparisonConfig struct {
 
 type RecordingConfig struct {
 	SamplingRate float64 `koanf:"sampling_rate"`
+}
+
+type ReplayConfig struct {
+	EnableTelemetry *bool `koanf:"enable_telemetry"`
 }
 
 type TracesConfig struct {

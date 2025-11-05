@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
@@ -71,6 +72,9 @@ type Server struct {
 	communicationType CommunicationType
 	tcpListener       net.Listener
 	tcpPort           int
+
+	// Analytics
+	posthogClient *analytics.PostHogClient
 }
 
 // MessageType represents the type of message sent by the SDK
@@ -167,6 +171,41 @@ func (ms *Server) Start() error {
 	return ms.startUnix()
 }
 
+// GetPostHogClient returns the PostHog client, initializing it lazily if needed
+func (ms *Server) GetPostHogClient() *analytics.PostHogClient {
+	if ms.posthogClient != nil {
+		return ms.posthogClient
+	}
+
+	var apiBaseURL string
+	var apiKey string
+	var clientID string
+	enableTelemetry := true // Default to enabled (opt-out)
+
+	// Try to get config - but don't fail if not available yet
+	fullConfig, err := config.Get()
+	if err == nil && fullConfig != nil {
+		apiBaseURL = fullConfig.TuskAPI.URL
+		if fullConfig.Replay.EnableTelemetry != nil {
+			enableTelemetry = *fullConfig.Replay.EnableTelemetry
+		}
+	}
+
+	// Get API key from environment (this works even without config loaded)
+	apiKey = config.GetAPIKey()
+
+	// Try to get bearer token from auth
+	var bearerToken string
+	// Note: We can't easily get auth here without creating a dependency issue
+	// The auth token will be set via another mechanism if needed
+
+	// Get client ID from environment
+	clientID = os.Getenv("TUSK_CLIENT_ID")
+
+	ms.posthogClient = analytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry)
+	return ms.posthogClient
+}
+
 func (ms *Server) startUnix() error {
 	ms.socketPath = filepath.Join(os.TempDir(), "tusk-connect.sock")
 	_ = os.Remove(ms.socketPath)
@@ -228,6 +267,14 @@ func (ms *Server) Stop() error {
 	}
 
 	ms.wg.Wait()
+
+	// Flush and close PostHog client
+	if ms.posthogClient != nil {
+		if err := ms.posthogClient.Close(); err != nil {
+			slog.Error("Failed to close PostHog client", "error", err)
+		}
+	}
+
 	slog.Debug("Mock server stopped")
 	return nil
 }
@@ -516,6 +563,8 @@ func (ms *Server) handleConnection(conn net.Conn) {
 			}(&sdkMsg)
 		case core.MessageType_MESSAGE_TYPE_INBOUND_SPAN:
 			ms.handleInboundReplaySpanProtobuf(&sdkMsg, conn)
+		case core.MessageType_MESSAGE_TYPE_ALERT:
+			ms.handleAlertProtobuf(&sdkMsg)
 		default:
 			slog.Debug("Unknown message type", "type", sdkMsg.Type)
 		}
@@ -771,6 +820,63 @@ func (ms *Server) handleInboundReplaySpanProtobuf(msg *core.SDKMessage, conn net
 			SendInboundSpanForReplayResponse: &core.SendInboundSpanForReplayResponse{Success: true},
 		},
 	})
+}
+
+func (ms *Server) handleAlertProtobuf(msg *core.SDKMessage) {
+	req := msg.GetSendAlertRequest()
+	if req == nil {
+		slog.Error("Invalid alert request")
+		return
+	}
+
+	switch alert := req.Alert.(type) {
+	case *core.SendAlertRequest_VersionMismatch:
+		ms.handleInstrumentationVersionMismatchAlert(alert.VersionMismatch)
+	case *core.SendAlertRequest_UnpatchedDependency:
+		ms.handleUnpatchedDependencyAlert(alert.UnpatchedDependency)
+	default:
+		slog.Debug("Unknown alert type")
+	}
+}
+
+func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.InstrumentationVersionMismatchAlert) {
+	slog.Info("Instrumentation version mismatch alert",
+		"module", alert.ModuleName,
+		"requestedVersion", alert.RequestedVersion,
+		"supportedVersions", alert.SupportedVersions,
+		"sdkVersion", alert.SdkVersion,
+	)
+
+	// Send to PostHog
+	if client := ms.GetPostHogClient(); client != nil {
+		client.CaptureInstrumentationVersionMismatch(
+			alert.ModuleName,
+			alert.RequestedVersion,
+			alert.SupportedVersions,
+			alert.SdkVersion,
+		)
+	} else {
+		slog.Debug("PostHog client not initialized, skipping instrumentation version mismatch alert")
+	}
+}
+
+func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependencyAlert) {
+	slog.Info("Unpatched dependency alert",
+		"traceTestServerSpanId", alert.TraceTestServerSpanId,
+		"stackTrace", alert.StackTrace,
+		"sdkVersion", alert.SdkVersion,
+	)
+
+	// Send to PostHog
+	if client := ms.GetPostHogClient(); client != nil {
+		client.CaptureUnpatchedDependency(
+			alert.TraceTestServerSpanId,
+			alert.StackTrace,
+			alert.SdkVersion,
+		)
+	} else {
+		slog.Debug("PostHog client not initialized, skipping unpatched dependency alert")
+	}
 }
 
 // findMock searches for a matching mock for the given request
