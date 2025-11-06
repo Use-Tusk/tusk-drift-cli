@@ -246,7 +246,7 @@ func TestStartService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			executor, configPath, cleanup := tt.setupFunc(t)
 			defer cleanup()
@@ -280,7 +280,7 @@ func TestStartService(t *testing.T) {
 }
 
 func TestStartServiceWithTCPMode(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	testServiceConfig := &config.ServiceConfig{
 		ID:   "test-tcp-service",
@@ -381,7 +381,7 @@ func TestStopService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			// Setup
 			executor := tt.setupFunc()
@@ -398,7 +398,7 @@ func TestStopService(t *testing.T) {
 }
 
 func TestCustomStopCommand(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	tempDir := t.TempDir()
 	markerFile := filepath.Join(tempDir, "stop-executed")
@@ -460,7 +460,7 @@ func TestGetServiceLogPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			executor := tt.setup()
 			path := executor.GetServiceLogPath()
@@ -528,7 +528,7 @@ func TestCheckProcessOnPort(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			e := NewExecutor()
 
@@ -637,7 +637,7 @@ func TestWaitForReadiness(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			cleanup := tt.setupFunc()
 			defer cleanup()
@@ -721,7 +721,7 @@ func TestSetupServiceLogging(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			cleanup := tt.setupFunc()
 			defer cleanup()
@@ -773,7 +773,7 @@ func TestCleanupLogFiles(t *testing.T) {
 }
 
 func TestIntegrationServiceLifecycle(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -825,7 +825,7 @@ func TestIntegrationServiceLifecycle(t *testing.T) {
 }
 
 func TestConcurrentServiceOperations(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	e := NewExecutor()
 	e.SetEnableServiceLogs(false)

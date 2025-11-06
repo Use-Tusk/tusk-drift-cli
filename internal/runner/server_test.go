@@ -66,7 +66,7 @@ func TestParseVersionInvalid(t *testing.T) {
 }
 
 func TestServerTCPMode(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	testServiceConfig := &config.ServiceConfig{
 		ID:   "test-tcp-service",
@@ -98,7 +98,7 @@ func TestServerTCPMode(t *testing.T) {
 }
 
 func TestServerUnixMode(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	testServiceConfig := &config.ServiceConfig{
 		ID:   "test-unix-service",

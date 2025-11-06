@@ -23,7 +23,7 @@ func evalSymlinks(path string) string {
 func TestFindConfigFile_ParentTraversal(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer func() { _ = os.Chdir(wd) }()
-	defer ResetForTesting()
+	defer Invalidate()
 
 	tmp := evalSymlinks(t.TempDir())
 	configPath := filepath.Join(tmp, ".tusk", "config.yaml")
@@ -42,7 +42,7 @@ func TestFindConfigFile_ParentTraversal(t *testing.T) {
 func TestFindConfigFile_ClosestWins(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer func() { _ = os.Chdir(wd) }()
-	defer ResetForTesting()
+	defer Invalidate()
 
 	// Create structure: tmp/.tusk/config.yaml and tmp/nested/.tusk/config.yaml
 	tmp := evalSymlinks(t.TempDir())
@@ -67,7 +67,7 @@ func TestFindConfigFile_ClosestWins(t *testing.T) {
 func TestFindConfigFile_RootLevel(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer func() { _ = os.Chdir(wd) }()
-	defer ResetForTesting()
+	defer Invalidate()
 
 	tmp := evalSymlinks(t.TempDir())
 	configPath := filepath.Join(tmp, "tusk.yaml")
@@ -84,7 +84,7 @@ func TestFindConfigFile_RootLevel(t *testing.T) {
 func TestConfigPaths_ResolvedRelativeToTuskRoot(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer func() { _ = os.Chdir(wd) }()
-	defer ResetForTesting()
+	defer Invalidate()
 
 	tmp := evalSymlinks(t.TempDir())
 	tuskDir := filepath.Join(tmp, ".tusk")
