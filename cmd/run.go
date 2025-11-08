@@ -708,7 +708,13 @@ func validateCIMetadata(metadata CIMetadata) (CIMetadata, error) {
 
 		if metadata.BranchName == "" {
 			if isGitHub {
-				metadata.BranchName = os.Getenv("GITHUB_REF_NAME")
+				// For pull requests, prefer the head ref (actual branch name)
+				// GITHUB_HEAD_REF is only set for pull_request events
+				metadata.BranchName = os.Getenv("GITHUB_HEAD_REF")
+				if metadata.BranchName == "" {
+					// For non-PR events (push, etc.), use the ref name
+					metadata.BranchName = os.Getenv("GITHUB_REF_NAME")
+				}
 			} else if isGitLab {
 				// Prefer merge request source branch name when available
 				metadata.BranchName = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
