@@ -102,7 +102,7 @@ func (m Model) View() string {
 			// General error
 			if m.Err != nil {
 				shouldShowError := true
-				if step.ID() == stepVerifyRepoAccess && m.NeedsGithubAuth {
+				if step.ID() == stepVerifyRepoAccess && m.NeedsCodeHostingAuth {
 					// Skip rendering error for VerifyRepoAccessStep when showing GitHub auth instructions
 					// (the Description already contains all the info)
 					shouldShowError = false

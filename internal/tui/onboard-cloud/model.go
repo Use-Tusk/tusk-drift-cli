@@ -36,18 +36,19 @@ type Model struct {
 	// State - Authentication
 	IsLoggedIn       bool
 	BearerToken      string
+	UserId           string
 	UserEmail        string
 	HasApiKey        bool
 	SelectedClient   *ClientInfo
 	AvailableClients []ClientInfo
 
 	// State - Git & Repo
-	GitRepoOwner       string
-	GitRepoName        string
-	IsGitHubRepo       bool
-	RepoAccessVerified bool
-	RepoID             int64
-	NeedsGithubAuth    bool
+	GitRepoOwner            string
+	GitRepoName             string
+	CodeHostingResourceType CodeHostingResourceType
+	NeedsCodeHostingAuth    bool
+	RepoAccessVerified      bool
+	RepoID                  int64
 
 	// State - Observable Service
 	ServiceID      string
@@ -73,6 +74,13 @@ type Model struct {
 	Err           error
 	ValidationErr error
 }
+
+type CodeHostingResourceType int
+
+const (
+	CodeHostingResourceTypeGitHub CodeHostingResourceType = iota
+	CodeHostingResourceTypeGitLab
+)
 
 type ClientInfo struct {
 	ID                   string

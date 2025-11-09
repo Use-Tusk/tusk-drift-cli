@@ -50,6 +50,73 @@ func parseGitHubRepo(remoteURL string) (owner, repo string, isGitHub bool) {
 	return "", "", false
 }
 
+func parseGitLabRepo(remoteURL string) (owner, repo string, isGitLab bool) {
+	// Handle both HTTPS and SSH formats
+	// https://gitlab.com/owner/repo.git
+	// git@gitlab.com:owner/repo.git
+
+	if !strings.Contains(remoteURL, "gitlab.com") {
+		return "", "", false
+	}
+
+	var path string
+	if after, ok := strings.CutPrefix(remoteURL, "git@gitlab.com:"); ok {
+		path = after
+	} else if strings.Contains(remoteURL, "gitlab.com/") {
+		parts := strings.Split(remoteURL, "gitlab.com/")
+		if len(parts) > 1 {
+			path = parts[1]
+		}
+	}
+
+	path = strings.TrimSuffix(path, ".git")
+	parts := strings.Split(path, "/")
+	if len(parts) >= 2 {
+		return parts[0], parts[1], true
+	}
+
+	return "", "", false
+}
+
+func parseGenericGitURL(remoteURL string) (owner, repo string, err error) {
+	// Handle both HTTPS and SSH formats for any Git hosting
+	// https://git.example.com/owner/repo.git
+	// git@git.example.com:owner/repo.git
+
+	var path string
+
+	// Handle SSH format (git@host:path)
+	if strings.Contains(remoteURL, "@") && strings.Contains(remoteURL, ":") {
+		parts := strings.Split(remoteURL, ":")
+		if len(parts) >= 2 {
+			path = parts[len(parts)-1]
+		}
+	} else if strings.Contains(remoteURL, "://") {
+		// Handle HTTPS format
+		parts := strings.Split(remoteURL, "://")
+		if len(parts) >= 2 {
+			// Get everything after the domain
+			pathParts := strings.SplitN(parts[1], "/", 2)
+			if len(pathParts) >= 2 {
+				path = pathParts[1]
+			}
+		}
+	}
+
+	if path == "" {
+		return "", "", fmt.Errorf("could not parse repository path from URL: %s", remoteURL)
+	}
+
+	path = strings.TrimSuffix(path, ".git")
+	pathParts := strings.Split(path, "/")
+
+	if len(pathParts) >= 2 {
+		return pathParts[0], pathParts[1], nil
+	}
+
+	return "", "", fmt.Errorf("could not extract owner/repo from path: %s", path)
+}
+
 func isGitRepo() bool {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
 	return cmd.Run() == nil
@@ -87,6 +154,37 @@ func loadExistingConfig(m *Model) error {
 	return nil
 }
 
+func getGitRootDir() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git root: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func detectGitHubIndicators() bool {
+	gitRoot, err := getGitRootDir()
+	if err != nil {
+		return false
+	}
+
+	githubPath := filepath.Join(gitRoot, ".github")
+	info, err := os.Stat(githubPath)
+	return err == nil && info.IsDir()
+}
+
+func detectGitLabIndicators() bool {
+	gitRoot, err := getGitRootDir()
+	if err != nil {
+		return false
+	}
+
+	gitlabPath := filepath.Join(gitRoot, ".gitlab-ci.yml")
+	_, err = os.Stat(gitlabPath)
+	return err == nil
+}
+
 func detectGitRepo(m *Model) error {
 	if !isGitRepo() {
 		return fmt.Errorf(`not a git repository.
@@ -102,21 +200,51 @@ Run these commands to initialize:
 		return fmt.Errorf("failed to get git remote URL: %w", err)
 	}
 
+	// Try GitHub first
 	owner, repo, isGitHub := parseGitHubRepo(remoteURL)
 	if isGitHub {
 		m.GitRepoOwner = owner
 		m.GitRepoName = repo
-		m.IsGitHubRepo = true
+		m.CodeHostingResourceType = CodeHostingResourceTypeGitHub
 		return nil
 	}
 
-	// TODO: Add GitLab parsing support
-	return fmt.Errorf(`repository is not hosted on GitHub.
+	// Try GitLab
+	owner, repo, isGitLab := parseGitLabRepo(remoteURL)
+	if isGitLab {
+		m.GitRepoOwner = owner
+		m.GitRepoName = repo
+		m.CodeHostingResourceType = CodeHostingResourceTypeGitLab
+		return nil
+	}
 
-Remote URL: %s
+	// Fallback: check for platform-specific files/dirs
+	// This handles self-hosted GitHub/GitLab instances
+	if detectGitHubIndicators() {
+		owner, repo, err := parseGenericGitURL(remoteURL)
+		if err != nil {
+			return fmt.Errorf("detected GitHub repository structure (found .github directory) but failed to parse remote URL: %w", err)
+		}
+		m.GitRepoOwner = owner
+		m.GitRepoName = repo
+		m.CodeHostingResourceType = CodeHostingResourceTypeGitHub
+		return nil
+	}
 
-Tusk Drift Cloud currently supports GitHub repositories only.
-GitLab support is coming soon.`, remoteURL)
+	if detectGitLabIndicators() {
+		owner, repo, err := parseGenericGitURL(remoteURL)
+		if err != nil {
+			return fmt.Errorf("detected GitLab repository structure (found .gitlab-ci.yml) but failed to parse remote URL: %w", err)
+		}
+		m.GitRepoOwner = owner
+		m.GitRepoName = repo
+		m.CodeHostingResourceType = CodeHostingResourceTypeGitLab
+		return nil
+	}
+
+	return fmt.Errorf(`repository must be hosted on GitHub or GitLab.
+	
+Remote URL: %s`, remoteURL)
 }
 
 func (m *Model) buildGithubAuthMessage() string {
@@ -151,7 +279,7 @@ func (m *Model) getGithubAuthURL() string {
 	}
 
 	clientID := m.SelectedClient.ID
-	state := fmt.Sprintf(`{"clientId":"%s","userId":""}`, clientID)
+	state := fmt.Sprintf(`{"clientId":"%s","userId":"%s","source":"cli-init-cloud"}`, clientID, m.UserId)
 	encodedState := url.QueryEscape(state)
 
 	githubAppName := utils.EnvDefault("GITHUB_APP_NAME", "use-tusk")
@@ -160,8 +288,19 @@ func (m *Model) getGithubAuthURL() string {
 		githubAppName, encodedState)
 }
 
-func openGithubAuthBrowser(m *Model) {
-	authURL := m.getGithubAuthURL()
+func (m *Model) getGitlabAuthURL() string {
+	return "https://app.usetusk.ai/app/settings/connect-gitlab"
+}
+
+func openCodeHostingAuthBrowser(m *Model) {
+	authURL := ""
+	switch m.CodeHostingResourceType {
+	case CodeHostingResourceTypeGitHub:
+		authURL = m.getGithubAuthURL()
+	case CodeHostingResourceTypeGitLab:
+		authURL = m.getGitlabAuthURL()
+	}
+
 	if authURL == "" {
 		return
 	}
@@ -181,15 +320,42 @@ func openGithubAuthBrowser(m *Model) {
 	}
 }
 
+func (m *Model) buildGitlabAuthMessage() string {
+	return fmt.Sprintf(`Tusk cannot access %s/%s yet.
+
+Please connect your GitLab account and grant access to this repository.
+
+Visit: %s
+
+After setup:
+  1. Add your GitLab personal access token
+  2. Grant access to %s/%s
+  3. Press Enter again to retry verification
+
+Press Enter to open browser...`,
+		m.GitRepoOwner, m.GitRepoName,
+		m.GitRepoOwner, m.GitRepoName,
+		m.getGitlabAuthURL())
+}
+
+func (m *Model) buildCodeHostingAuthMessage() string {
+	switch m.CodeHostingResourceType {
+	case CodeHostingResourceTypeGitHub:
+		return m.buildGithubAuthMessage()
+	case CodeHostingResourceTypeGitLab:
+		return m.buildGitlabAuthMessage()
+	default:
+		return fmt.Sprintf("Error: Unknown code hosting resource type: %d", m.CodeHostingResourceType)
+	}
+}
+
 // getAppDir returns the relative path from git repo root to current directory
 // Returns empty string if current directory is the repo root
 func getAppDir() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err := cmd.Output()
+	repoRoot, err := getGitRootDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get git repo root: %w", err)
+		return "", err
 	}
-	repoRoot := strings.TrimSpace(string(output))
 
 	currentDir, err := os.Getwd()
 	if err != nil {

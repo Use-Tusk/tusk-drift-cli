@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/Use-Tusk/tusk-drift-cli/cmd"
@@ -8,7 +9,11 @@ import (
 )
 
 func main() {
-	_ = godotenv.Load()
+	err := godotenv.Load()
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Printf("Error loading .env file: %v\n", err)
+		os.Exit(1)
+	}
 
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)

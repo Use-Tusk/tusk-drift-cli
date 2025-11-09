@@ -33,7 +33,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.RepoAccessVerified = false
 
 		if strings.Contains(msg.err.Error(), "no GitHub/GitLab connection") {
-			m.NeedsGithubAuth = true
+			m.NeedsCodeHostingAuth = true
 		}
 
 		return m, nil

@@ -66,9 +66,14 @@ func (VerifyGitRepoStep) InputIndex() int       { return -1 }
 func (VerifyGitRepoStep) Heading(*Model) string { return "Detecting Git repository..." }
 func (VerifyGitRepoStep) Description(m *Model) string {
 	if m.GitRepoOwner != "" && m.GitRepoName != "" {
-		repoType := "repository"
-		if m.IsGitHubRepo {
+		var repoType string
+		switch m.CodeHostingResourceType {
+		case CodeHostingResourceTypeGitHub:
 			repoType = "GitHub repository"
+		case CodeHostingResourceTypeGitLab:
+			repoType = "GitLab repository"
+		default:
+			repoType = "repository"
 		}
 		return fmt.Sprintf("✓ Found %s: %s/%s", repoType, m.GitRepoOwner, m.GitRepoName)
 	}
@@ -160,9 +165,8 @@ func (VerifyRepoAccessStep) Description(m *Model) string {
 
 	if m.Err != nil {
 		// Check if it's a "no GitHub connection" error - show GitHub auth instructions
-		// TODO: handle GitLab as well
-		if m.NeedsGithubAuth {
-			return m.buildGithubAuthMessage()
+		if m.NeedsCodeHostingAuth {
+			return m.buildCodeHostingAuthMessage()
 		}
 
 		instructions := fmt.Sprintf("Repository: %s/%s\n\nPlease check:\n  1. The Tusk GitHub app has access to this repository",
@@ -186,7 +190,7 @@ func (VerifyRepoAccessStep) Help(m *Model) string {
 		return "Continuing..."
 	}
 	if m.Err != nil {
-		if m.NeedsGithubAuth {
+		if m.NeedsCodeHostingAuth {
 			return "enter: open browser and retry • esc: quit"
 		}
 		return "enter: retry • ctrl+b/←: back • esc: quit"
@@ -203,11 +207,11 @@ func (VerifyRepoAccessStep) ShouldAutoProcess(m *Model) bool {
 
 func (VerifyRepoAccessStep) Execute(m *Model) tea.Cmd {
 	if !m.RepoAccessVerified {
-		// If needs GitHub auth and user pressed Enter, open browser first
-		if m.NeedsGithubAuth && m.Err != nil {
-			openGithubAuthBrowser(m)
+		// If needs code hosting auth and user pressed Enter, open browser first
+		if m.NeedsCodeHostingAuth && m.Err != nil {
+			openCodeHostingAuthBrowser(m)
 			// Clear the flag so next Enter press will verify instead of re-opening
-			m.NeedsGithubAuth = false
+			m.NeedsCodeHostingAuth = false
 			return nil
 		}
 
@@ -219,7 +223,7 @@ func (VerifyRepoAccessStep) Execute(m *Model) tea.Cmd {
 func (VerifyRepoAccessStep) Clear(m *Model) {
 	m.RepoAccessVerified = false
 	m.RepoID = 0
-	m.NeedsGithubAuth = false
+	m.NeedsCodeHostingAuth = false
 }
 
 type CreateObservableServiceStep struct{ BaseStep }

@@ -62,6 +62,7 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 		return fmt.Errorf("failed to get auth info: %w", err)
 	}
 
+	m.UserId = resp.User.Id
 	m.UserEmail = ""
 	if resp.User.Email != nil {
 		m.UserEmail = *resp.User.Email
