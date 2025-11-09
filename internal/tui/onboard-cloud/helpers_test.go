@@ -517,6 +517,10 @@ func TestGetAppDir(t *testing.T) {
 		err := os.Chdir(tmpDir)
 		require.NoError(t, err)
 
+		// Register cleanup to change back before TempDir cleanup
+		// This is critical on Windows where you can't delete the CWD
+		t.Cleanup(func() { _ = os.Chdir(originalWd) })
+
 		appDir, err := getAppDir()
 		assert.NoError(t, err)
 		assert.Empty(t, appDir, "should return empty string at repo root")
@@ -530,6 +534,8 @@ func TestGetAppDir(t *testing.T) {
 		err = os.Chdir(subDir)
 		require.NoError(t, err)
 
+		t.Cleanup(func() { _ = os.Chdir(originalWd) })
+
 		appDir, err := getAppDir()
 		assert.NoError(t, err)
 		assert.Equal(t, "app/src", appDir)
@@ -540,11 +546,7 @@ func TestGetAppDir(t *testing.T) {
 		err := os.Chdir(nonGitDir)
 		require.NoError(t, err)
 
-		// Register cleanup to change back before TempDir cleanup
-		// This is critical on Windows where you can't delete the CWD
-		t.Cleanup(func() {
-			_ = os.Chdir(originalWd)
-		})
+		t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
 		_, err = getAppDir()
 		assert.Error(t, err, "should return error when not in git repo")
