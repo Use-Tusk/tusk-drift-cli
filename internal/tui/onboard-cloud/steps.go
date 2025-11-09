@@ -17,11 +17,13 @@ func (IntroStep) InputIndex() int       { return -1 }
 func (IntroStep) Heading(*Model) string { return "Welcome to Tusk Drift Cloud!" }
 func (IntroStep) Description(*Model) string {
 	return `This wizard will help you:
-  • Authenticate with Tusk
   • Connect your GitHub/GitLab repository
   • Register your service for Tusk Drift Cloud
   • Create an API key for CI/CD
   • Configure recording parameters
+
+Facing any issues along the way? Contact us at
+` + styles.LinkStyle.Render("support@usetusk.ai") + ` and we'll be right with you.
 
 Press [enter] to continue.`
 }
