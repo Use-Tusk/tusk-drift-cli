@@ -507,18 +507,24 @@ func TestGetAppDir(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
-	// Initialize git repo
+	// Change to temp dir before initializing git
+	// This ensures git init creates a repo here, not nested in project repo
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
 	cmd := exec.Command("git", "init")
-	cmd.Dir = tmpDir
 	err = cmd.Run()
 	require.NoError(t, err)
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	_ = cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	_ = cmd.Run()
 
 	t.Run("At repo root", func(t *testing.T) {
 		err := os.Chdir(tmpDir)
 		require.NoError(t, err)
 
-		// Register cleanup to change back before TempDir cleanup
-		// This is critical on Windows where you can't delete the CWD
 		t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
 		appDir, err := getAppDir()
@@ -546,7 +552,9 @@ func TestGetAppDir(t *testing.T) {
 		err := os.Chdir(nonGitDir)
 		require.NoError(t, err)
 
-		t.Cleanup(func() { _ = os.Chdir(originalWd) })
+		t.Cleanup(func() {
+			_ = os.Chdir(originalWd)
+		})
 
 		_, err = getAppDir()
 		assert.Error(t, err, "should return error when not in git repo")
