@@ -118,19 +118,13 @@ You can use Tusk Drift as API tests in your CI/CD pipeline by running your test 
 - Securely store these traces as test suites
 - Analyze deviations (classification of intended vs unintended deviations), root cause of deviations against your code changes, and suggested fixes.
 
-To get started, [sign up for a Tusk account](https://app.usetusk.ai/app) or run `tusk login`. You must also have created a Tusk config file (i.e., complete `tusk init` first).
-
-Then, execute
+We provide an onboarding wizard to help you get started quickly:
 
 ```bash
 tusk cloud-init
 ```
 
-to start an onboarding wizard that will guide you to:
-
-- Authorize the Tusk app for your code hosting service
-- Register your service for Tusk Drift Cloud
-- Obtain an API key to use Tusk Drift in CI/CD pipelines
+For more details, dive into [Tusk Drift Cloud docs](./docs/cloud/).
 
 ## Usage
 
