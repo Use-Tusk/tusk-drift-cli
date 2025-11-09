@@ -538,7 +538,7 @@ func TestGetAppDir(t *testing.T) {
 
 		appDir, err := getAppDir()
 		assert.NoError(t, err)
-		assert.Equal(t, "app/src", appDir)
+		assert.Equal(t, "app/src", filepath.ToSlash(appDir))
 	})
 
 	t.Run("Not in git repo", func(t *testing.T) {
