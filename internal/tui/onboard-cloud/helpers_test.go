@@ -540,6 +540,12 @@ func TestGetAppDir(t *testing.T) {
 		err := os.Chdir(nonGitDir)
 		require.NoError(t, err)
 
+		// Register cleanup to change back before TempDir cleanup
+		// This is critical on Windows where you can't delete the CWD
+		t.Cleanup(func() {
+			_ = os.Chdir(originalWd)
+		})
+
 		_, err = getAppDir()
 		assert.Error(t, err, "should return error when not in git repo")
 	})
