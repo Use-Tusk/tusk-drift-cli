@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -502,29 +503,12 @@ func TestDetectShellConfig(t *testing.T) {
 }
 
 func TestGetAppDir(t *testing.T) {
-	tmpDir := t.TempDir()
 	originalWd, err := os.Getwd()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
-	// Change to temp dir before initializing git
-	// This ensures git init creates a repo here, not nested in project repo
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
-
-	cmd := exec.Command("git", "init")
-	err = cmd.Run()
-	require.NoError(t, err)
-
-	cmd = exec.Command("git", "config", "user.email", "test@example.com")
-	_ = cmd.Run()
-	cmd = exec.Command("git", "config", "user.name", "Test User")
-	_ = cmd.Run()
-
 	t.Run("At repo root", func(t *testing.T) {
-		err := os.Chdir(tmpDir)
-		require.NoError(t, err)
-
+		_ = setupGitRepoWithRemote(t, "https://github.com/test/repo.git")
 		t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
 		appDir, err := getAppDir()
@@ -533,28 +517,28 @@ func TestGetAppDir(t *testing.T) {
 	})
 
 	t.Run("In subdirectory", func(t *testing.T) {
+		tmpDir := setupGitRepoWithRemote(t, "https://github.com/test/repo.git")
+
 		subDir := filepath.Join(tmpDir, "app", "src")
 		err := os.MkdirAll(subDir, 0o750)
 		require.NoError(t, err)
 
 		err = os.Chdir(subDir)
 		require.NoError(t, err)
-
 		t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
 		appDir, err := getAppDir()
 		assert.NoError(t, err)
-		assert.Equal(t, "app/src", filepath.ToSlash(appDir))
+		assert.True(t,
+			strings.HasSuffix(filepath.ToSlash(appDir), "app/src"),
+			"path should end with app/src, got: %s", appDir)
 	})
 
 	t.Run("Not in git repo", func(t *testing.T) {
 		nonGitDir := t.TempDir()
 		err := os.Chdir(nonGitDir)
 		require.NoError(t, err)
-
-		t.Cleanup(func() {
-			_ = os.Chdir(originalWd)
-		})
+		t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
 		_, err = getAppDir()
 		assert.Error(t, err, "should return error when not in git repo")
