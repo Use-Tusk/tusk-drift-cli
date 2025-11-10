@@ -513,7 +513,13 @@ func TestGetAppDir(t *testing.T) {
 
 		appDir, err := getAppDir()
 		assert.NoError(t, err)
-		assert.Empty(t, appDir, "should return empty string at repo root")
+
+		// At repo root, should return empty string or "."
+		// On Windows CI with nested repos, git may resolve differently
+		normalized := filepath.Clean(appDir)
+		assert.True(t,
+			appDir == "" || normalized == ".",
+			"should return empty or '.' at repo root, got: %s", appDir)
 	})
 
 	t.Run("In subdirectory", func(t *testing.T) {
