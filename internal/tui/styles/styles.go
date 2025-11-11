@@ -27,6 +27,10 @@ var (
 			Foreground(lipgloss.Color(PrimaryColor)).
 			MarginBottom(1)
 
+	HeadingStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color(PrimaryColor))
+
 	SuccessStyle = func() lipgloss.Style {
 		color := "34"
 		if HasDarkBackground {

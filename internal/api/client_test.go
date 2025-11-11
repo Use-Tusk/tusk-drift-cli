@@ -36,7 +36,7 @@ func TestMakeProtoRequestWithRetry_SuccessFirstAttempt(t *testing.T) {
 	resp := &backend.CreateDriftRunResponse{}
 	auth := AuthOptions{APIKey: "test-key"}
 
-	err := client.makeProtoRequestWithRetryConfig(context.Background(), "", req, resp, auth, FastRetryConfig(3))
+	err := client.makeProtoRequestWithRetryConfig(context.Background(), server.URL, "test_endpoint", req, resp, auth, FastRetryConfig(3))
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, attemptCount, "Should succeed on first attempt")
@@ -73,7 +73,7 @@ func TestMakeProtoRequestWithRetry_RetryOn502(t *testing.T) {
 	auth := AuthOptions{APIKey: "test-key"}
 
 	startTime := time.Now()
-	err := client.makeProtoRequestWithRetryConfig(context.Background(), "", req, resp, auth, FastRetryConfig(3))
+	err := client.makeProtoRequestWithRetryConfig(context.Background(), server.URL, "test_endpoint", req, resp, auth, FastRetryConfig(3))
 	duration := time.Since(startTime)
 
 	assert.NoError(t, err)
@@ -98,7 +98,7 @@ func TestMakeProtoRequestWithRetry_MaxRetriesExceeded(t *testing.T) {
 	resp := &backend.CreateDriftRunResponse{}
 	auth := AuthOptions{APIKey: "test-key"}
 
-	err := client.makeProtoRequestWithRetryConfig(context.Background(), "", req, resp, auth, FastRetryConfig(3))
+	err := client.makeProtoRequestWithRetryConfig(context.Background(), server.URL, "test_endpoint", req, resp, auth, FastRetryConfig(3))
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "max retries exceeded")
@@ -120,7 +120,7 @@ func TestMakeProtoRequestWithRetry_NoRetryOn400(t *testing.T) {
 	resp := &backend.CreateDriftRunResponse{}
 	auth := AuthOptions{APIKey: "test-key"}
 
-	err := client.makeProtoRequestWithRetryConfig(context.Background(), "", req, resp, auth, FastRetryConfig(3))
+	err := client.makeProtoRequestWithRetryConfig(context.Background(), server.URL, "test_endpoint", req, resp, auth, FastRetryConfig(3))
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "http 400")
@@ -145,7 +145,7 @@ func TestMakeProtoRequestWithRetry_ContextCancellation(t *testing.T) {
 	resp := &backend.CreateDriftRunResponse{}
 	auth := AuthOptions{APIKey: "test-key"}
 
-	err := client.makeProtoRequestWithRetryConfig(ctx, "", req, resp, auth, FastRetryConfig(10))
+	err := client.makeProtoRequestWithRetryConfig(ctx, server.URL, "test_endpoint", req, resp, auth, FastRetryConfig(10))
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "context deadline exceeded")
@@ -190,7 +190,7 @@ func TestMakeProtoRequestWithRetry_503And504(t *testing.T) {
 			resp := &backend.CreateDriftRunResponse{}
 			auth := AuthOptions{APIKey: "test-key"}
 
-			err := client.makeProtoRequestWithRetryConfig(context.Background(), "", req, resp, auth, FastRetryConfig(3))
+			err := client.makeProtoRequestWithRetryConfig(context.Background(), server.URL, "test_endpoint", req, resp, auth, FastRetryConfig(3))
 
 			assert.NoError(t, err)
 			assert.Equal(t, 2, attemptCount, "Should retry on "+tc.name)
@@ -228,7 +228,7 @@ func TestMakeProtoRequestWithRetry_BackoffCap(t *testing.T) {
 	auth := AuthOptions{APIKey: "test-key"}
 
 	startTime := time.Now()
-	err := client.makeProtoRequestWithRetryConfig(context.Background(), "", req, resp, auth, FastRetryConfig(5))
+	err := client.makeProtoRequestWithRetryConfig(context.Background(), server.URL, "test_endpoint", req, resp, auth, FastRetryConfig(5))
 	duration := time.Since(startTime)
 
 	assert.NoError(t, err)

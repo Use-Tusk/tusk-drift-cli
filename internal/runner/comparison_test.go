@@ -91,7 +91,7 @@ func TestCompareAndGenerateResult_HeaderMismatch(t *testing.T) {
 }
 
 func TestCompareAndGenerateResult_BodyMismatchDueToExtraActualKey(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	// Ensure ignore_fields is empty so extra keys are not ignored.
 	cfgPath := writeTempConfig(t, `
@@ -286,7 +286,7 @@ func TestCompareAndGenerateResult_NoSpans_DefaultsToUnspecified(t *testing.T) {
 }
 
 func TestCompareResponseBodies_IgnoreExtraActualKeyViaConfigIgnoreFields(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	// Configure to ignore an extra field by name.
 	cfgPath := writeTempConfig(t, `

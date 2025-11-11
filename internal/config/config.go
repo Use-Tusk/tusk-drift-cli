@@ -83,7 +83,9 @@ type ComparisonConfig struct {
 }
 
 type RecordingConfig struct {
-	SamplingRate float64 `koanf:"sampling_rate"`
+	SamplingRate          float64 `koanf:"sampling_rate"`
+	ExportSpans           *bool   `koanf:"export_spans"`
+	EnableEnvVarRecording *bool   `koanf:"enable_env_var_recording"`
 }
 
 type ReplayConfig struct {
@@ -181,6 +183,14 @@ func parseAndValidate() (*Config, error) {
 	}
 	if cfg.Recording.SamplingRate == 0 {
 		cfg.Recording.SamplingRate = 0.1
+	}
+	if cfg.Recording.ExportSpans == nil {
+		defaultExportSpans := false
+		cfg.Recording.ExportSpans = &defaultExportSpans
+	}
+	if cfg.Recording.EnableEnvVarRecording == nil {
+		defaultEnableEnvVarRecording := false
+		cfg.Recording.EnableEnvVarRecording = &defaultEnableEnvVarRecording
 	}
 	if cfg.Results.Dir == "" {
 		cfg.Results.Dir = ".tusk/results"
@@ -284,8 +294,9 @@ func GetAPIKey() string {
 	return os.Getenv("TUSK_API_KEY")
 }
 
-// ResetForTesting clears all cached config state. Only use this in tests.
-func ResetForTesting() {
+// Invalidate clears all cached config state, forcing a reload on next Get().
+// Used when updating the config file and for testing.
+func Invalidate() {
 	loadMutex.Lock()
 	defer loadMutex.Unlock()
 	hasLoaded = false

@@ -1,0 +1,37 @@
+name: Tusk Drift
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+
+jobs:
+  tusk-drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Node.js v22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./backend
+
+      - name: Install Tusk Drift CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+          tusk --version
+
+      - name: Run Tusk Drift trace tests
+        # CLI automatically picks up commit SHA, PR number, branch name,
+        # and external check run ID from CI environment variables.
+        run: |
+          tusk run -c -p --ci
+        working-directory: ./backend
+        env:
+          TUSK_API_KEY: ${{ secrets.TUSK_API_KEY }}

@@ -40,11 +40,15 @@ SDKs:
 
 **Linux/macOS:**
 
-```bash
-# Install latest version
-curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+Install the latest version:
 
-# Install a specific version
+```bash
+curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+```
+
+To install a specific version:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh -s -- v1.2.3
 ```
 
@@ -106,21 +110,21 @@ tusk run --filter '^/api/users' --concurrency 10 --enable-service-logs
 tusk run --save-results --results-dir .tusk/results
 ```
 
-Cloud mode:
+## ✨ Tusk Drift Cloud
+
+You can use Tusk Drift as API tests in your CI/CD pipeline by running your test suite against commits in your pull requests. Tusk Drift Cloud offers storage of these tests alongside an additional layer of intelligence on deviations detected:
+
+- Automatic recording of traces based on live traffic in your environment of choice
+- Securely store these traces as test suites
+- Analyze deviations (classification of intended vs unintended deviations), root cause of deviations against your code changes, and suggested fixes.
+
+We provide an onboarding wizard to help you get started quickly:
 
 ```bash
-# Provide a service ID and API URL in config (see below)
-# Auth via API key (recommended) or device login
-export TUSK_API_KEY=your-key
-
-# Or, device login
-tusk login
-
-# Run against Tusk Drift Cloud
-tusk run --cloud
-tusk run --cloud --trace-test-id <id>           # single test from backend
-tusk run --cloud --all-cloud-trace-tests        # run all tests for service
+tusk cloud-init
 ```
+
+For more details, dive into [Tusk Drift Cloud docs](./docs/cloud/).
 
 ## Usage
 
@@ -139,6 +143,11 @@ Interactive TUI (default when attached to a terminal):
 
 ```bash
 tusk run
+
+# Run against Tusk Drift Cloud
+tusk run --cloud
+tusk run --cloud --trace-test-id <id>           # single test from backend
+tusk run --cloud --all-cloud-trace-tests        # run all tests for service
 ```
 
 The TUI is best viewed in a window size of at least 150 x 40.
@@ -166,6 +175,7 @@ We recommend adding to your `.gitignore`:
 
 - [Architecture overview](docs/architecture.md)
 - [Configuration](docs/configuration.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
 ## Community
 

@@ -58,7 +58,10 @@ func FastRetryConfig(maxRetries int) RetryConfig {
 	}
 }
 
-const TestRunServiceAPIPath = "/api/drift/test_run_service"
+const (
+	TestRunServiceAPIPath = "/api/drift/test_run_service"
+	ClientServiceAPIPath  = "/api/drift/client_service"
+)
 
 func NewClient(baseURL, apiKey string) *TuskClient {
 	// https://app.usetusk.ai/api/vi/drift/test_run_service -> https://app.usetusk.ai
@@ -66,7 +69,7 @@ func NewClient(baseURL, apiKey string) *TuskClient {
 	host := u.Scheme + "://" + u.Host
 
 	return &TuskClient{
-		baseURL: host + TestRunServiceAPIPath,
+		baseURL: host,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
@@ -76,12 +79,8 @@ func NewClient(baseURL, apiKey string) *TuskClient {
 
 // Helper method to make protobuf requests
 // If overrideBaseURL is provided, it's used instead of c.baseURL
-func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, overrideBaseURL ...string) error {
-	baseURL := c.baseURL
-	if len(overrideBaseURL) > 0 && overrideBaseURL[0] != "" {
-		baseURL = overrideBaseURL[0]
-	}
-	fullURL := fmt.Sprintf("%s/%s", baseURL, endpoint)
+func (c *TuskClient) makeProtoRequest(ctx context.Context, serviceAPIPath string, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions) error {
+	fullURL := fmt.Sprintf("%s/%s", serviceAPIPath, endpoint)
 
 	bin, err := proto.Marshal(req)
 	if err != nil {
@@ -131,7 +130,7 @@ func (c *TuskClient) makeProtoRequest(ctx context.Context, endpoint string, req 
 	return nil
 }
 
-func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, config RetryConfig, overrideBaseURL ...string) error {
+func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, serviceAPIPath string, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, config RetryConfig) error {
 	var lastErr error
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
@@ -147,7 +146,7 @@ func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, endpoi
 			}
 		}
 
-		err := c.makeProtoRequest(ctx, endpoint, req, resp, auth, overrideBaseURL...)
+		err := c.makeProtoRequest(ctx, serviceAPIPath, endpoint, req, resp, auth)
 		if err == nil {
 			return nil
 		}
@@ -166,9 +165,21 @@ func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, endpoi
 	return fmt.Errorf("max retries exceeded: %w", lastErr)
 }
 
+func (c *TuskClient) makeTestRunServiceRequest(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, config RetryConfig) error {
+	fullServiceAPIPath := c.baseURL + TestRunServiceAPIPath
+	return c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, endpoint, req, resp, auth, config)
+}
+
+func (c *TuskClient) makeClientServiceRequest(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions) error {
+	fullServiceAPIPath := c.baseURL + ClientServiceAPIPath
+
+	// Client service requests are typically simple requests that don't need retries
+	return c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, endpoint, req, resp, auth, DefaultRetryConfig(0))
+}
+
 func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDriftRunRequest, auth AuthOptions) (string, error) {
 	var out backend.CreateDriftRunResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "create_drift_run", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "create_drift_run", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return "", err
 	}
 
@@ -183,7 +194,7 @@ func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDrift
 
 func (c *TuskClient) GetGlobalSpans(ctx context.Context, in *backend.GetGlobalSpansRequest, auth AuthOptions) (*backend.GetGlobalSpansResponseSuccess, error) {
 	var out backend.GetGlobalSpansResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "get_global_spans", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "get_global_spans", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return nil, err
 	}
 
@@ -198,7 +209,7 @@ func (c *TuskClient) GetGlobalSpans(ctx context.Context, in *backend.GetGlobalSp
 
 func (c *TuskClient) GetPreAppStartSpans(ctx context.Context, in *backend.GetPreAppStartSpansRequest, auth AuthOptions) (*backend.GetPreAppStartSpansResponseSuccess, error) {
 	var out backend.GetPreAppStartSpansResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "get_pre_app_start_spans", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "get_pre_app_start_spans", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return nil, err
 	}
 
@@ -213,7 +224,7 @@ func (c *TuskClient) GetPreAppStartSpans(ctx context.Context, in *backend.GetPre
 
 func (c *TuskClient) GetDriftRunTraceTests(ctx context.Context, in *backend.GetDriftRunTraceTestsRequest, auth AuthOptions) (*backend.GetDriftRunTraceTestsResponseSuccess, error) {
 	var out backend.GetDriftRunTraceTestsResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "get_drift_run_trace_tests", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "get_drift_run_trace_tests", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return nil, err
 	}
 
@@ -228,7 +239,7 @@ func (c *TuskClient) GetDriftRunTraceTests(ctx context.Context, in *backend.GetD
 
 func (c *TuskClient) GetAllTraceTests(ctx context.Context, in *backend.GetAllTraceTestsRequest, auth AuthOptions) (*backend.GetAllTraceTestsResponseSuccess, error) {
 	var out backend.GetAllTraceTestsResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "get_all_trace_tests", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "get_all_trace_tests", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return nil, err
 	}
 
@@ -243,7 +254,7 @@ func (c *TuskClient) GetAllTraceTests(ctx context.Context, in *backend.GetAllTra
 
 func (c *TuskClient) GetTraceTest(ctx context.Context, in *backend.GetTraceTestRequest, auth AuthOptions) (*backend.GetTraceTestResponseSuccess, error) {
 	var out backend.GetTraceTestResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "get_trace_test", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "get_trace_test", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return nil, err
 	}
 
@@ -262,7 +273,7 @@ func (c *TuskClient) GetTraceTest(ctx context.Context, in *backend.GetTraceTestR
 
 func (c *TuskClient) UploadTraceTestResults(ctx context.Context, in *backend.UploadTraceTestResultsRequest, auth AuthOptions) error {
 	var out backend.UploadTraceTestResultsResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "upload_trace_test_results", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "upload_trace_test_results", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return err
 	}
 
@@ -277,7 +288,7 @@ func (c *TuskClient) UploadTraceTestResults(ctx context.Context, in *backend.Upl
 
 func (c *TuskClient) UpdateDriftRunCIStatus(ctx context.Context, in *backend.UpdateDriftRunCIStatusRequest, auth AuthOptions) error {
 	var out backend.UpdateDriftRunCIStatusResponse
-	if err := c.makeProtoRequestWithRetryConfig(ctx, "update_drift_run_ci_status", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+	if err := c.makeTestRunServiceRequest(ctx, "update_drift_run_ci_status", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return err
 	}
 
@@ -293,12 +304,35 @@ func (c *TuskClient) UpdateDriftRunCIStatus(ctx context.Context, in *backend.Upd
 func (c *TuskClient) GetAuthInfo(ctx context.Context, in *backend.GetAuthInfoRequest, auth AuthOptions) (*backend.GetAuthInfoResponse, error) {
 	var out backend.GetAuthInfoResponse
 
-	// Build the base URL for client_service instead of test_run_service
-	baseURL := strings.TrimSuffix(c.baseURL, TestRunServiceAPIPath)
-	clientServiceBaseURL := baseURL + "/api/drift/client_service"
+	if err := c.makeClientServiceRequest(ctx, "get_auth_info", in, &out, auth); err != nil {
+		return nil, err
+	}
 
-	// Use the common makeProtoRequest helper with overridden base URL
-	if err := c.makeProtoRequest(ctx, "get_auth_info", in, &out, auth, clientServiceBaseURL); err != nil {
+	return &out, nil
+}
+
+func (c *TuskClient) CreateObservableService(ctx context.Context, in *backend.CreateObservableServiceRequest, auth AuthOptions) (*backend.CreateObservableServiceResponse, error) {
+	var out backend.CreateObservableServiceResponse
+	if err := c.makeClientServiceRequest(ctx, "create_observable_service", in, &out, auth); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *TuskClient) VerifyRepoAccess(ctx context.Context, in *backend.VerifyRepoAccessRequest, auth AuthOptions) (*backend.VerifyRepoAccessResponse, error) {
+	var out backend.VerifyRepoAccessResponse
+
+	if err := c.makeClientServiceRequest(ctx, "verify_repo_access", in, &out, auth); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+func (c *TuskClient) CreateApiKey(ctx context.Context, in *backend.CreateApiKeyRequest, auth AuthOptions) (*backend.CreateApiKeyResponse, error) {
+	var out backend.CreateApiKeyResponse
+
+	if err := c.makeClientServiceRequest(ctx, "create_api_key", in, &out, auth); err != nil {
 		return nil, err
 	}
 

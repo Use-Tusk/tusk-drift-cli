@@ -122,7 +122,7 @@ service:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			executor, cleanup := tt.setupFunc(t)
 			defer cleanup()
@@ -203,7 +203,7 @@ func TestStopEnvironment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			executor := tt.setupFunc()
 
@@ -296,7 +296,7 @@ service:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			executor, cleanup := tt.setupFunc(t)
 			defer cleanup()
@@ -347,7 +347,7 @@ func TestStopServer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			executor := tt.setupFunc()
 
@@ -417,7 +417,7 @@ func TestWaitForSDKAcknowledgement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config.ResetForTesting()
+			config.Invalidate()
 
 			// Set short timeout for timeout test
 			var origVal string
@@ -455,7 +455,7 @@ func TestWaitForSDKAcknowledgement(t *testing.T) {
 }
 
 func TestStartServerWithSuiteSpans(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	e := NewExecutor()
 
@@ -490,7 +490,7 @@ service:
 }
 
 func TestStartServerWithTCPPortCheck(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	// Start a listener on port 9005 to simulate it being in use
 	listener, err := net.Listen("tcp", "127.0.0.1:9005")
@@ -524,7 +524,7 @@ service:
 }
 
 func TestStartServerTCPModeSuccess(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "tusk.yaml")
@@ -558,7 +558,7 @@ service:
 }
 
 func TestEnvironmentCleanupOnFailure(t *testing.T) {
-	config.ResetForTesting()
+	config.Invalidate()
 
 	e := NewExecutor()
 
