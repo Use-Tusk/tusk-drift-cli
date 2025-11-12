@@ -202,6 +202,18 @@ func runTests(cmd *cobra.Command, args []string) error {
 		executor.SetConcurrency(concurrency)
 	}
 
+	// Override concurrency to 1 if environment variable recording is enabled
+	// TODO: this is a temporary fix to avoid excessive overhead from concurrent execSync() socket communication
+	//       when env vars are fetched from SDK
+	if getConfigErr == nil && cfg.Recording.EnableEnvVarRecording != nil && *cfg.Recording.EnableEnvVarRecording {
+		if executor.GetConcurrency() > 1 {
+			slog.Info("Environment variable recording is enabled - setting concurrency to 1",
+				"reason", "Environment variables must be fetched synchronously to avoid excessive overhead from concurrent execSync() socket communication",
+				"previous_concurrency", executor.GetConcurrency())
+		}
+		executor.SetConcurrency(1)
+	}
+
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
 	if saveResults {
 		if resultsDir == "" {
