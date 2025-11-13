@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
@@ -33,6 +34,8 @@ type Executor struct {
 	onTestCompleted   func(TestResult, Test)
 	suiteSpans        []*core.Span
 	cancelTests       context.CancelFunc
+	suppressCallbacks bool
+	mu                sync.Mutex // Protects suppressCallbacks
 }
 
 func NewExecutor() *Executor {
@@ -48,6 +51,18 @@ func (e *Executor) SetResultsOutput(dir string) {
 
 	timestamp := time.Now().Format("20060102-150405")
 	e.ResultsFile = filepath.Join(dir, fmt.Sprintf("results-%s.json", timestamp))
+}
+
+func (e *Executor) setSuppressCallbacks(suppress bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.suppressCallbacks = suppress
+}
+
+func (e *Executor) shouldSuppressCallbacks() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.suppressCallbacks
 }
 
 func (e *Executor) RunTests(tests []Test) ([]TestResult, error) {
@@ -72,17 +87,33 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 
 		slog.Debug("Processing batch", "start", i, "end", end, "size", len(batch))
 
-		// Try batch concurrently first
+		// SUPPRESS CALLBACKS during concurrent execution to avoid duplicates
+		e.setSuppressCallbacks(true)
 		results, serverCrashed := e.RunBatchWithCrashDetection(batch, batchSize)
+		e.setSuppressCallbacks(false)
 
 		if !serverCrashed {
-			// No crash detected, add results and continue
+			// No crash detected - invoke callbacks manually for all results
 			slog.Debug("Batch completed successfully, no crash detected", "batch_size", len(batch))
+			if e.onTestCompleted != nil {
+				// Create a map of tests by TraceID for matching
+				testsByID := make(map[string]Test, len(batch))
+				for _, test := range batch {
+					testsByID[test.TraceID] = test
+				}
+				// Invoke callbacks with correct test for each result
+				for _, result := range results {
+					if test, found := testsByID[result.TestID]; found {
+						e.onTestCompleted(result, test)
+					}
+				}
+			}
 			allResults = append(allResults, results...)
 			continue
 		}
 
-		// Server crashed during batch - restart and retry sequentially
+		// Server crashed during batch - discard results, restart, and retry sequentially
+		// Callbacks will fire normally during sequential execution (suppression is off)
 		logging.LogToService(fmt.Sprintf("❌  Server crashed during batch execution. Restarting and retrying %d tests sequentially...", len(batch)))
 
 		if err := e.RestartServerWithRetry(0); err != nil {
@@ -93,16 +124,21 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 			for j := i; j < len(tests); j++ {
 				// TODO: should this be a specific error type or at least message?
 				// We weren't able to restart the server, hence not able to run the remaining tests
-				allResults = append(allResults, TestResult{
+				result := TestResult{
 					TestID: tests[j].TraceID,
 					Passed: false,
 					Error:  fmt.Sprintf("Server repeatedly crashed, cannot continue: %v", err),
-				})
+				}
+				allResults = append(allResults, result)
+				// Invoke callback for these failed results
+				if e.onTestCompleted != nil {
+					e.onTestCompleted(result, tests[j])
+				}
 			}
 			return allResults, nil
 		}
 
-		// Re-run batch sequentially to identify problematic tests
+		// Re-run batch sequentially (callbacks fire normally)
 		hasMoreTests := end < len(tests) // Are there more tests after this batch?
 		sequentialResults := e.RunBatchSequentialWithCrashHandling(batch, hasMoreTests)
 		allResults = append(allResults, sequentialResults...)
@@ -351,6 +387,7 @@ func (e *Executor) DetectServerCrashFromResults(results []TestResult) bool {
 			errLower := strings.ToLower(result.Error)
 			// Check for various crash indicators
 			if strings.Contains(errLower, "connection refused") ||
+				strings.Contains(errLower, "actively refused") || // Windows: "target machine actively refused it"
 				strings.Contains(errLower, ": eof") || // Match ": EOF" pattern
 				strings.Contains(errLower, "connection reset") ||
 				strings.Contains(errLower, "broken pipe") ||
@@ -488,7 +525,7 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 			Error:    err.Error(),
 			Duration: duration,
 		}
-		if e.onTestCompleted != nil {
+		if e.onTestCompleted != nil && !e.shouldSuppressCallbacks() {
 			e.onTestCompleted(result, test)
 		}
 		return result, err
@@ -501,7 +538,7 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	}()
 
 	result, _ := e.compareAndGenerateResult(test, resp, duration)
-	if e.onTestCompleted != nil {
+	if e.onTestCompleted != nil && !e.shouldSuppressCallbacks() {
 		r := result
 		t := test
 		e.onTestCompleted(r, t)

@@ -883,7 +883,6 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 				m.addServiceLog("🔄 Restarting server...")
 				if restartErr := m.executor.RestartServerWithRetry(0); restartErr != nil {
 					m.addServiceLog(fmt.Sprintf("❌ Failed to restart server: %v", restartErr))
-					// Mark remaining tests as failed - will be handled by completion logic
 				} else {
 					m.addServiceLog("✅ Server restarted successfully")
 				}
