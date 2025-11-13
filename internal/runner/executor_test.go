@@ -163,11 +163,11 @@ func TestExecutor_RunTests(t *testing.T) {
 	assert.NoError(t, err) // No error at the concurrent execution level
 	assert.Len(t, results, 2)
 
-	// But individual test results should show failures with connection errors
+	// But individual test results should show failures due to server crash
 	for _, result := range results {
 		assert.False(t, result.Passed)
-		assert.NotEmpty(t, result.Error, "Expected connection error but got empty error")
-		assert.Contains(t, result.Error, "connect", "Expected connection error")
+		assert.NotEmpty(t, result.Error, "Expected server crash error but got empty error")
+		assert.Contains(t, result.Error, "Server repeatedly crashed", "Expected server crash error")
 	}
 }
 

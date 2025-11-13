@@ -176,7 +176,11 @@ func (e *Executor) RestartServerWithRetry(attempt int) error {
 	}
 
 	// 2. Wait with exponential backoff
-	backoff := RestartBackoffBase * time.Duration(1<<uint(attempt))
+	shift := attempt
+	if shift > 10 {
+		shift = 10
+	}
+	backoff := RestartBackoffBase * time.Duration(1<<shift)
 	slog.Debug("Waiting before restart", "backoff", backoff, "attempt", attemptNum)
 	time.Sleep(backoff)
 

@@ -83,7 +83,7 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 		}
 
 		// Server crashed during batch - restart and retry sequentially
-		logging.LogToService(fmt.Sprintf("⚠️  Server crashed during batch execution. Restarting and retrying %d tests sequentially...", len(batch)))
+		logging.LogToService(fmt.Sprintf("❌  Server crashed during batch execution. Restarting and retrying %d tests sequentially...", len(batch)))
 
 		if err := e.RestartServerWithRetry(0); err != nil {
 			// Can't restart - mark all remaining tests as failed
@@ -91,13 +91,15 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 			logging.LogToService("Marking all remaining tests as failed")
 
 			for j := i; j < len(tests); j++ {
+				// TODO: should this be a specific error type or at least message?
+				// We weren't able to restart the server, hence not able to run the remaining tests
 				allResults = append(allResults, TestResult{
 					TestID: tests[j].TraceID,
 					Passed: false,
 					Error:  fmt.Sprintf("Server repeatedly crashed, cannot continue: %v", err),
 				})
 			}
-			return allResults, fmt.Errorf("server repeatedly crashed and failed to restart: %w", err)
+			return allResults, nil
 		}
 
 		// Re-run batch sequentially to identify problematic tests
@@ -193,7 +195,6 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 // RunBatchWithCrashDetection runs a batch of tests and detects if the server crashed
 func (e *Executor) RunBatchWithCrashDetection(batch []Test, concurrency int) ([]TestResult, bool) {
 	results, err := e.RunTestsConcurrently(batch, concurrency)
-
 	// Check if context was cancelled (e.g., Ctrl+C)
 	if err != nil {
 		return results, false
@@ -220,6 +221,7 @@ func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test, hasMoreTest
 		logging.LogToService(fmt.Sprintf("Running test %d/%d sequentially: %s", idx+1, len(batch), test.TraceID))
 
 		result, err := e.RunSingleTest(test)
+		result.RetriedAfterCrash = true
 
 		// Check if this test crashed the server
 		if err != nil && !e.CheckServerHealth() {
@@ -227,7 +229,6 @@ func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test, hasMoreTest
 			logging.LogToService(fmt.Sprintf("⚠️  Test %s crashed the server", test.TraceID))
 
 			result.CrashedServer = true
-			result.RetriedAfterCrash = true
 
 			// Try to restart for next test (either in this batch or subsequent batches)
 			shouldRestart := (idx < len(batch)-1) || hasMoreTestsAfterBatch
@@ -256,9 +257,6 @@ func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test, hasMoreTest
 		} else {
 			// Test succeeded or failed normally (server still running)
 			consecutiveRestartAttempt = 0 // Reset counter on successful test
-			if err == nil {
-				result.RetriedAfterCrash = true // Mark as retried since it was in crashed batch
-			}
 		}
 
 		results = append(results, result)
@@ -333,7 +331,7 @@ func (e *Executor) CheckServerHealth() bool {
 		slog.Debug("Health check failed", "error", err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Any response (even error status codes) means the server is alive
 	return true
@@ -670,11 +668,12 @@ func OutputResultsSummary(results []TestResult, format string, quiet bool) error
 	fmt.Printf("\nTests: %s\n\n", strings.Join(summaryParts, ", "))
 
 	if failed > 0 || crashed > 0 {
-		if crashed > 0 && failed > 0 {
+		switch {
+		case crashed > 0 && failed > 0:
 			return fmt.Errorf("%d tests with deviations, %d crashed server", failed, crashed)
-		} else if crashed > 0 {
+		case crashed > 0:
 			return fmt.Errorf("%d tests crashed server", crashed)
-		} else {
+		default:
 			return fmt.Errorf("%d tests with deviations", failed)
 		}
 	}

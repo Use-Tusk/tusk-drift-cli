@@ -404,7 +404,7 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		test := m.tests[msg.index]
 		switch {
 		case msg.result.CrashedServer:
-			m.addTestLog(test.TraceID, fmt.Sprintf("⚠️  %s %s - SERVER CRASH (%dms)", test.Method, test.Path, msg.result.Duration))
+			m.addTestLog(test.TraceID, fmt.Sprintf("❌ %s %s - SERVER CRASHED (%dms)", test.Method, test.Path, msg.result.Duration))
 			if msg.err != nil {
 				m.addTestLog(test.TraceID, fmt.Sprintf("  Error: %v", msg.err))
 			}
@@ -795,11 +795,12 @@ func (m *testExecutorModel) updateStats() tea.Cmd {
 	passed := 0
 	failed := 0
 	for i := 0; i < m.completedCount; i++ {
-		if m.results[i].CrashedServer {
+		switch {
+		case m.results[i].CrashedServer:
 			failed++ // Count crashed servers as failures
-		} else if m.errors[i] == nil && m.results[i].Passed {
+		case m.errors[i] == nil && m.results[i].Passed:
 			passed++
-		} else {
+		default:
 			failed++
 		}
 	}
