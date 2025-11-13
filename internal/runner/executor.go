@@ -101,7 +101,8 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 		}
 
 		// Re-run batch sequentially to identify problematic tests
-		sequentialResults := e.RunBatchSequentialWithCrashHandling(batch)
+		hasMoreTests := end < len(tests) // Are there more tests after this batch?
+		sequentialResults := e.RunBatchSequentialWithCrashHandling(batch, hasMoreTests)
 		allResults = append(allResults, sequentialResults...)
 	}
 
@@ -209,7 +210,8 @@ func (e *Executor) RunBatchWithCrashDetection(batch []Test, concurrency int) ([]
 }
 
 // RunBatchSequentialWithCrashHandling runs a batch of tests sequentially, restarting after each crash
-func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test) []TestResult {
+// hasMoreTestsAfterBatch indicates if there are more tests to run after this batch completes
+func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test, hasMoreTestsAfterBatch bool) []TestResult {
 	results := make([]TestResult, 0, len(batch))
 	consecutiveRestartAttempt := 0
 
@@ -227,8 +229,9 @@ func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test) []TestResul
 			result.CrashedServer = true
 			result.RetriedAfterCrash = true
 
-			// Try to restart for next test
-			if idx < len(batch)-1 { // Only restart if there are more tests
+			// Try to restart for next test (either in this batch or subsequent batches)
+			shouldRestart := (idx < len(batch)-1) || hasMoreTestsAfterBatch
+			if shouldRestart {
 				logging.LogToService("Restarting server for next test...")
 				if restartErr := e.RestartServerWithRetry(consecutiveRestartAttempt); restartErr != nil {
 					consecutiveRestartAttempt++
