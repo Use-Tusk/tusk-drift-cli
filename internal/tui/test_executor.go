@@ -403,6 +403,11 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		test := m.tests[msg.index]
 		switch {
+		case msg.result.CrashedServer:
+			m.addTestLog(test.TraceID, fmt.Sprintf("⚠️  %s %s - SERVER CRASH (%dms)", test.Method, test.Path, msg.result.Duration))
+			if msg.err != nil {
+				m.addTestLog(test.TraceID, fmt.Sprintf("  Error: %v", msg.err))
+			}
 		case msg.err != nil:
 			m.addTestLog(test.TraceID, fmt.Sprintf("❌ %s %s - ERROR: %v", test.Method, test.Path, msg.err))
 		case msg.result.Passed:
@@ -790,7 +795,9 @@ func (m *testExecutorModel) updateStats() tea.Cmd {
 	passed := 0
 	failed := 0
 	for i := 0; i < m.completedCount; i++ {
-		if m.errors[i] == nil && m.results[i].Passed {
+		if m.results[i].CrashedServer {
+			failed++ // Count crashed servers as failures
+		} else if m.errors[i] == nil && m.results[i].Passed {
 			passed++
 		} else {
 			failed++
@@ -862,6 +869,27 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 
 		logPath := m.executor.GetServiceLogPath()
 		result, err := m.executor.RunSingleTest(test)
+
+		// Check if this test crashed the server
+		if err != nil && !m.executor.CheckServerHealth() {
+			slog.Warn("Test crashed the server in interactive mode", "testID", test.TraceID, "error", err)
+			m.addServiceLog(fmt.Sprintf("⚠️  Test %s crashed the server", test.TraceID))
+
+			result.CrashedServer = true
+
+			// Attempt to restart the server for next test
+			if index < len(m.tests)-1 {
+				m.addServiceLog("🔄 Restarting server...")
+				if restartErr := m.executor.RestartServerWithRetry(0); restartErr != nil {
+					m.addServiceLog(fmt.Sprintf("❌ Failed to restart server: %v", restartErr))
+					// Mark remaining tests as failed - will be handled by completion logic
+				} else {
+					m.addServiceLog("✅ Server restarted successfully")
+				}
+			}
+		} else {
+			slog.Debug("Test completed", "testID", test.TraceID, "result", result)
+		}
 
 		return testCompletedMsg{
 			index:   index,

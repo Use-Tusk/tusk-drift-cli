@@ -271,7 +271,7 @@ func TestExecutor_RunTestsConcurrently_CallbackForAllTests(t *testing.T) {
 		{TraceID: "test-error-1", Request: Request{Method: "GET", Path: "http://localhost:59998/error"}}, // Connection error
 	}
 
-	results, err := executor.RunTestsConcurrently(tests, 3)
+	results, err := executor.RunTests(tests)
 
 	assert.NoError(t, err)
 	assert.Len(t, results, 5)

@@ -157,8 +157,17 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 			TestSuccess: r.Passed,
 		}
 
-		if !r.Passed {
+		if !r.Passed || r.CrashedServer {
 			switch {
+			case r.CrashedServer:
+				// Test crashed the server
+				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_NO_RESPONSE
+				tr.TestFailureReason = &reason
+				msg := "Test caused server to crash"
+				if r.Error != "" {
+					msg = fmt.Sprintf("Test caused server to crash: %s", r.Error)
+				}
+				tr.TestFailureMessage = &msg
 			case e != nil && e.server != nil && e.server.HasMockNotFoundEvents(r.TestID):
 				// Check if there were any mock-not-found events during replay
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_MOCK_NOT_FOUND

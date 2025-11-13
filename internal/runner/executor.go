@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
@@ -50,10 +51,65 @@ func (e *Executor) SetResultsOutput(dir string) {
 }
 
 func (e *Executor) RunTests(tests []Test) ([]TestResult, error) {
-	return e.RunTestsConcurrently(tests, e.parallel)
+	return e.runTestsWithResilience(tests)
+}
+
+// runTestsWithResilience executes tests in batches with crash detection and recovery
+func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
+	if len(tests) == 0 {
+		return []TestResult{}, nil
+	}
+
+	batchSize := e.parallel
+	allResults := make([]TestResult, 0, len(tests))
+
+	for i := 0; i < len(tests); i += batchSize {
+		end := i + batchSize
+		if end > len(tests) {
+			end = len(tests)
+		}
+		batch := tests[i:end]
+
+		slog.Debug("Processing batch", "start", i, "end", end, "size", len(batch))
+
+		// Try batch concurrently first
+		results, serverCrashed := e.RunBatchWithCrashDetection(batch, batchSize)
+
+		if !serverCrashed {
+			// No crash detected, add results and continue
+			slog.Debug("Batch completed successfully, no crash detected", "batch_size", len(batch))
+			allResults = append(allResults, results...)
+			continue
+		}
+
+		// Server crashed during batch - restart and retry sequentially
+		logging.LogToService(fmt.Sprintf("⚠️  Server crashed during batch execution. Restarting and retrying %d tests sequentially...", len(batch)))
+
+		if err := e.RestartServerWithRetry(0); err != nil {
+			// Can't restart - mark all remaining tests as failed
+			logging.LogToService(fmt.Sprintf("❌ Failed to restart server: %v", err))
+			logging.LogToService("Marking all remaining tests as failed")
+
+			for j := i; j < len(tests); j++ {
+				allResults = append(allResults, TestResult{
+					TestID: tests[j].TraceID,
+					Passed: false,
+					Error:  fmt.Sprintf("Server repeatedly crashed, cannot continue: %v", err),
+				})
+			}
+			return allResults, fmt.Errorf("server repeatedly crashed and failed to restart: %w", err)
+		}
+
+		// Re-run batch sequentially to identify problematic tests
+		sequentialResults := e.RunBatchSequentialWithCrashHandling(batch)
+		allResults = append(allResults, sequentialResults...)
+	}
+
+	return allResults, nil
 }
 
 // RunTestsConcurrently executes tests in parallel with the specified concurrency limit
+// This is now used internally by the resilience logic
 func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]TestResult, error) {
 	if len(tests) == 0 {
 		return []TestResult{}, nil
@@ -133,6 +189,81 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 	return results, nil
 }
 
+// RunBatchWithCrashDetection runs a batch of tests and detects if the server crashed
+func (e *Executor) RunBatchWithCrashDetection(batch []Test, concurrency int) ([]TestResult, bool) {
+	results, err := e.RunTestsConcurrently(batch, concurrency)
+
+	// Check if context was cancelled (e.g., Ctrl+C)
+	if err != nil {
+		return results, false
+	}
+
+	// Detect if server crashed based on error patterns in results
+	serverCrashed := e.DetectServerCrashFromResults(results)
+
+	if serverCrashed {
+		slog.Debug("Server crash detected from results", "batch_size", len(batch))
+	}
+
+	return results, serverCrashed
+}
+
+// RunBatchSequentialWithCrashHandling runs a batch of tests sequentially, restarting after each crash
+func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test) []TestResult {
+	results := make([]TestResult, 0, len(batch))
+	consecutiveRestartAttempt := 0
+
+	for idx, test := range batch {
+		slog.Debug("Running test sequentially", "index", idx+1, "total", len(batch), "testID", test.TraceID)
+		logging.LogToService(fmt.Sprintf("Running test %d/%d sequentially: %s", idx+1, len(batch), test.TraceID))
+
+		result, err := e.RunSingleTest(test)
+
+		// Check if this test crashed the server
+		if err != nil && !e.CheckServerHealth() {
+			slog.Warn("Test crashed the server", "testID", test.TraceID, "error", err)
+			logging.LogToService(fmt.Sprintf("⚠️  Test %s crashed the server", test.TraceID))
+
+			result.CrashedServer = true
+			result.RetriedAfterCrash = true
+
+			// Try to restart for next test
+			if idx < len(batch)-1 { // Only restart if there are more tests
+				logging.LogToService("Restarting server for next test...")
+				if restartErr := e.RestartServerWithRetry(consecutiveRestartAttempt); restartErr != nil {
+					consecutiveRestartAttempt++
+					// If multiple tests in a row crash the server, we need to mark the remaining tests as failed
+					if consecutiveRestartAttempt >= MaxServerRestartAttempts {
+						// Mark remaining tests as failed
+						logging.LogToService(fmt.Sprintf("❌ Exceeded maximum restart attempts. Marking remaining %d tests as failed.", len(batch)-idx-1))
+						results = append(results, result)
+						for j := idx + 1; j < len(batch); j++ {
+							results = append(results, TestResult{
+								TestID: batch[j].TraceID,
+								Passed: false,
+								Error:  "Server repeatedly crashed, cannot continue testing",
+							})
+						}
+						break
+					}
+				} else {
+					consecutiveRestartAttempt = 0 // Reset on successful restart
+				}
+			}
+		} else {
+			// Test succeeded or failed normally (server still running)
+			consecutiveRestartAttempt = 0 // Reset counter on successful test
+			if err == nil {
+				result.RetriedAfterCrash = true // Mark as retried since it was in crashed batch
+			}
+		}
+
+		results = append(results, result)
+	}
+
+	return results
+}
+
 // GetConcurrency returns the current concurrency setting
 func (e *Executor) GetConcurrency() int {
 	return e.parallel
@@ -182,6 +313,67 @@ func (e *Executor) CancelTests() {
 
 func (e *Executor) IsServiceLogsEnabled() bool {
 	return e.enableServiceLogs
+}
+
+// CheckServerHealth performs a quick health check to see if the service is responsive
+func (e *Executor) CheckServerHealth() bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	// Try a simple HEAD request to the service URL
+	req, err := http.NewRequest("HEAD", e.serviceURL, nil)
+	if err != nil {
+		return false
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Debug("Health check failed", "error", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	// Any response (even error status codes) means the server is alive
+	return true
+}
+
+// DetectServerCrashFromResults analyzes test results to determine if the server crashed
+func (e *Executor) DetectServerCrashFromResults(results []TestResult) bool {
+	// Look for patterns that indicate server crash:
+	// - Connection errors (refused, reset, etc.)
+	// - EOF errors (server closed connection)
+	// - Network errors
+	connectionErrors := 0
+	errorSamples := []string{}
+
+	for _, result := range results {
+		if result.Error != "" {
+			errLower := strings.ToLower(result.Error)
+			// Check for various crash indicators
+			if strings.Contains(errLower, "connection refused") ||
+				strings.Contains(errLower, ": eof") || // Match ": EOF" pattern
+				strings.Contains(errLower, "connection reset") ||
+				strings.Contains(errLower, "broken pipe") ||
+				strings.Contains(errLower, "no such host") ||
+				strings.Contains(errLower, "connection closed") {
+				connectionErrors++
+				if len(errorSamples) < 3 {
+					errorSamples = append(errorSamples, result.Error)
+				}
+			}
+		}
+	}
+
+	slog.Debug("Checking batch for crashes", "total_results", len(results), "connection_errors", connectionErrors)
+
+	// If we have connection errors, verify server is actually down
+	if connectionErrors > 0 {
+		slog.Debug("Detected connection errors in batch", "count", connectionErrors, "samples", errorSamples)
+		serverHealthy := e.CheckServerHealth()
+		slog.Debug("Server health check result", "healthy", serverHealthy)
+		return !serverHealthy
+	}
+
+	return false
 }
 
 func countPassedTests(results []TestResult) int {
@@ -340,21 +532,45 @@ func outputSingleText(result TestResult, test Test, quiet bool, verbose bool) {
 	green := ""
 	orange := ""
 	yellow := ""
+	red := ""
 	reset := ""
 
 	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
 		green = "\033[32m"
 		orange = "\033[38;5;208m"
 		yellow = "\033[33m"
+		red = "\033[31m"
 		reset = "\033[0m"
+	}
+
+	// Handle server crash scenario
+	if result.CrashedServer {
+		fmt.Printf("%s❌ SERVER CRASHED - %s (%dms)%s", red, result.TestID, result.Duration, reset)
+		if result.RetriedAfterCrash {
+			fmt.Printf(" %s[retried]%s\n", yellow, reset)
+		} else {
+			fmt.Println()
+		}
+		if result.Error != "" {
+			fmt.Printf("  Error: %s\n", result.Error)
+		}
+		return
 	}
 
 	if result.Passed {
 		if !quiet {
-			fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s\n", green, result.TestID, result.Duration, reset)
+			suffix := ""
+			if result.RetriedAfterCrash {
+				suffix = fmt.Sprintf(" %s[retried after crash]%s", yellow, reset)
+			}
+			fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s%s\n", green, result.TestID, result.Duration, reset, suffix)
 		}
 	} else {
-		fmt.Printf("%s● DEVIATION - %s (%dms)%s\n", orange, result.TestID, result.Duration, reset)
+		suffix := ""
+		if result.RetriedAfterCrash {
+			suffix = fmt.Sprintf(" %s[retried after crash]%s", yellow, reset)
+		}
+		fmt.Printf("%s● DEVIATION - %s (%dms)%s%s\n", orange, result.TestID, result.Duration, reset, suffix)
 
 		if verbose && !quiet && len(result.Deviations) > 0 {
 			fmt.Printf("  Request: %s %s\n", test.Request.Method, test.Request.Path)
@@ -386,11 +602,14 @@ func OutputResultsSummary(results []TestResult, format string, quiet bool) error
 	passed := 0
 	failed := 0
 	cancelled := 0
+	crashed := 0
 
 	for _, result := range results {
 		switch {
 		case result.Cancelled:
 			cancelled++
+		case result.CrashedServer:
+			crashed++
 		case result.Passed:
 			passed++
 		default:
@@ -399,37 +618,62 @@ func OutputResultsSummary(results []TestResult, format string, quiet bool) error
 	}
 
 	if format == "json" {
-		fmt.Fprintf(os.Stderr, "\nTests: %d total, %d passed, %d failed\n",
-			len(results), passed, failed)
+		if crashed > 0 {
+			fmt.Fprintf(os.Stderr, "\nTests: %d total, %d passed, %d failed, %d crashed server\n",
+				len(results), passed, failed, crashed)
+		} else {
+			fmt.Fprintf(os.Stderr, "\nTests: %d total, %d passed, %d failed\n",
+				len(results), passed, failed)
+		}
 
-		if failed > 0 {
-			return fmt.Errorf("%d tests with deviations", failed)
+		if failed > 0 || crashed > 0 {
+			return fmt.Errorf("%d tests with deviations, %d crashed server", failed, crashed)
 		}
 		return nil
 	}
 
 	green := ""
 	orange := ""
+	red := ""
 	reset := ""
 	gray := ""
 
 	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
 		green = "\033[32m"
 		orange = "\033[38;5;208m"
+		red = "\033[31m"
 		gray = "\033[90m"
 		reset = "\033[0m"
 	}
 
-	if cancelled > 0 {
-		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s, %s%d cancelled%s\n\n",
-			len(results), green, passed, reset, orange, failed, reset, gray, cancelled, reset)
-	} else {
-		fmt.Printf("\nTests: %d total, %s%d passed%s, %s%d deviations%s\n\n",
-			len(results), green, passed, reset, orange, failed, reset)
+	// Build summary string based on what we have
+	summaryParts := []string{
+		fmt.Sprintf("%d total", len(results)),
+		fmt.Sprintf("%s%d passed%s", green, passed, reset),
 	}
 
 	if failed > 0 {
-		return fmt.Errorf("%d tests with deviations", failed)
+		summaryParts = append(summaryParts, fmt.Sprintf("%s%d deviations%s", orange, failed, reset))
+	}
+
+	if crashed > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%s%d crashed server%s", red, crashed, reset))
+	}
+
+	if cancelled > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%s%d cancelled%s", gray, cancelled, reset))
+	}
+
+	fmt.Printf("\nTests: %s\n\n", strings.Join(summaryParts, ", "))
+
+	if failed > 0 || crashed > 0 {
+		if crashed > 0 && failed > 0 {
+			return fmt.Errorf("%d tests with deviations, %d crashed server", failed, crashed)
+		} else if crashed > 0 {
+			return fmt.Errorf("%d tests crashed server", crashed)
+		} else {
+			return fmt.Errorf("%d tests with deviations", failed)
+		}
 	}
 
 	return nil

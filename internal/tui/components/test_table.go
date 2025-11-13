@@ -149,6 +149,8 @@ func (tt *TestTableComponent) buildRows() {
 			result := tt.results[i]
 			err := tt.errors[i]
 			switch {
+			case result.CrashedServer:
+				status = "❌ Server crashed"
 			case err != nil:
 				status = "❌ Error"
 			case result.Passed:
