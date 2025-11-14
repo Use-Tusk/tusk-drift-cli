@@ -870,10 +870,7 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 
 		logPath := m.executor.GetServiceLogPath()
 
-		// Suppress callbacks during execution
-		m.executor.SetSuppressCallbacks(true)
 		result, err := m.executor.RunSingleTest(test)
-		m.executor.SetSuppressCallbacks(false)
 
 		// Check if this test crashed the server
 		if err != nil && !m.executor.CheckServerHealth() {

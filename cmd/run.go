@@ -426,7 +426,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			},
 			OnAllCompleted: func(results []runner.TestResult, tests []runner.Test, exec *runner.Executor) {
 				if cloud && client != nil && ci {
-					if err := runner.UploadResultsAndFinalize(context.Background(), client, driftRunID, authOptions, exec, results, tests, true); err != nil {
+					if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
 						slog.Warn("Interactive: cloud finalize failed", "error", err)
 					}
 					mu.Lock()
@@ -490,7 +490,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 		// Update CI status to FAILURE if in cloud mode
 		if cloud && client != nil && ci {
-			if err := runner.UploadResultsAndFinalize(context.Background(), client, driftRunID, authOptions, executor, results, tests, true); err != nil {
+			if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
 				slog.Warn("Headless: cloud finalize failed", "error", err)
 			}
 			mu.Lock()
@@ -519,7 +519,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	if cloud && client != nil && ci {
 		// streamed is always true here so this only updates the CI status
 		// Does NOT upload results to the backend as they are already uploaded via UploadSingleTestResult during the callback
-		if err := runner.UploadResultsAndFinalize(context.Background(), client, driftRunID, authOptions, executor, results, tests, true); err != nil {
+		if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
 			slog.Warn("Headless: cloud finalize failed", "error", err)
 		}
 		mu.Lock()

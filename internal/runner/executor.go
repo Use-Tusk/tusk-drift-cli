@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
@@ -34,8 +33,6 @@ type Executor struct {
 	OnTestCompleted   func(TestResult, Test)
 	suiteSpans        []*core.Span
 	cancelTests       context.CancelFunc
-	suppressCallbacks bool
-	mu                sync.Mutex // Protects suppressCallbacks
 }
 
 func NewExecutor() *Executor {
@@ -51,18 +48,6 @@ func (e *Executor) SetResultsOutput(dir string) {
 
 	timestamp := time.Now().Format("20060102-150405")
 	e.ResultsFile = filepath.Join(dir, fmt.Sprintf("results-%s.json", timestamp))
-}
-
-func (e *Executor) SetSuppressCallbacks(suppress bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.suppressCallbacks = suppress
-}
-
-func (e *Executor) shouldSuppressCallbacks() bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.suppressCallbacks
 }
 
 func (e *Executor) RunTests(tests []Test) ([]TestResult, error) {
@@ -87,10 +72,7 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 
 		slog.Debug("Processing batch", "start", i, "end", end, "size", len(batch))
 
-		// SUPPRESS CALLBACKS during concurrent execution to avoid duplicates
-		e.SetSuppressCallbacks(true)
 		results, serverCrashed := e.RunBatchWithCrashDetection(batch, batchSize)
-		e.SetSuppressCallbacks(false)
 
 		if !serverCrashed {
 			// No crash detected - invoke callbacks manually for all results
@@ -113,7 +95,7 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 		}
 
 		// Server crashed during batch - discard results, restart, and retry sequentially
-		// Callbacks will fire normally during sequential execution (suppression is off)
+		// Callbacks will fire during sequential execution from each test
 		logging.LogToService(fmt.Sprintf("❌  Server crashed during batch execution. Restarting and retrying %d tests sequentially...", len(batch)))
 
 		if err := e.RestartServerWithRetry(0); err != nil {
@@ -301,6 +283,11 @@ func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test, hasMoreTest
 		}
 
 		results = append(results, result)
+
+		// Invoke callback for this test result
+		if e.OnTestCompleted != nil {
+			e.OnTestCompleted(result, test)
+		}
 	}
 
 	return results
@@ -450,6 +437,7 @@ func (e *Executor) GetStartupFailureHelpMessage() string {
 }
 
 // RunSingleTest replays a single trace on the service under test.
+// NOTE: this does not invoke the OnTestCompleted callback. It is the responsibility of the caller to invoke it.
 func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	// Load all spans for this trace into the server for sophisticated matching
 	if e.server != nil {
@@ -530,9 +518,6 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 			Error:    err.Error(),
 			Duration: duration,
 		}
-		if e.OnTestCompleted != nil && !e.shouldSuppressCallbacks() {
-			e.OnTestCompleted(result, test)
-		}
 		return result, err
 	}
 
@@ -543,11 +528,6 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	}()
 
 	result, _ := e.compareAndGenerateResult(test, resp, duration)
-	if e.OnTestCompleted != nil && !e.shouldSuppressCallbacks() {
-		r := result
-		t := test
-		e.OnTestCompleted(r, t)
-	}
 
 	return result, nil
 }

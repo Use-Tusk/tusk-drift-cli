@@ -501,6 +501,11 @@ func TestExecutor_RunSingleTest_WithTimeout(t *testing.T) {
 
 	result, err := executor.RunSingleTest(test)
 
+	// Manually invoke callback since RunSingleTest no longer does it automatically
+	if executor.OnTestCompleted != nil {
+		executor.OnTestCompleted(result, test)
+	}
+
 	assert.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "timeout")
 
@@ -544,6 +549,11 @@ func TestExecutor_RunSingleTest_WithCallback(t *testing.T) {
 
 	result, err := executor.RunSingleTest(test)
 
+	// Manually invoke callback since RunSingleTest no longer does it automatically
+	if executor.OnTestCompleted != nil {
+		executor.OnTestCompleted(result, test)
+	}
+
 	assert.NoError(t, err)
 	assert.True(t, callbackCalled)
 	assert.Equal(t, result.TestID, callbackResult.TestID)
@@ -570,7 +580,12 @@ func TestExecutor_RunSingleTest_CallbackOnConnectionError(t *testing.T) {
 		},
 	}
 
-	_, err := executor.RunSingleTest(test)
+	result, err := executor.RunSingleTest(test)
+
+	// Manually invoke callback since RunSingleTest no longer does it automatically
+	if executor.OnTestCompleted != nil {
+		executor.OnTestCompleted(result, test)
+	}
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "connect")
