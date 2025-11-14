@@ -31,7 +31,7 @@ func TestNewExecutor(t *testing.T) {
 	assert.Equal(t, 0, executor.servicePort)
 	assert.Empty(t, executor.resultsDir)
 	assert.Empty(t, executor.ResultsFile)
-	assert.Nil(t, executor.onTestCompleted)
+	assert.Nil(t, executor.OnTestCompleted)
 	assert.Nil(t, executor.suiteSpans)
 }
 
@@ -121,10 +121,10 @@ func TestExecutor_SetOnTestCompleted(t *testing.T) {
 	}
 
 	executor.SetOnTestCompleted(callback)
-	assert.NotNil(t, executor.onTestCompleted)
+	assert.NotNil(t, executor.OnTestCompleted)
 
 	// Verify callback works
-	executor.onTestCompleted(TestResult{}, Test{})
+	executor.OnTestCompleted(TestResult{}, Test{})
 	assert.True(t, callbackCalled)
 }
 
@@ -163,11 +163,11 @@ func TestExecutor_RunTests(t *testing.T) {
 	assert.NoError(t, err) // No error at the concurrent execution level
 	assert.Len(t, results, 2)
 
-	// But individual test results should show failures with connection errors
+	// But individual test results should show failures due to server crash
 	for _, result := range results {
 		assert.False(t, result.Passed)
-		assert.NotEmpty(t, result.Error, "Expected connection error but got empty error")
-		assert.Contains(t, result.Error, "connect", "Expected connection error")
+		assert.NotEmpty(t, result.Error, "Expected server crash error but got empty error")
+		assert.Contains(t, result.Error, "Server repeatedly crashed", "Expected server crash error")
 	}
 }
 
@@ -271,7 +271,7 @@ func TestExecutor_RunTestsConcurrently_CallbackForAllTests(t *testing.T) {
 		{TraceID: "test-error-1", Request: Request{Method: "GET", Path: "http://localhost:59998/error"}}, // Connection error
 	}
 
-	results, err := executor.RunTestsConcurrently(tests, 3)
+	results, err := executor.RunTests(tests)
 
 	assert.NoError(t, err)
 	assert.Len(t, results, 5)
@@ -501,6 +501,11 @@ func TestExecutor_RunSingleTest_WithTimeout(t *testing.T) {
 
 	result, err := executor.RunSingleTest(test)
 
+	// Manually invoke callback since RunSingleTest no longer does it automatically
+	if executor.OnTestCompleted != nil {
+		executor.OnTestCompleted(result, test)
+	}
+
 	assert.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "timeout")
 
@@ -544,6 +549,11 @@ func TestExecutor_RunSingleTest_WithCallback(t *testing.T) {
 
 	result, err := executor.RunSingleTest(test)
 
+	// Manually invoke callback since RunSingleTest no longer does it automatically
+	if executor.OnTestCompleted != nil {
+		executor.OnTestCompleted(result, test)
+	}
+
 	assert.NoError(t, err)
 	assert.True(t, callbackCalled)
 	assert.Equal(t, result.TestID, callbackResult.TestID)
@@ -570,7 +580,12 @@ func TestExecutor_RunSingleTest_CallbackOnConnectionError(t *testing.T) {
 		},
 	}
 
-	_, err := executor.RunSingleTest(test)
+	result, err := executor.RunSingleTest(test)
+
+	// Manually invoke callback since RunSingleTest no longer does it automatically
+	if executor.OnTestCompleted != nil {
+		executor.OnTestCompleted(result, test)
+	}
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "connect")

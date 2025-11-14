@@ -34,12 +34,14 @@ type Response struct {
 }
 
 type TestResult struct {
-	TestID     string      `json:"test_id"`
-	Passed     bool        `json:"passed"`
-	Cancelled  bool        `json:"cancelled"`
-	Duration   int         `json:"duration"` // In milliseconds
-	Deviations []Deviation `json:"deviations,omitempty"`
-	Error      string      `json:"error,omitempty"`
+	TestID            string      `json:"test_id"`
+	Passed            bool        `json:"passed"`
+	Cancelled         bool        `json:"cancelled"`
+	CrashedServer     bool        `json:"crashed_server,omitempty"`      // Test caused server to crash
+	RetriedAfterCrash bool        `json:"retried_after_crash,omitempty"` // Test was retried after batch crash
+	Duration          int         `json:"duration"`                      // In milliseconds
+	Deviations        []Deviation `json:"deviations,omitempty"`
+	Error             string      `json:"error,omitempty"`
 }
 
 type Trace struct {

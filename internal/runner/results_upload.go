@@ -103,28 +103,13 @@ func UploadSingleTestResult(
 	return client.UploadTraceTestResults(ctx, req, auth)
 }
 
-func UploadResultsAndFinalize(
+func UpdateDriftRunCIStatusWrapper(
 	ctx context.Context,
 	client *api.TuskClient,
 	driftRunID string,
 	authOptions api.AuthOptions,
-	executor *Executor,
 	results []TestResult,
-	tests []Test,
-	streamed bool,
 ) error {
-	if !streamed {
-		uploadReq := &backend.UploadTraceTestResultsRequest{
-			DriftRunId:       driftRunID,
-			CliVersion:       version.Version,
-			SdkVersion:       "unknown",
-			TraceTestResults: BuildTraceTestResultsProto(executor, results, tests),
-		}
-		if err := client.UploadTraceTestResults(ctx, uploadReq, authOptions); err != nil {
-			return fmt.Errorf("upload results: %w", err)
-		}
-	}
-
 	// Note: We always report SUCCESS status here unless there was an error executing tests.
 	// Individual test failures (assertions, deviations, etc.) are not considered CI failures.
 	// The CI run succeeded if all tests were executed, regardless of test outcomes.
@@ -157,8 +142,17 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 			TestSuccess: r.Passed,
 		}
 
-		if !r.Passed {
+		if !r.Passed || r.CrashedServer {
 			switch {
+			case r.CrashedServer:
+				// Test crashed the server
+				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_NO_RESPONSE
+				tr.TestFailureReason = &reason
+				msg := "Test caused server to crash"
+				if r.Error != "" {
+					msg = fmt.Sprintf("Test caused server to crash: %s", r.Error)
+				}
+				tr.TestFailureMessage = &msg
 			case e != nil && e.server != nil && e.server.HasMockNotFoundEvents(r.TestID):
 				// Check if there were any mock-not-found events during replay
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_MOCK_NOT_FOUND

@@ -53,6 +53,33 @@ func (e *Executor) StopEnvironment() error {
 	return firstErr
 }
 
+// forceStopEnvironment aggressively stops the service and mock server
+// Used when the server has crashed and we need to ensure clean slate
+func (e *Executor) ForceStopEnvironment() error {
+	slog.Debug("Force stopping environment")
+
+	// Force kill the service if it's running
+	if e.serviceCmd != nil && e.serviceCmd.Process != nil {
+		if err := e.serviceCmd.Process.Kill(); err != nil {
+			slog.Debug("Failed to kill service process", "error", err)
+		}
+		e.serviceCmd = nil
+	}
+
+	// Stop the server
+	if err := e.StopServer(); err != nil {
+		slog.Debug("Failed to stop server during force stop", "error", err)
+	}
+
+	// Close service log file if open
+	if e.serviceLogFile != nil {
+		_ = e.serviceLogFile.Close()
+		e.serviceLogFile = nil
+	}
+
+	return nil
+}
+
 // StartServer initializes and starts the mock server
 func (e *Executor) StartServer() error {
 	if err := config.Load(""); err != nil {
@@ -125,6 +152,49 @@ func (e *Executor) WaitForSDKAcknowledgement() error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+// Restart constants
+const (
+	MaxServerRestartAttempts = 1
+	RestartBackoffBase       = 2 * time.Second
+)
+
+// RestartServerWithRetry attempts to restart the server with exponential backoff
+func (e *Executor) RestartServerWithRetry(attempt int) error {
+	if attempt >= MaxServerRestartAttempts {
+		return fmt.Errorf("exceeded maximum restart attempts (%d)", MaxServerRestartAttempts)
+	}
+
+	attemptNum := attempt + 1
+	logging.LogToService(fmt.Sprintf("🔄 Attempting to restart server (attempt %d/%d)...", attemptNum, MaxServerRestartAttempts))
+
+	// 1. Force stop existing server/service
+	if err := e.ForceStopEnvironment(); err != nil {
+		slog.Warn("Force stop failed during restart", "error", err)
+	}
+
+	// 2. Wait with exponential backoff
+	shift := attempt
+	if shift > 10 {
+		shift = 10
+	}
+	backoff := RestartBackoffBase * time.Duration(1<<shift)
+	slog.Debug("Waiting before restart", "backoff", backoff, "attempt", attemptNum)
+	time.Sleep(backoff)
+
+	// 3. Restart environment
+	if err := e.StartEnvironment(); err != nil {
+		logging.LogToService(fmt.Sprintf("❌ Restart attempt %d failed: %v", attemptNum, err))
+		// Try again with next attempt
+		if attempt+1 < MaxServerRestartAttempts {
+			return e.RestartServerWithRetry(attempt + 1)
+		}
+		return fmt.Errorf("restart attempt %d failed: %w", attemptNum, err)
+	}
+
+	logging.LogToService(fmt.Sprintf("✅ Server restarted successfully (attempt %d)", attemptNum))
 	return nil
 }
 
