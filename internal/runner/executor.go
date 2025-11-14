@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
@@ -218,11 +219,22 @@ func (e *Executor) RunBatchWithCrashDetection(batch []Test, concurrency int) ([]
 		return results, false
 	}
 
-	// Detect if server crashed based on error patterns in results
-	serverCrashed := e.DetectServerCrashFromResults(results)
+	// Check if any result has an error
+	hasErrors := false
+	for _, result := range results {
+		if result.Error != "" {
+			hasErrors = true
+			break
+		}
+	}
 
-	if serverCrashed {
-		slog.Debug("Server crash detected from results", "batch_size", len(batch))
+	// If errors found, check if server is still healthy
+	serverCrashed := false
+	if hasErrors {
+		serverCrashed = !e.CheckServerHealth()
+		if serverCrashed {
+			slog.Debug("Server crash detected via health check", "batch_size", len(batch))
+		}
 	}
 
 	return results, serverCrashed
@@ -346,9 +358,25 @@ func (e *Executor) IsServiceLogsEnabled() bool {
 
 // CheckServerHealth performs a quick health check to see if the service is responsive
 func (e *Executor) CheckServerHealth() bool {
+	cfg, err := config.Get()
+	if err != nil {
+		slog.Debug("Failed to get config for health check", "error", err)
+		return false
+	}
+
+	// Use readiness command if configured
+	if cfg.Service.Readiness.Command != "" {
+		cmd := createReadinessCommand(cfg.Service.Readiness.Command)
+		if err := cmd.Run(); err == nil {
+			return true
+		}
+		slog.Debug("Readiness command failed", "command", cfg.Service.Readiness.Command)
+		return false
+	}
+
+	// Fallback to simple HTTP HEAD request if no readiness command configured
 	client := &http.Client{Timeout: 2 * time.Second}
 
-	// Try a simple HEAD request to the service URL
 	req, err := http.NewRequest("HEAD", e.serviceURL, nil)
 	if err != nil {
 		return false
@@ -363,47 +391,6 @@ func (e *Executor) CheckServerHealth() bool {
 
 	// Any response (even error status codes) means the server is alive
 	return true
-}
-
-// DetectServerCrashFromResults analyzes test results to determine if the server crashed
-func (e *Executor) DetectServerCrashFromResults(results []TestResult) bool {
-	// Look for patterns that indicate server crash:
-	// - Connection errors (refused, reset, etc.)
-	// - EOF errors (server closed connection)
-	// - Network errors
-	connectionErrors := 0
-	errorSamples := []string{}
-
-	for _, result := range results {
-		if result.Error != "" {
-			errLower := strings.ToLower(result.Error)
-			// Check for various crash indicators
-			if strings.Contains(errLower, "connection refused") ||
-				strings.Contains(errLower, "actively refused") || // Windows: "target machine actively refused it"
-				strings.Contains(errLower, ": eof") || // Match ": EOF" pattern
-				strings.Contains(errLower, "connection reset") ||
-				strings.Contains(errLower, "broken pipe") ||
-				strings.Contains(errLower, "no such host") ||
-				strings.Contains(errLower, "connection closed") {
-				connectionErrors++
-				if len(errorSamples) < 3 {
-					errorSamples = append(errorSamples, result.Error)
-				}
-			}
-		}
-	}
-
-	slog.Debug("Checking batch for crashes", "total_results", len(results), "connection_errors", connectionErrors)
-
-	// If we have connection errors, verify server is actually down
-	if connectionErrors > 0 {
-		slog.Debug("Detected connection errors in batch", "count", connectionErrors, "samples", errorSamples)
-		serverHealthy := e.CheckServerHealth()
-		slog.Debug("Server health check result", "healthy", serverHealthy)
-		return !serverHealthy
-	}
-
-	return false
 }
 
 func countPassedTests(results []TestResult) int {
