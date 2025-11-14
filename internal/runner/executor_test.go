@@ -31,7 +31,7 @@ func TestNewExecutor(t *testing.T) {
 	assert.Equal(t, 0, executor.servicePort)
 	assert.Empty(t, executor.resultsDir)
 	assert.Empty(t, executor.ResultsFile)
-	assert.Nil(t, executor.onTestCompleted)
+	assert.Nil(t, executor.OnTestCompleted)
 	assert.Nil(t, executor.suiteSpans)
 }
 
@@ -121,10 +121,10 @@ func TestExecutor_SetOnTestCompleted(t *testing.T) {
 	}
 
 	executor.SetOnTestCompleted(callback)
-	assert.NotNil(t, executor.onTestCompleted)
+	assert.NotNil(t, executor.OnTestCompleted)
 
 	// Verify callback works
-	executor.onTestCompleted(TestResult{}, Test{})
+	executor.OnTestCompleted(TestResult{}, Test{})
 	assert.True(t, callbackCalled)
 }
 

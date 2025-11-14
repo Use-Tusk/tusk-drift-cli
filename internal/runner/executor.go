@@ -31,7 +31,7 @@ type Executor struct {
 	servicePort       int
 	resultsDir        string
 	ResultsFile       string // Will be set by the run command if --save-results is true
-	onTestCompleted   func(TestResult, Test)
+	OnTestCompleted   func(TestResult, Test)
 	suiteSpans        []*core.Span
 	cancelTests       context.CancelFunc
 	suppressCallbacks bool
@@ -53,7 +53,7 @@ func (e *Executor) SetResultsOutput(dir string) {
 	e.ResultsFile = filepath.Join(dir, fmt.Sprintf("results-%s.json", timestamp))
 }
 
-func (e *Executor) setSuppressCallbacks(suppress bool) {
+func (e *Executor) SetSuppressCallbacks(suppress bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.suppressCallbacks = suppress
@@ -88,14 +88,14 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 		slog.Debug("Processing batch", "start", i, "end", end, "size", len(batch))
 
 		// SUPPRESS CALLBACKS during concurrent execution to avoid duplicates
-		e.setSuppressCallbacks(true)
+		e.SetSuppressCallbacks(true)
 		results, serverCrashed := e.RunBatchWithCrashDetection(batch, batchSize)
-		e.setSuppressCallbacks(false)
+		e.SetSuppressCallbacks(false)
 
 		if !serverCrashed {
 			// No crash detected - invoke callbacks manually for all results
 			slog.Debug("Batch completed successfully, no crash detected", "batch_size", len(batch))
-			if e.onTestCompleted != nil {
+			if e.OnTestCompleted != nil {
 				// Create a map of tests by TraceID for matching
 				testsByID := make(map[string]Test, len(batch))
 				for _, test := range batch {
@@ -104,7 +104,7 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 				// Invoke callbacks with correct test for each result
 				for _, result := range results {
 					if test, found := testsByID[result.TestID]; found {
-						e.onTestCompleted(result, test)
+						e.OnTestCompleted(result, test)
 					}
 				}
 			}
@@ -131,8 +131,8 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 				}
 				allResults = append(allResults, result)
 				// Invoke callback for these failed results
-				if e.onTestCompleted != nil {
-					e.onTestCompleted(result, tests[j])
+				if e.OnTestCompleted != nil {
+					e.OnTestCompleted(result, tests[j])
 				}
 			}
 			return allResults, nil
@@ -274,15 +274,20 @@ func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test, hasMoreTest
 					consecutiveRestartAttempt++
 					// If multiple tests in a row crash the server, we need to mark the remaining tests as failed
 					if consecutiveRestartAttempt >= MaxServerRestartAttempts {
-						// Mark remaining tests as failed
+						// Mark remaining tests in batch as failed
 						logging.LogToService(fmt.Sprintf("❌ Exceeded maximum restart attempts. Marking remaining %d tests as failed.", len(batch)-idx-1))
 						results = append(results, result)
 						for j := idx + 1; j < len(batch); j++ {
-							results = append(results, TestResult{
+							failedResult := TestResult{
 								TestID: batch[j].TraceID,
 								Passed: false,
 								Error:  "Server repeatedly crashed, cannot continue testing",
-							})
+							}
+							results = append(results, failedResult)
+							// Invoke callback for these failed results
+							if e.OnTestCompleted != nil {
+								e.OnTestCompleted(failedResult, batch[j])
+							}
 						}
 						break
 					}
@@ -332,7 +337,7 @@ func (e *Executor) SetTestTimeout(timeout time.Duration) {
 }
 
 func (e *Executor) SetOnTestCompleted(callback func(TestResult, Test)) {
-	e.onTestCompleted = callback
+	e.OnTestCompleted = callback
 }
 
 func (e *Executor) SetSuiteSpans(spans []*core.Span) {
@@ -525,8 +530,8 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 			Error:    err.Error(),
 			Duration: duration,
 		}
-		if e.onTestCompleted != nil && !e.shouldSuppressCallbacks() {
-			e.onTestCompleted(result, test)
+		if e.OnTestCompleted != nil && !e.shouldSuppressCallbacks() {
+			e.OnTestCompleted(result, test)
 		}
 		return result, err
 	}
@@ -538,10 +543,10 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	}()
 
 	result, _ := e.compareAndGenerateResult(test, resp, duration)
-	if e.onTestCompleted != nil && !e.shouldSuppressCallbacks() {
+	if e.OnTestCompleted != nil && !e.shouldSuppressCallbacks() {
 		r := result
 		t := test
-		e.onTestCompleted(r, t)
+		e.OnTestCompleted(r, t)
 	}
 
 	return result, nil

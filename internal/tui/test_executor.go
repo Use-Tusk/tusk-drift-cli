@@ -869,7 +869,11 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 		test := m.tests[index]
 
 		logPath := m.executor.GetServiceLogPath()
+
+		// Suppress callbacks during execution
+		m.executor.SetSuppressCallbacks(true)
 		result, err := m.executor.RunSingleTest(test)
+		m.executor.SetSuppressCallbacks(false)
 
 		// Check if this test crashed the server
 		if err != nil && !m.executor.CheckServerHealth() {
@@ -889,6 +893,11 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 			}
 		} else {
 			slog.Debug("Test completed", "testID", test.TraceID, "result", result)
+		}
+
+		// Manually invoke callback with the updated result
+		if m.executor.OnTestCompleted != nil {
+			m.executor.OnTestCompleted(result, test)
 		}
 
 		return testCompletedMsg{
