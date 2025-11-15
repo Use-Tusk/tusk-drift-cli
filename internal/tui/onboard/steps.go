@@ -54,7 +54,7 @@ func (SDKCompatibilityStep) ID() onboardStep       { return stepSDKCompatibility
 func (SDKCompatibilityStep) Default(*Model) string { return "" }
 func (SDKCompatibilityStep) InputIndex() int       { return -1 }
 func (SDKCompatibilityStep) Question(*Model) string {
-	return "Does your service use the following compatible packages for outbound requests?"
+	return "Does your service use only packages from the list below for outbound requests?"
 }
 
 func (SDKCompatibilityStep) Description(*Model) string {
@@ -69,7 +69,7 @@ func (SDKCompatibilityStep) Description(*Model) string {
   • JSON Web Tokens: jsonwebtoken@5.x-9.x
   • JWKS RSA: jwks-rsa@1.x-3.x
 
-Some dependencies may use one or more of these packages under the hood (e.g. your ORM may use pg).
+Some dependencies may use one or more of these packages under the hood (e.g., your ORM may use PG).
 
 If your service uses other packages or you're unsure, select "n" and we'll help you.
 
@@ -101,9 +101,7 @@ func (RecordingIntroStep) Description(*Model) string {
    • The Tusk CLI replays mocked responses based on recorded traces
    • Tests run faster and don't need external dependencies
 
-Let's configure recording first.
-
-Press [enter] to continue.`
+Press [enter] to configure recording.`
 }
 func (RecordingIntroStep) Help(*Model) string { return "enter: continue • esc: quit" }
 
@@ -120,11 +118,8 @@ func (RecordingSamplingRateStep) Description(*Model) string {
   • 1.0 = record 100% of requests (recommended for development/staging)
   • 0.1 = record 10% of requests (recommended for production)
 
-Lower values reduce overhead in live environments.
-
-Note: If this is your first time setting up and you will be recording
-your first traces locally, we recommend setting this value to 1.0.
-You can always change this in the .tusk/config.yaml file later.`
+If you are setting up Tusk Drift locally for the first time, set this value to 1.0.
+You can change this in .tusk/config.yaml later.`
 }
 func (RecordingSamplingRateStep) Default(*Model) string { return "1.0" }
 func (RecordingSamplingRateStep) Validate(_ *Model, v string) error {
@@ -147,8 +142,6 @@ When running tests with recorded traces:
   • Your service starts with the Tusk SDK in REPLAY mode
   • External calls are intercepted and mocked using recorded data
   • Tests run against these mocks instead of real services
-
-The following questions help configure how your service runs during replay.
 
 Press [enter] to continue.`
 }
