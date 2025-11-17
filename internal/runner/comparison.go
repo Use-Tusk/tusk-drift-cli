@@ -47,6 +47,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 	// Compare status code
 	var deviations []Deviation
 	if actualResp.StatusCode != test.Response.Status {
+		slog.Debug("Status code mismatch", "traceID", test.TraceID, "expected", test.Response.Status, "actual", actualResp.StatusCode)
 		deviations = append(deviations, Deviation{
 			Field:       "response.status",
 			Expected:    test.Response.Status,
@@ -59,6 +60,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 	for expectedKey, expectedValue := range test.Response.Headers {
 		actualValue := actualResp.Header.Get(expectedKey)
 		if actualValue != expectedValue {
+			slog.Debug("Header mismatch", "traceID", test.TraceID, "header", expectedKey, "expected", expectedValue, "actual", actualValue)
 			deviations = append(deviations, Deviation{
 				Field:       fmt.Sprintf("response.headers.%s", strings.ToLower(expectedKey)),
 				Expected:    expectedValue,
@@ -69,6 +71,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 	}
 
 	if !e.compareResponseBodies(test.Response.Body, actualBody, test.TraceID) {
+		slog.Debug("Body mismatch detected", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody)
 		deviations = append(deviations, Deviation{
 			Field:       "response.body",
 			Expected:    test.Response.Body,
@@ -78,6 +81,8 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 	}
 
 	passed := len(deviations) == 0
+
+	slog.Debug("Comparing response bodies", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody, "passed", passed)
 
 	result := TestResult{
 		TestID:     test.TraceID,
