@@ -71,6 +71,12 @@ func (e *Executor) StartService() error {
 	}
 
 	env = append(env, "TUSK_DRIFT_MODE=REPLAY")
+	// Force dotenv to override inherited environment variables.
+	// Since main.go loads .env into Tusk's process (via godotenv.Load()), those variables
+	// get inherited by the service through os.Environ(). By default, Node.js dotenv will
+	// NOT override existing env vars, which means DOTENV_CONFIG_PATH (if set) won't work as expected.
+	// Setting DOTENV_CONFIG_OVERRIDE=true ensures dotenv respects DOTENV_CONFIG_PATH and overrides any inherited values
+	env = append(env, "DOTENV_CONFIG_OVERRIDE=true")
 	e.serviceCmd.Env = env
 
 	// Dump service logs to file in .tusk/logs instead of suppressing
