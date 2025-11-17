@@ -82,7 +82,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 
 	passed := len(deviations) == 0
 
-	slog.Debug("Comparing response bodies", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody, "passed", passed)
+	slog.Debug("Comparison result", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody, "passed", passed, "deviations", deviations)
 
 	result := TestResult{
 		TestID:     test.TraceID,
