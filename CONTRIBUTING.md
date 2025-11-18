@@ -108,7 +108,7 @@ go clean -modcache
 
 ### Development environment variables
 
-Create a `.env` file and add your environment variables.
+Set required env vars in your shell if necessary. To avoid potential conflicts with the service's env vars when running tests locally, this CLI doesn't load from `.env`.
 
 Testing auth to Tusk dev:
 
