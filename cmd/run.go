@@ -21,6 +21,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
 
 var (
@@ -205,14 +206,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 	// Override concurrency to 1 if environment variable recording is enabled
 	// TODO: this is a temporary fix to avoid excessive overhead from concurrent execSync() socket communication
 	//       when env vars are fetched from SDK
-	if getConfigErr == nil && cfg.Recording.EnableEnvVarRecording != nil && *cfg.Recording.EnableEnvVarRecording {
-		if executor.GetConcurrency() > 1 {
-			slog.Info("Environment variable recording is enabled - setting concurrency to 1",
-				"reason", "Environment variables must be fetched synchronously to avoid excessive overhead from concurrent execSync() socket communication",
-				"previous_concurrency", executor.GetConcurrency())
-		}
-		executor.SetConcurrency(1)
-	}
+	// if getConfigErr == nil && cfg.Recording.EnableEnvVarRecording != nil && *cfg.Recording.EnableEnvVarRecording {
+	// 	if executor.GetConcurrency() > 1 {
+	// 		slog.Info("Environment variable recording is enabled - setting concurrency to 1",
+	// 			"reason", "Environment variables must be fetched synchronously to avoid excessive overhead from concurrent execSync() socket communication",
+	// 			"previous_concurrency", executor.GetConcurrency())
+	// 	}
+	// 	executor.SetConcurrency(1)
+	// }
 
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
 	if saveResults {
@@ -338,24 +339,57 @@ func runTests(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "\n➤ Loaded %d tests from local traces\n", len(tests))
 	}
 
-	// Provide suite spans before starting environment so SDK can mock pre-app calls
+	// Fetch pre-app-start spans before grouping (needed for ENV_VARS extraction)
+	var preAppStartSpans []*core.Span
 	if !deferLoadTests {
-		if err := runner.PrepareAndSetSuiteSpans(
-			context.Background(),
-			executor,
-			runner.SuiteSpanOptions{
-				IsCloudMode: cloud,
-				Client:      client,
-				AuthOptions: authOptions,
-				ServiceID:   cfg.Service.ID,
-				TraceTestID: traceTestID,
-				AllTests:    tests,
-				Interactive: false,
-				Quiet:       quiet,
-			},
-			tests,
-		); err != nil {
-			slog.Warn("Failed to prepare suite spans", "error", err)
+		if cloud && client != nil {
+			preAppStartSpans, err = runner.FetchPreAppStartSpansFromCloud(context.Background(), client, authOptions, cfg.Service.ID, false, quiet)
+			if err != nil {
+				slog.Warn("Failed to fetch pre-app-start spans from cloud", "error", err)
+			}
+		} else {
+			preAppStartSpans, err = runner.FetchLocalPreAppStartSpans(false)
+			if err != nil {
+				slog.Debug("Failed to fetch local pre-app-start spans", "error", err)
+			}
+		}
+	}
+
+	// Group tests by environment before starting
+	var groupResult *runner.EnvironmentExtractionResult
+	if !deferLoadTests {
+		groupResult, err = runner.GroupTestsByEnvironment(tests, preAppStartSpans)
+		if err != nil {
+			cmd.SilenceUsage = true
+			return fmt.Errorf("failed to group tests by environment: %w", err)
+		}
+
+		// Log warnings if any
+		for _, warning := range groupResult.Warnings {
+			if !quiet {
+				fmt.Fprintf(os.Stderr, "⚠️  %s\n", warning)
+			}
+		}
+
+		// Prepare suite spans for each environment group
+		for _, group := range groupResult.Groups {
+			if err := runner.PrepareAndSetSuiteSpans(
+				context.Background(),
+				executor,
+				runner.SuiteSpanOptions{
+					IsCloudMode: cloud,
+					Client:      client,
+					AuthOptions: authOptions,
+					ServiceID:   cfg.Service.ID,
+					TraceTestID: traceTestID,
+					AllTests:    group.Tests, // Use only this group's tests
+					Interactive: false,
+					Quiet:       quiet,
+				},
+				group.Tests,
+			); err != nil {
+				slog.Warn("Failed to prepare suite spans for environment", "environment", group.Name, "error", err)
+			}
 		}
 	}
 
@@ -451,58 +485,87 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	if !interactive && !quiet {
-		fmt.Fprintf(os.Stderr, "➤ Starting environment...\n")
+		fmt.Fprintf(os.Stderr, "➤ Running %d tests across %d environment(s) (concurrency: %d)...\n\n", len(tests), len(groupResult.Groups), executor.GetConcurrency())
 	}
 
-	// Beyond this point, we're running tests without the UI
-	if err = executor.StartEnvironment(); err != nil {
-		cmd.SilenceUsage = true
+	// Step 4: Run tests by environment
+	var results []runner.TestResult
+	if groupResult != nil && len(groupResult.Groups) > 0 {
+		// Use environment-based replay
+		results, err = runner.ReplayTestsByEnvironment(context.Background(), executor, groupResult.Groups)
+		if err != nil {
+			cmd.SilenceUsage = true
 
-		if cloud && client != nil && ci {
-			statusReq := &backend.UpdateDriftRunCIStatusRequest{
-				DriftRunId:      driftRunID,
-				CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
-				CiStatusMessage: stringPtr(fmt.Sprintf("Failed to start environment: %v", err)),
+			// Update CI status to FAILURE if in cloud mode
+			if cloud && client != nil && ci {
+				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
+					slog.Warn("Headless: cloud finalize failed", "error", err)
+				}
+				mu.Lock()
+				fmt.Fprintf(os.Stderr, "Successfully uploaded %d/%d test results", uploadedCount, attemptedCount)
+				if attemptedCount > uploadedCount && lastUploadErr != nil {
+					fmt.Fprintf(os.Stderr, ". Last error: %v", lastUploadErr)
+				}
+				fmt.Fprintln(os.Stderr)
+				mu.Unlock()
 			}
-			if updateErr := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); updateErr != nil {
-				slog.Warn("Failed to update CI status to FAILURE", "error", updateErr)
-			}
+
+			return fmt.Errorf("environment-based test execution failed: %w", err)
+		}
+	} else {
+		// Fallback: Original single-environment flow (for interactive mode or edge cases)
+		if !interactive && !quiet {
+			fmt.Fprintf(os.Stderr, "➤ Starting environment...\n")
 		}
 
-		fmt.Fprint(os.Stderr, executor.GetStartupFailureHelpMessage())
-		return fmt.Errorf("failed to start environment: %w", err)
-	}
-	defer func() {
-		if stopErr := executor.StopEnvironment(); stopErr != nil {
-			slog.Warn("Failed to stop environment", "error", stopErr)
+		if err = executor.StartEnvironment(); err != nil {
+			cmd.SilenceUsage = true
+
+			if cloud && client != nil && ci {
+				statusReq := &backend.UpdateDriftRunCIStatusRequest{
+					DriftRunId:      driftRunID,
+					CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
+					CiStatusMessage: stringPtr(fmt.Sprintf("Failed to start environment: %v", err)),
+				}
+				if updateErr := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); updateErr != nil {
+					slog.Warn("Failed to update CI status to FAILURE", "error", updateErr)
+				}
+			}
+
+			fmt.Fprint(os.Stderr, executor.GetStartupFailureHelpMessage())
+			return fmt.Errorf("failed to start environment: %w", err)
 		}
-	}()
-
-	if !interactive && !quiet {
-		fmt.Fprintf(os.Stderr, "  ✓ Environment ready\n")
-		fmt.Fprintf(os.Stderr, "➤ Running %d tests (concurrency: %d)...\n\n", len(tests), executor.GetConcurrency())
-	}
-
-	// Step 4: Run tests
-	results, err := executor.RunTests(tests)
-	if err != nil {
-		cmd.SilenceUsage = true
-
-		// Update CI status to FAILURE if in cloud mode
-		if cloud && client != nil && ci {
-			if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
-				slog.Warn("Headless: cloud finalize failed", "error", err)
+		defer func() {
+			if stopErr := executor.StopEnvironment(); stopErr != nil {
+				slog.Warn("Failed to stop environment", "error", stopErr)
 			}
-			mu.Lock()
-			fmt.Fprintf(os.Stderr, "Successfully uploaded %d/%d test results", uploadedCount, attemptedCount)
-			if attemptedCount > uploadedCount && lastUploadErr != nil {
-				fmt.Fprintf(os.Stderr, ". Last error: %v", lastUploadErr)
-			}
-			fmt.Fprintln(os.Stderr)
-			mu.Unlock()
+		}()
+
+		if !interactive && !quiet {
+			fmt.Fprintf(os.Stderr, "  ✓ Environment ready\n")
+			fmt.Fprintf(os.Stderr, "➤ Running %d tests (concurrency: %d)...\n\n", len(tests), executor.GetConcurrency())
 		}
 
-		return fmt.Errorf("test execution failed: %w", err)
+		results, err = executor.RunTests(tests)
+		if err != nil {
+			cmd.SilenceUsage = true
+
+			// Update CI status to FAILURE if in cloud mode
+			if cloud && client != nil && ci {
+				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
+					slog.Warn("Headless: cloud finalize failed", "error", err)
+				}
+				mu.Lock()
+				fmt.Fprintf(os.Stderr, "Successfully uploaded %d/%d test results", uploadedCount, attemptedCount)
+				if attemptedCount > uploadedCount && lastUploadErr != nil {
+					fmt.Fprintf(os.Stderr, ". Last error: %v", lastUploadErr)
+				}
+				fmt.Fprintln(os.Stderr)
+				mu.Unlock()
+			}
+
+			return fmt.Errorf("test execution failed: %w", err)
+		}
 	}
 
 	_ = os.Stdout.Sync()

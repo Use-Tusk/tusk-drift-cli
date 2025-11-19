@@ -63,6 +63,16 @@ type testExecutorModel struct {
 	serverStarted  bool
 	serviceStarted bool
 
+	// Environment grouping
+	environmentGroups      []*runner.EnvironmentGroup
+	currentGroupIndex      int
+	groupCleanup           func()
+	allGroupResults        []runner.TestResult
+	totalTestsAcrossEnvs   int
+	testToEnvIndex         map[int]int // Maps global test index to environment group index
+	currentEnvTestIndices  []int       // Global indices of tests in current environment
+	currentEnvTestsStarted int         // Number of tests started in current environment
+
 	sizeWarning *components.TerminalSizeWarning
 
 	copyModeViewport viewport.Model
@@ -96,6 +106,8 @@ type executionCompleteMsg struct{}
 type executionFailedMsg struct {
 	reason string
 }
+
+type environmentGroupCompleteMsg struct{}
 
 type hideCopyNoticeMsg struct{}
 
@@ -456,20 +468,80 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		cmds = append(cmds, m.updateStats())
 
-		if m.nextTestIndex < len(m.tests) {
-			nextIndex := m.nextTestIndex
-			m.nextTestIndex++
-			cmds = append(cmds, func() tea.Msg {
-				return testStartedMsg{index: nextIndex, test: m.tests[nextIndex]}
-			})
+		// When using environment groups, check if there are more tests in the CURRENT environment
+		if len(m.environmentGroups) > 0 && len(m.currentEnvTestIndices) > 0 {
+			// Check if we need to start the next test in current environment
+			if m.currentEnvTestsStarted < len(m.currentEnvTestIndices) {
+				nextGlobalIndex := m.currentEnvTestIndices[m.currentEnvTestsStarted]
+				m.currentEnvTestsStarted++
+				cmds = append(cmds, func() tea.Msg {
+					return testStartedMsg{index: nextGlobalIndex, test: m.tests[nextGlobalIndex]}
+				})
+			}
+
+			// Count how many tests from current environment have completed
+			completedInCurrentEnv := 0
+			for _, globalIdx := range m.currentEnvTestIndices {
+				if m.results[globalIdx].TestID != "" || m.errors[globalIdx] != nil {
+					completedInCurrentEnv++
+				}
+			}
+
+			// Check if current environment is complete
+			if completedInCurrentEnv >= len(m.currentEnvTestIndices) {
+				// Collect results from this group
+				m.allGroupResults = append(m.allGroupResults, m.results...)
+
+				// Check if there are more environment groups to process
+				if m.currentGroupIndex < len(m.environmentGroups) {
+					// More groups to process - trigger environment group completion
+					cmds = append(cmds, func() tea.Msg {
+						return environmentGroupCompleteMsg{}
+					})
+				} else {
+					// All groups complete - trigger final completion
+					if m.opts != nil && m.opts.OnAllCompleted != nil {
+						m.opts.OnAllCompleted(m.allGroupResults, m.tests, m.executor)
+					}
+					cmds = append(cmds, m.completeExecution())
+				}
+			}
+		} else {
+			// Legacy path: no environment groups
+			if m.nextTestIndex < len(m.tests) {
+				nextIndex := m.nextTestIndex
+				m.nextTestIndex++
+				cmds = append(cmds, func() tea.Msg {
+					return testStartedMsg{index: nextIndex, test: m.tests[nextIndex]}
+				})
+			}
+
+			if m.completedCount >= len(m.tests) {
+				cmds = append(cmds, m.completeExecution())
+			}
 		}
 
-		if m.completedCount >= len(m.tests) {
-			if m.opts != nil && m.opts.OnAllCompleted != nil {
-				m.opts.OnAllCompleted(m.results, m.tests, m.executor)
+		return m, tea.Batch(cmds...)
+
+	case environmentGroupCompleteMsg:
+		// Stop current environment
+		m.addServiceLog("Stopping environment...")
+		if m.serviceStarted {
+			if err := m.executor.StopEnvironment(); err != nil {
+				m.addServiceLog(fmt.Sprintf("⚠️  Warning: Failed to stop environment: %v", err))
 			}
-			cmds = append(cmds, m.completeExecution())
+			m.serviceStarted = false
+			m.serverStarted = false
 		}
+
+		// Cleanup environment variables
+		if m.groupCleanup != nil {
+			m.groupCleanup()
+			m.groupCleanup = nil
+		}
+
+		// Start next environment group
+		cmds = append(cmds, m.startNextEnvironmentGroup())
 
 		return m, tea.Batch(cmds...)
 
@@ -481,15 +553,15 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// All-tests completed upload (non-blocking)
 		if m.opts != nil && m.opts.OnAllCompleted != nil {
-			results := make([]runner.TestResult, len(m.results))
-			copy(results, m.results)
-			tests := make([]runner.Test, len(m.tests))
-			copy(tests, m.tests)
-			go m.opts.OnAllCompleted(results, tests, m.executor)
+			results := make([]runner.TestResult, len(m.allGroupResults))
+			copy(results, m.allGroupResults)
+			// Note: m.tests only contains the last group's tests, but callbacks should handle all results
+			go m.opts.OnAllCompleted(results, m.tests, m.executor)
 		}
 
 		if m.executor.ResultsFile != "" {
-			if path, err := m.executor.WriteRunResultsToFile(m.tests, m.results); err != nil {
+			// Write all collected results across all environments
+			if path, err := m.executor.WriteRunResultsToFile(m.tests, m.allGroupResults); err != nil {
 				m.addServiceLog(fmt.Sprintf("❌ Failed to write results to file: %v", err))
 			} else {
 				m.addServiceLog(fmt.Sprintf("📝 Results written to %s", path))
@@ -823,9 +895,78 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 			}
 		}
 
-		m.addServiceLog("Starting environment...")
+		// Get suite spans from executor (which includes pre-app-start spans)
+		suiteSpans := m.executor.GetSuiteSpans()
+
+		// Group tests by environment
+		groupResult, err := runner.GroupTestsByEnvironment(m.tests, suiteSpans)
+		if err != nil {
+			m.addServiceLog(fmt.Sprintf("⚠️  Warning: Failed to group by environment: %v", err))
+			// Fall through to single-environment mode
+			groupResult = &runner.EnvironmentExtractionResult{
+				Groups: []*runner.EnvironmentGroup{
+					{Name: "default", Tests: m.tests, EnvVars: make(map[string]string)},
+				},
+			}
+		}
+
+		// Log any warnings
+		for _, warn := range groupResult.Warnings {
+			m.addServiceLog(fmt.Sprintf("⚠️  %s", warn))
+		}
+
+		// Store groups for sequential processing
+		m.environmentGroups = groupResult.Groups
+		m.currentGroupIndex = 0
+		m.totalTestsAcrossEnvs = len(m.tests)
+		m.allGroupResults = make([]runner.TestResult, 0, len(m.tests))
+
+		// Build mapping from global test index to environment group index
+		m.testToEnvIndex = make(map[int]int)
+		for envIdx, group := range groupResult.Groups {
+			for _, groupTest := range group.Tests {
+				// Find this test in the global m.tests array
+				for globalIdx, test := range m.tests {
+					if test.TraceID == groupTest.TraceID {
+						m.testToEnvIndex[globalIdx] = envIdx
+						break
+					}
+				}
+			}
+		}
+
+		// Initialize results and errors arrays for ALL tests
+		m.results = make([]runner.TestResult, len(m.tests))
+		m.errors = make([]error, len(m.tests))
+
+		// Start first environment group
+		return m.startNextEnvironmentGroup()()
+	}
+}
+
+func (m *testExecutorModel) startNextEnvironmentGroup() tea.Cmd {
+	return func() tea.Msg {
+		if m.currentGroupIndex >= len(m.environmentGroups) {
+			return executionCompleteMsg{}
+		}
+
+		group := m.environmentGroups[m.currentGroupIndex]
+		m.currentGroupIndex++
+
+		m.addServiceLog(fmt.Sprintf("Starting environment: %s (%d tests)", group.Name, len(group.Tests)))
+
+		// Set environment variables with cleanup
+		var err error
+		m.groupCleanup, err = runner.SetEnvironmentVariables(group.EnvVars)
+		if err != nil {
+			m.addServiceLog(fmt.Sprintf("❌ Failed to set env vars: %v", err))
+			return executionFailedMsg{reason: fmt.Sprintf("Failed to set env vars: %v", err)}
+		}
+
+		// Start environment
 		if err := m.executor.StartEnvironment(); err != nil {
-			m.addServiceLog(fmt.Sprintf("❌ Failed to start environment: %v", err))
+			m.groupCleanup()
+			m.addServiceLog(fmt.Sprintf("❌ Failed to start environment for %s: %v", group.Name, err))
 
 			helpMsg := m.executor.GetStartupFailureHelpMessage()
 			for _, line := range strings.Split(strings.TrimSpace(helpMsg), "\n") {
@@ -834,9 +975,26 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 
 			return executionFailedMsg{reason: fmt.Sprintf("Failed to start environment: %v", err)}
 		}
+
 		m.serverStarted = true
 		m.serviceStarted = true
 		m.addServiceLog("✅ Environment ready")
+
+		// Build list of global test indices for this environment
+		envIdx := m.currentGroupIndex - 1 // We already incremented it above
+		m.currentEnvTestIndices = make([]int, 0, len(group.Tests))
+		for globalIdx, groupIdx := range m.testToEnvIndex {
+			if groupIdx == envIdx {
+				m.currentEnvTestIndices = append(m.currentEnvTestIndices, globalIdx)
+			}
+		}
+
+		// Reset environment-specific counters
+		m.currentEnvTestsStarted = 0
+		m.activeTests = make(map[int]bool)
+
+		// DON'T replace m.tests - keep the full test list
+		// DON'T recreate test table - keep showing all tests
 
 		return m.startConcurrentTests()()
 	}
@@ -844,21 +1002,21 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 
 func (m *testExecutorModel) startConcurrentTests() tea.Cmd {
 	return func() tea.Msg {
-		if len(m.tests) == 0 {
+		if len(m.currentEnvTestIndices) == 0 {
 			return executionCompleteMsg{}
 		}
 		concurrency := m.executor.GetConcurrency()
-		m.addServiceLog(fmt.Sprintf("🚀 Starting %d tests with max %d concurrency...\n", len(m.tests), concurrency))
+		m.addServiceLog(fmt.Sprintf("🚀 Starting %d tests with max %d concurrency...\n", len(m.currentEnvTestIndices), concurrency))
 
 		var cmds []tea.Cmd
-		for i := 0; i < concurrency && i < len(m.tests); i++ {
-			index := i
+		for i := 0; i < concurrency && i < len(m.currentEnvTestIndices); i++ {
+			globalIndex := m.currentEnvTestIndices[i]
 			cmds = append(cmds, func() tea.Msg {
-				return testStartedMsg{index: index, test: m.tests[index]}
+				return testStartedMsg{index: globalIndex, test: m.tests[globalIndex]}
 			})
 		}
 
-		m.nextTestIndex = min(concurrency, len(m.tests))
+		m.currentEnvTestsStarted = min(concurrency, len(m.currentEnvTestIndices))
 
 		return tea.Batch(cmds...)()
 	}

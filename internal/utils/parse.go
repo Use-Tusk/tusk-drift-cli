@@ -49,9 +49,9 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 			return nil, fmt.Errorf("malformed span in %s at line %d: %w", filename, lineNum, err)
 		}
 
-		if span.IsPreAppStart {
-			slog.Debug("Found pre-app-start span", "span", span)
-		}
+		// if span.IsPreAppStart {
+		// 	slog.Debug("Found pre-app-start span", "span", span)
+		// }
 
 		// Apply filter if provided, otherwise include all spans
 		if filter == nil || filter(span) {
