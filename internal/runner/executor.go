@@ -442,7 +442,6 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 		// Help attribute outbound events to this test when SDK omits testId
 		e.server.SetCurrentTestID(test.TraceID)
 		defer e.server.SetCurrentTestID("")
-		defer e.server.CleanupTraceSpans(test.TraceID)
 	}
 
 	var reqBody io.Reader
