@@ -230,6 +230,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 	if !interactive {
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
 			runner.OutputSingleResult(res, test, outputFormat, quiet, verbose)
+
+			// Cleanup trace spans after the test is completed
+			if executor.GetServer() != nil {
+				executor.GetServer().CleanupTraceSpans(test.TraceID)
+			}
 		})
 	}
 
@@ -240,6 +245,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	var lastUploadErr error
 
 	// Per-test cloud upload while TUI is active (and also in headless)
+	// Cloud mode, overrides the above OnTestCompleted callback
 	if cloud && client != nil && ci {
 		// Save existing callback if print mode is enabled
 		existingCallback := func(res runner.TestResult, test runner.Test) {}
@@ -278,6 +284,20 @@ func runTests(cmd *cobra.Command, args []string) error {
 				}
 			}
 			mu.Unlock()
+
+			// Cleanup trace spans after the test is completed
+			if executor.GetServer() != nil {
+				executor.GetServer().CleanupTraceSpans(test.TraceID)
+			}
+		})
+	}
+
+	// If no OnTestCompleted callback was set, set a default one that just cleans up the trace spans
+	if executor.OnTestCompleted == nil {
+		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			if executor.GetServer() != nil {
+				executor.GetServer().CleanupTraceSpans(test.TraceID)
+			}
 		})
 	}
 

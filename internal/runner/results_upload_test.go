@@ -2,6 +2,8 @@ package runner
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -562,4 +564,116 @@ func BenchmarkWriteRunResultsToFile(b *testing.B) {
 		}
 		_, _ = executor.WriteRunResultsToFile(tests, results)
 	}
+}
+
+func TestRunTests_UploadMissingDataDueToRaceCondition(t *testing.T) {
+	t.Parallel()
+
+	// Setup HTTP test server that will respond to test requests
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer testServer.Close()
+
+	// Setup mock server for recording/replay
+	cfg, _ := config.Get()
+	mockServer, err := NewServer("test-service", &cfg.Service)
+	require.NoError(t, err)
+	defer func() { _ = mockServer.Stop() }()
+
+	// Start the mock server
+	err = mockServer.Start()
+	require.NoError(t, err)
+
+	// Prepare recording spans (simulating what would be recorded during tracing)
+	traceID := "test-trace-123"
+	recordingSpans := []*core.Span{
+		{
+			SpanId:      "root-span-id",
+			TraceId:     traceID,
+			IsRootSpan:  true,
+			Name:        "GET /api/test",
+			PackageName: "http",
+		},
+		{
+			SpanId:         "db-span-id",
+			TraceId:        traceID,
+			Name:           "pg.query",
+			PackageName:    "pg",
+			InputValueHash: "mock-input-hash-123",
+		},
+	}
+
+	// Create test with spans
+	test := Test{
+		TraceID:     traceID,
+		TraceTestID: "tt-123",
+		DisplayName: "Test API endpoint",
+		Request: Request{
+			Method: "GET",
+			Path:   "/api/test",
+		},
+		Response: Response{
+			Status: 200,
+			Body:   map[string]any{"status": "ok"},
+		},
+		Spans: recordingSpans,
+	}
+
+	// Setup executor
+	executor := NewExecutor()
+	executor.serviceURL = testServer.URL
+	executor.SetTestTimeout(5 * time.Second)
+	executor.SetConcurrency(1)
+	executor.server = mockServer
+
+	// Capture what gets passed to the upload callback
+	var capturedResults []TestResult
+	var capturedTests []Test
+	var capturedProtoResults []*backend.TraceTestResult
+
+	executor.SetOnTestCompleted(func(result TestResult, test Test) {
+		capturedResults = append(capturedResults, result)
+		capturedTests = append(capturedTests, test)
+
+		// Simulate what UploadSingleTestResult does - build the proto
+		protoResults := BuildTraceTestResultsProto(executor, []TestResult{result}, []Test{test})
+		capturedProtoResults = append(capturedProtoResults, protoResults...)
+
+		if executor.GetServer() != nil {
+			executor.GetServer().CleanupTraceSpans(test.TraceID)
+		}
+	})
+
+	// Run the test through the full flow
+	results, err := executor.RunTests([]Test{test})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	// The test should have passed
+	assert.True(t, results[0].Passed, "Test should pass")
+
+	// Now verify what was captured in the upload callback
+	require.Len(t, capturedProtoResults, 1, "Should have captured upload data")
+	uploadedResult := capturedProtoResults[0]
+
+	// The inbound span result should have the root span ID
+	if len(uploadedResult.SpanResults) > 0 {
+		inboundSpan := uploadedResult.SpanResults[0]
+		assert.NotNil(t, inboundSpan.MatchedSpanRecordingId,
+			"BUG: Root span ID is missing because CleanupTraceSpans deleted it before upload callback")
+		if inboundSpan.MatchedSpanRecordingId != nil {
+			assert.Equal(t, "root-span-id", *inboundSpan.MatchedSpanRecordingId,
+				"Root span ID should be preserved for upload")
+		}
+	}
+
+	// We expect at least 1 span result
+	assert.NotEmpty(t, uploadedResult.SpanResults,
+		"BUG: No span results in upload because CleanupTraceSpans deleted match events before callback")
+
+	// Verify that the trace spans were cleaned up
+	assert.Empty(t, executor.GetServer().GetMatchEvents(traceID))
+	assert.Empty(t, executor.GetServer().GetRootSpanID(traceID))
 }
