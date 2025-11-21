@@ -490,7 +490,9 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Check if current environment is complete
 			if completedInCurrentEnv >= len(m.currentEnvTestIndices) {
 				// Collect results from this group
-				m.allGroupResults = append(m.allGroupResults, m.results...)
+				for _, globalIdx := range m.currentEnvTestIndices {
+					m.allGroupResults = append(m.allGroupResults, m.results[globalIdx])
+				}
 
 				// Check if there are more environment groups to process
 				if m.currentGroupIndex < len(m.environmentGroups) {

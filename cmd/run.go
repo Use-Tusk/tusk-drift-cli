@@ -203,18 +203,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 		executor.SetConcurrency(concurrency)
 	}
 
-	// Override concurrency to 1 if environment variable recording is enabled
-	// TODO: this is a temporary fix to avoid excessive overhead from concurrent execSync() socket communication
-	//       when env vars are fetched from SDK
-	// if getConfigErr == nil && cfg.Recording.EnableEnvVarRecording != nil && *cfg.Recording.EnableEnvVarRecording {
-	// 	if executor.GetConcurrency() > 1 {
-	// 		slog.Info("Environment variable recording is enabled - setting concurrency to 1",
-	// 			"reason", "Environment variables must be fetched synchronously to avoid excessive overhead from concurrent execSync() socket communication",
-	// 			"previous_concurrency", executor.GetConcurrency())
-	// 	}
-	// 	executor.SetConcurrency(1)
-	// }
-
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
 	if saveResults {
 		if resultsDir == "" {
@@ -391,25 +379,24 @@ func runTests(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Prepare suite spans for each environment group
-		for _, group := range groupResult.Groups {
-			if err := runner.PrepareAndSetSuiteSpans(
-				context.Background(),
-				executor,
-				runner.SuiteSpanOptions{
-					IsCloudMode: cloud,
-					Client:      client,
-					AuthOptions: authOptions,
-					ServiceID:   cfg.Service.ID,
-					TraceTestID: traceTestID,
-					AllTests:    group.Tests, // Use only this group's tests
-					Interactive: false,
-					Quiet:       quiet,
-				},
-				group.Tests,
-			); err != nil {
-				slog.Warn("Failed to prepare suite spans for environment", "environment", group.Name, "error", err)
-			}
+		// Call PrepareAndSetSuiteSpans ONCE with ALL tests
+		// This means tests for one environment can find mocks across all environments if not found in their own trace
+		if err := runner.PrepareAndSetSuiteSpans(
+			context.Background(),
+			executor,
+			runner.SuiteSpanOptions{
+				IsCloudMode: cloud,
+				Client:      client,
+				AuthOptions: authOptions,
+				ServiceID:   cfg.Service.ID,
+				TraceTestID: traceTestID,
+				AllTests:    tests,
+				Interactive: false,
+				Quiet:       quiet,
+			},
+			tests,
+		); err != nil {
+			slog.Warn("Failed to prepare suite spans", "error", err)
 		}
 	}
 

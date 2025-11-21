@@ -59,6 +59,10 @@ func GroupTestsByEnvironment(tests []Test, preAppStartSpans []*core.Span) (*Envi
 		})
 	}
 
+	for _, group := range result.Groups {
+		slog.Debug("EnvironmentGrouping: environment", "envName", group.Name, "testCount", len(group.Tests), "envVarsLength", len(group.EnvVars))
+	}
+
 	return result, nil
 }
 
@@ -83,7 +87,7 @@ func extractEnvironmentFromTest(test *Test) string {
 }
 
 // extractEnvVarsForEnvironment finds the ENV_VARS span for a given environment
-// Searches through preAppStartSpans for process.env spans
+// Searches through preAppStartSpans for process.env spans that match the given environment
 // If multiple exist for same environment, selects most recent by timestamp
 func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment string) (map[string]string, *core.Span, error) {
 	var candidateSpans []*core.Span
@@ -91,7 +95,7 @@ func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment str
 	// Search through pre-app-start spans for ENV_VARS spans
 	for _, span := range preAppStartSpans {
 		// Filter for process.env spans that are pre-app-start
-		if span.PackageName == "process.env" && span.IsPreAppStart {
+		if span.PackageName == "process.env" && span.IsPreAppStart && span.GetEnvironment() == environment {
 			candidateSpans = append(candidateSpans, span)
 			slog.Debug("Found ENV_VARS span candidates",
 				"environment", environment,
