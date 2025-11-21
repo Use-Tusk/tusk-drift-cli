@@ -33,6 +33,14 @@ func ConvertTraceTestToRunnerTest(tt *backend.TraceTest) Test {
 		Status:      "pending",
 	}
 
+	// Extract environment from any span that has it
+	for _, s := range tt.Spans {
+		if env := s.GetEnvironment(); env != "" {
+			test.Environment = env
+			break
+		}
+	}
+
 	// Pick spans for execution and display
 	var serverSpan *core.Span
 	for _, s := range tt.Spans {

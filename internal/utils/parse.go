@@ -193,6 +193,12 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		}
 	}
 
+	// Handle environment (optional string pointer)
+	var environment *string
+	if env := getString("environment"); env != "" {
+		environment = &env
+	}
+
 	return &core.Span{
 		TraceId:             getString("traceId"),
 		SpanId:              getString("spanId"),
@@ -217,6 +223,7 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		IsRootSpan:          getBool("isRootSpan"),
 		Metadata:            convertToStruct("metadata"),
 		PackageType:         core.PackageType(getInt32("packageType")),
+		Environment:         environment,
 	}, nil
 }
 

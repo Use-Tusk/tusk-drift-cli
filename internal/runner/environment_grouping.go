@@ -62,28 +62,20 @@ func GroupTestsByEnvironment(tests []Test, preAppStartSpans []*core.Span) (*Envi
 	return result, nil
 }
 
-// extractEnvironmentFromTest looks for metadata.environment field in test spans
+// extractEnvironmentFromTest extracts environment from test or its spans
 // Priority:
-//  1. Check Test.Metadata["environment"] (already loaded from spans)
-//  2. Iterate through Test.Spans and look for metadata.environment in any span
+//  1. Check Test.Environment field (populated when test is created)
+//  2. Fallback to checking spans directly using span.GetEnvironment()
 //  3. Return empty string if not found
 func extractEnvironmentFromTest(test *Test) string {
-	// Check test-level metadata first
-	if env, ok := test.Metadata["environment"]; ok {
-		if envStr, ok := env.(string); ok && envStr != "" {
-			return envStr
-		}
+	if test.Environment != "" {
+		return test.Environment
 	}
 
-	// Check spans for environment metadata
+	// Fallback: check spans directly for environment
 	for _, span := range test.Spans {
-		if span.Metadata != nil {
-			metadataMap := span.Metadata.AsMap()
-			if env, ok := metadataMap["environment"]; ok {
-				if envStr, ok := env.(string); ok && envStr != "" {
-					return envStr
-				}
-			}
+		if env := span.GetEnvironment(); env != "" {
+			return env
 		}
 	}
 
@@ -101,7 +93,7 @@ func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment str
 		// Filter for process.env spans that are pre-app-start
 		if span.PackageName == "process.env" && span.IsPreAppStart {
 			candidateSpans = append(candidateSpans, span)
-			slog.Debug("Found ENV_VARS span candidate",
+			slog.Debug("Found ENV_VARS span candidates",
 				"environment", environment,
 				"spanId", span.SpanId,
 				"packageName", span.PackageName,
@@ -126,10 +118,10 @@ func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment str
 		return make(map[string]string), nil, nil
 	}
 
-	// Extract ENV_VARS from the selected span's metadata
-	envVars, err := parseEnvVarsFromMetadata(selectedSpan)
+	// Extract ENV_VARS from the selected span's output value
+	envVars, err := parseEnvVarsFromOutputValue(selectedSpan)
 	if err != nil {
-		slog.Debug("Failed to parse ENV_VARS from span metadata",
+		slog.Debug("Failed to parse ENV_VARS from span output value",
 			"environment", environment,
 			"spanId", selectedSpan.SpanId,
 			"error", err)
@@ -161,30 +153,30 @@ func findMostRecentEnvVarsSpan(spans []*core.Span) *core.Span {
 	return mostRecent
 }
 
-// parseEnvVarsFromMetadata extracts ENV_VARS map from span metadata
-// ENV_VARS is expected to be a nested object in metadata
-func parseEnvVarsFromMetadata(span *core.Span) (map[string]string, error) {
-	if span == nil || span.Metadata == nil {
-		slog.Debug("parseEnvVarsFromMetadata: span or metadata is nil",
+// parseEnvVarsFromOutputValue extracts ENV_VARS map from span output value
+// ENV_VARS is expected to be a nested object in output value
+func parseEnvVarsFromOutputValue(span *core.Span) (map[string]string, error) {
+	if span == nil || span.OutputValue == nil {
+		slog.Debug("parseEnvVarsFromOutputValue: span or output value is nil",
 			"span_nil", span == nil,
-			"metadata_nil", span == nil || span.Metadata == nil)
+			"output_value_nil", span == nil || span.OutputValue == nil)
 		return make(map[string]string), nil
 	}
 
-	metadataMap := span.Metadata.AsMap()
+	outputValueMap := span.OutputValue.AsMap()
 
 	// Get metadata keys for debugging
-	keys := make([]string, 0, len(metadataMap))
-	for k := range metadataMap {
+	keys := make([]string, 0, len(outputValueMap))
+	for k := range outputValueMap {
 		keys = append(keys, k)
 	}
-	slog.Debug("parseEnvVarsFromMetadata: checking metadata",
+	slog.Debug("parseEnvVarsFromOutputValue: checking output value",
 		"spanId", span.SpanId,
 		"metadata_keys", keys)
 
-	envVarsRaw, ok := metadataMap["ENV_VARS"]
+	envVarsRaw, ok := outputValueMap["ENV_VARS"]
 	if !ok {
-		slog.Debug("parseEnvVarsFromMetadata: ENV_VARS key not found in metadata",
+		slog.Debug("parseEnvVarsFromOutputValue: ENV_VARS key not found in output value",
 			"spanId", span.SpanId)
 		return make(map[string]string), nil
 	}
@@ -204,7 +196,7 @@ func parseEnvVarsFromMetadata(span *core.Span) (map[string]string, error) {
 	case map[string]string:
 		envVars = v
 	default:
-		slog.Warn("ENV_VARS metadata has unexpected type", "type", fmt.Sprintf("%T", v))
+		slog.Warn("ENV_VARS output value has unexpected type", "type", fmt.Sprintf("%T", v))
 		return make(map[string]string), fmt.Errorf("ENV_VARS has unexpected type: %T", v)
 	}
 

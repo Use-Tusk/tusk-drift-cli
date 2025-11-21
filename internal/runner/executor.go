@@ -483,11 +483,6 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 
 	req.Header.Set("x-td-trace-id", test.TraceID)
 
-	// Only set fetch header if there are actually env vars to fetch
-	// if _, hasEnvVars := test.Metadata["ENV_VARS"]; hasEnvVars {
-	// 	req.Header.Set("x-td-fetch-env-vars", "true")
-	// }
-
 	if test.Request.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
