@@ -501,10 +501,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return environmentGroupCompleteMsg{}
 					})
 				} else {
-					// All groups complete - trigger final completion
-					if m.opts != nil && m.opts.OnAllCompleted != nil {
-						m.opts.OnAllCompleted(m.allGroupResults, m.tests, m.executor)
-					}
 					cmds = append(cmds, m.completeExecution())
 				}
 			}

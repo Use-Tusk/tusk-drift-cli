@@ -48,7 +48,7 @@ func GroupTestsByEnvironment(tests []Test, preAppStartSpans []*core.Span) (*Envi
 			envVars = make(map[string]string) // Use empty map on error
 		}
 		if envVarsSpan == nil && envName != "default" {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("No ENV_VARS span found for environment: %s", envName))
+			slog.Debug("No ENV_VARS span found for environment", "environment", envName)
 		}
 
 		result.Groups = append(result.Groups, &EnvironmentGroup{
@@ -97,11 +97,6 @@ func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment str
 		// Filter for process.env spans that are pre-app-start
 		if span.PackageName == "process.env" && span.IsPreAppStart && span.GetEnvironment() == environment {
 			candidateSpans = append(candidateSpans, span)
-			slog.Debug("Found ENV_VARS span candidates",
-				"environment", environment,
-				"spanId", span.SpanId,
-				"packageName", span.PackageName,
-				"isPreAppStart", span.IsPreAppStart)
 		}
 	}
 
