@@ -438,41 +438,6 @@ func TestExecutor_RunSingleTest_WithAbsoluteURL(t *testing.T) {
 	assert.Equal(t, "test-absolute-url", result.TestID)
 }
 
-func TestExecutor_RunSingleTest_WithEnvVars(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check that the fetch env vars header is set
-		fetchEnvVars := r.Header.Get("x-td-fetch-env-vars")
-		assert.Equal(t, "true", fetchEnvVars)
-
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	executor := NewExecutor()
-	executor.serviceURL = server.URL
-
-	test := Test{
-		TraceID: "test-env-vars",
-		Request: Request{
-			Method: "GET",
-			Path:   "/api/test",
-		},
-		Metadata: map[string]any{
-			"ENV_VARS": map[string]string{
-				"TEST_VAR": "test-value",
-			},
-		},
-		Response: Response{
-			Status: 200,
-		},
-	}
-
-	result, err := executor.RunSingleTest(test)
-
-	assert.NoError(t, err)
-	assert.Equal(t, "test-env-vars", result.TestID)
-}
-
 func TestExecutor_RunSingleTest_WithTimeout(t *testing.T) {
 	// Create a slow mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

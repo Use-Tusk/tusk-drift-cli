@@ -191,6 +191,7 @@ func spanToTest(span *core.Span, filename string) Test {
 	return Test{
 		FileName:    filename,
 		TraceID:     span.TraceId,
+		Environment: span.GetEnvironment(),
 		Type:        spanType,
 		DisplayType: displayType,
 		Timestamp:   timestampStr,
