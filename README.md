@@ -117,17 +117,6 @@ tusk run --save-results --results-dir .tusk/results
 ![Tusk Drift Animated Diagram](assets/tusk-drift-animated-diagram-light.gif#gh-light-mode-only)
 ![Tusk Drift Animated Diagram](assets/tusk-drift-animated-diagram-dark.gif#gh-dark-mode-only)
 
-<picture>
-    <source
-        srcset="./assets/tusk-drift-animated-diagram-light.gif"
-        media="(prefers-color-scheme: light)"
-    />
-    <source
-        srcset="./assets/tusk-drift-animated-diagram-dark.gif"
-        media="(prefers-color-scheme: dark)"
-    />
-</picture>
-
 </div>
 
 You can use Tusk Drift as API tests in your CI/CD pipeline by running your test suite against commits in your pull requests. Tusk Drift Cloud offers storage of these tests alongside an additional layer of intelligence on deviations detected:
