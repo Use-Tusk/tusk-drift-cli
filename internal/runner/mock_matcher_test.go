@@ -304,10 +304,12 @@ func TestFindBestMatchAcrossTraces_GlobalSchemaHash(t *testing.T) {
 	spanValueMap := map[string]any{"method": "GET", "path": "/users/456"}
 
 	spanA := makeSpan(t, "trace-A", "sa", pkg, spanValueMap, inputSchema, 100)
+	spanA.IsPreAppStart = true
 
 	server.SetSuiteSpans([]*core.Span{spanA})
 
 	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+	req.OutboundSpan.IsPreAppStart = true
 
 	// Sanity: value hashes differ
 	assert.NotEqual(t, spanA.InputValueHash, req.OutboundSpan.InputValueHash)
@@ -354,10 +356,12 @@ func TestFindBestMatchAcrossTraces_GlobalReducedSchemaHash(t *testing.T) {
 	spanValueMap := map[string]any{"method": "GET", "path": "/b"}
 
 	spanA := makeSpan(t, "trace-A", "sa", pkg, spanValueMap, spanSchema, 100)
+	spanA.IsPreAppStart = true
 
 	server.SetSuiteSpans([]*core.Span{spanA})
 
 	req := makeMockRequest(t, pkg, requestValueMap, requestSchema)
+	req.OutboundSpan.IsPreAppStart = true
 
 	// Sanity: full schema hashes differ
 	assert.NotEqual(t, spanA.InputSchemaHash, req.OutboundSpan.InputSchemaHash)
@@ -406,6 +410,38 @@ func TestFindBestMatchAcrossTraces_PrefersValueHashOverSchemaHash(t *testing.T) 
 	// Should pick value hash match (Priority 10) over schema hash match (Priority 12)
 	assert.Equal(t, "exact", match.SpanId)
 	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+}
+
+func TestFindBestMatchAcrossTraces_NonPreAppStart_DoesNotMatchOnSchema(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "http"
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+		},
+	}
+
+	// Request and span have same schema but different values
+	requestValueMap := map[string]any{"method": "GET", "path": "/users/123"}
+	spanValueMap := map[string]any{"method": "GET", "path": "/users/456"}
+
+	spanA := makeSpan(t, "trace-A", "sa", pkg, spanValueMap, inputSchema, 100)
+	spanA.IsPreAppStart = false
+
+	server.SetSuiteSpans([]*core.Span{spanA})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+	req.OutboundSpan.IsPreAppStart = false
+
+	// Should not match - schema matching is disabled for non-pre-app-start
+	match, _, err := mm.FindBestMatchAcrossTraces(req, "irrelevant-trace", server.GetSuiteSpans())
+	require.Error(t, err)
+	require.Nil(t, match)
 }
 
 func TestFindBestMatchAcrossTraces_SchemaHash_PreAppStartFiltering(t *testing.T) {
