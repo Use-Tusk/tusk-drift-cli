@@ -114,7 +114,19 @@ tusk run --save-results --results-dir .tusk/results
 
 <div align="center">
 
-![Tusk Drift Animated Diagram](assets/tusk-drift-animated-diagram.gif)
+![Tusk Drift Animated Diagram](assets/tusk-drift-animated-diagram-light.gif#gh-light-mode-only)
+![Tusk Drift Animated Diagram](assets/tusk-drift-animated-diagram-dark.gif#gh-dark-mode-only)
+
+<picture>
+    <source
+        srcset="./assets/tusk-drift-animated-diagram-light.gif"
+        media="(prefers-color-scheme: light)"
+    />
+    <source
+        srcset="./assets/tusk-drift-animated-diagram-dark.gif"
+        media="(prefers-color-scheme: dark)"
+    />
+</picture>
 
 </div>
 
