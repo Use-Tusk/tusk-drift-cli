@@ -124,6 +124,44 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 		}, nil
 	}
 
+	// Priority 12: Input schema hash across suite (use index)
+	inputSchemaHash := req.OutboundSpan.GetInputSchemaHash()
+	schemaCandidates := mm.server.GetSuiteSpansBySchemaHash(inputSchemaHash)
+	filteredSchemaCandidates := mm.filterByPreAppStart(schemaCandidates, requestIsPreAppStart)
+	if match := mm.findFirstUnused(filteredSchemaCandidates); match != nil {
+		return match, &backend.MatchLevel{
+			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
+			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+			MatchDescription: "Suite unused span by input schema hash",
+		}, nil
+	}
+	if match := mm.findFirstUsed(filteredSchemaCandidates); match != nil {
+		return match, &backend.MatchLevel{
+			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
+			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+			MatchDescription: "Suite used span by input schema hash",
+		}, nil
+	}
+
+	// Priority 13: Reduced input schema hash across suite (use index)
+	reducedSchemaHash := reducedRequestSchemaHash(req)
+	reducedSchemaCandidates := mm.server.GetSuiteSpansByReducedSchemaHash(reducedSchemaHash)
+	filteredReducedSchemaCandidates := mm.filterByPreAppStart(reducedSchemaCandidates, requestIsPreAppStart)
+	if match := mm.findFirstUnused(filteredReducedSchemaCandidates); match != nil {
+		return match, &backend.MatchLevel{
+			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
+			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+			MatchDescription: "Suite unused span by reduced input schema hash",
+		}, nil
+	}
+	if match := mm.findFirstUsed(filteredReducedSchemaCandidates); match != nil {
+		return match, &backend.MatchLevel{
+			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
+			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+			MatchDescription: "Suite used span by reduced input schema hash",
+		}, nil
+	}
+
 	return nil, nil, fmt.Errorf("no matching span found")
 }
 

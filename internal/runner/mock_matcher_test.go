@@ -285,6 +285,171 @@ func TestFindBestMatchAcrossTraces_GlobalValueHash(t *testing.T) {
 	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }
 
+func TestFindBestMatchAcrossTraces_GlobalSchemaHash(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "http"
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+		},
+	}
+
+	// Request value differs from span value, but schema matches
+	requestValueMap := map[string]any{"method": "GET", "path": "/users/123"}
+	spanValueMap := map[string]any{"method": "GET", "path": "/users/456"}
+
+	spanA := makeSpan(t, "trace-A", "sa", pkg, spanValueMap, inputSchema, 100)
+
+	server.SetSuiteSpans([]*core.Span{spanA})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+
+	// Sanity: value hashes differ
+	assert.NotEqual(t, spanA.InputValueHash, req.OutboundSpan.InputValueHash)
+	// Schema hashes should match
+	assert.Equal(t, spanA.InputSchemaHash, req.OutboundSpan.InputSchemaHash)
+
+	match, level, err := mm.FindBestMatchAcrossTraces(req, "irrelevant-trace", server.GetSuiteSpans())
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	assert.Equal(t, "sa", match.SpanId)
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+}
+
+func TestFindBestMatchAcrossTraces_GlobalReducedSchemaHash(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "http"
+	matchImportanceZero := 0.0
+
+	// Request schema has an extra low-importance field
+	requestSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method":  {},
+			"path":    {},
+			"ignored": {MatchImportance: &matchImportanceZero},
+		},
+	}
+
+	// Span schema is missing the low-importance field (reduced schemas should match)
+	spanSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+		},
+	}
+
+	requestValueMap := map[string]any{"method": "GET", "path": "/a", "ignored": "X"}
+	spanValueMap := map[string]any{"method": "GET", "path": "/b"}
+
+	spanA := makeSpan(t, "trace-A", "sa", pkg, spanValueMap, spanSchema, 100)
+
+	server.SetSuiteSpans([]*core.Span{spanA})
+
+	req := makeMockRequest(t, pkg, requestValueMap, requestSchema)
+
+	// Sanity: full schema hashes differ
+	assert.NotEqual(t, spanA.InputSchemaHash, req.OutboundSpan.InputSchemaHash)
+
+	match, level, err := mm.FindBestMatchAcrossTraces(req, "irrelevant-trace", server.GetSuiteSpans())
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	assert.Equal(t, "sa", match.SpanId)
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+}
+
+func TestFindBestMatchAcrossTraces_PrefersValueHashOverSchemaHash(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "http"
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+		},
+	}
+
+	requestValueMap := map[string]any{"method": "GET", "path": "/users"}
+	differentValueMap := map[string]any{"method": "GET", "path": "/posts"}
+
+	// spanExact has exact value match (Priority 10)
+	spanExact := makeSpan(t, "trace-A", "exact", pkg, requestValueMap, inputSchema, 200)
+	// spanSchema only has schema match (Priority 12)
+	spanSchema := makeSpan(t, "trace-B", "schema-only", pkg, differentValueMap, inputSchema, 100)
+
+	server.SetSuiteSpans([]*core.Span{spanSchema, spanExact})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+
+	match, level, err := mm.FindBestMatchAcrossTraces(req, "irrelevant-trace", server.GetSuiteSpans())
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should pick value hash match (Priority 10) over schema hash match (Priority 12)
+	assert.Equal(t, "exact", match.SpanId)
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+}
+
+func TestFindBestMatchAcrossTraces_SchemaHash_PreAppStartFiltering(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "http"
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+		},
+	}
+
+	requestValueMap := map[string]any{"method": "GET", "path": "/init"}
+	spanValueMap := map[string]any{"method": "GET", "path": "/init-other"}
+
+	// Create a pre-app-start span
+	spanPreApp := makeSpan(t, "trace-A", "pre-app", pkg, spanValueMap, inputSchema, 100)
+	spanPreApp.IsPreAppStart = true
+
+	// Create a non-pre-app-start span
+	spanNormal := makeSpan(t, "trace-B", "normal", pkg, spanValueMap, inputSchema, 200)
+	spanNormal.IsPreAppStart = false
+
+	server.SetSuiteSpans([]*core.Span{spanPreApp, spanNormal})
+
+	// Request is pre-app-start
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+	req.OutboundSpan.IsPreAppStart = true
+
+	match, level, err := mm.FindBestMatchAcrossTraces(req, "irrelevant-trace", server.GetSuiteSpans())
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should only match the pre-app-start span
+	assert.Equal(t, "pre-app", match.SpanId)
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+}
+
 func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)

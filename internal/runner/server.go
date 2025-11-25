@@ -45,14 +45,16 @@ type Server struct {
 	listener   net.Listener
 
 	// Hashes for fast lookup
-	spans                        map[string][]*core.Span
-	spanUsage                    map[string]map[string]bool         // traceId -> spanId -> isUsed
-	spansByPackage               map[string]map[string][]*core.Span // traceId -> packageName -> spans
-	suiteSpansByPackage          map[string][]*core.Span            // packageName -> spans (for suite spans)
-	spansByReducedValueHash      map[string]map[string][]*core.Span // traceId -> reducedValueHash -> spans
-	suiteSpansByReducedValueHash map[string][]*core.Span            // reducedValueHash -> spans (for suite)
-	spansByValueHash             map[string]map[string][]*core.Span // traceId -> valueHash -> spans
-	suiteSpansByValueHash        map[string][]*core.Span
+	spans                         map[string][]*core.Span
+	spanUsage                     map[string]map[string]bool         // traceId -> spanId -> isUsed
+	spansByPackage                map[string]map[string][]*core.Span // traceId -> packageName -> spans
+	suiteSpansByPackage           map[string][]*core.Span            // packageName -> spans (for suite spans)
+	spansByReducedValueHash       map[string]map[string][]*core.Span // traceId -> reducedValueHash -> spans
+	suiteSpansByReducedValueHash  map[string][]*core.Span            // reducedValueHash -> spans (for suite)
+	spansByValueHash              map[string]map[string][]*core.Span // traceId -> valueHash -> spans
+	suiteSpansByValueHash         map[string][]*core.Span
+	suiteSpansBySchemaHash        map[string][]*core.Span
+	suiteSpansByReducedSchemaHash map[string][]*core.Span
 
 	currentTestID      atomic.Value
 	ctx                context.Context
@@ -140,14 +142,16 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 	commType := determineCommunicationType(cfg)
 
 	server := &Server{
-		spans:                        make(map[string][]*core.Span),
-		spanUsage:                    make(map[string]map[string]bool),
-		spansByPackage:               make(map[string]map[string][]*core.Span),
-		suiteSpansByPackage:          make(map[string][]*core.Span),
-		spansByReducedValueHash:      make(map[string]map[string][]*core.Span),
-		suiteSpansByReducedValueHash: make(map[string][]*core.Span),
-		spansByValueHash:             make(map[string]map[string][]*core.Span),
-		suiteSpansByValueHash:        make(map[string][]*core.Span),
+		spans:                         make(map[string][]*core.Span),
+		spanUsage:                     make(map[string]map[string]bool),
+		spansByPackage:                make(map[string]map[string][]*core.Span),
+		suiteSpansByPackage:           make(map[string][]*core.Span),
+		spansByReducedValueHash:       make(map[string]map[string][]*core.Span),
+		suiteSpansByReducedValueHash:  make(map[string][]*core.Span),
+		spansByValueHash:              make(map[string]map[string][]*core.Span),
+		suiteSpansByValueHash:         make(map[string][]*core.Span),
+		suiteSpansBySchemaHash:        make(map[string][]*core.Span),
+		suiteSpansByReducedSchemaHash: make(map[string][]*core.Span),
 
 		ctx:                ctx,
 		cancel:             cancel,
@@ -398,6 +402,8 @@ func (ms *Server) SetSuiteSpans(spans []*core.Span) {
 	ms.suiteSpansByPackage = make(map[string][]*core.Span)
 	ms.suiteSpansByReducedValueHash = make(map[string][]*core.Span)
 	ms.suiteSpansByValueHash = make(map[string][]*core.Span)
+	ms.suiteSpansBySchemaHash = make(map[string][]*core.Span)
+	ms.suiteSpansByReducedSchemaHash = make(map[string][]*core.Span)
 
 	for _, span := range spans {
 		// Package index
@@ -413,6 +419,17 @@ func (ms *Server) SetSuiteSpans(spans []*core.Span) {
 		reducedHash := reducedInputValueHash(span)
 		if reducedHash != "" {
 			ms.suiteSpansByReducedValueHash[reducedHash] = append(ms.suiteSpansByReducedValueHash[reducedHash], span)
+		}
+
+		// Schema hash index (already computed by SDK)
+		if span.InputSchemaHash != "" {
+			ms.suiteSpansBySchemaHash[span.InputSchemaHash] = append(ms.suiteSpansBySchemaHash[span.InputSchemaHash], span)
+		}
+
+		// Reduced schema hash index (compute once here)
+		reducedSchemaHash := reducedInputSchemaHash(span)
+		if reducedSchemaHash != "" {
+			ms.suiteSpansByReducedSchemaHash[reducedSchemaHash] = append(ms.suiteSpansByReducedSchemaHash[reducedSchemaHash], span)
 		}
 	}
 }
@@ -466,6 +483,18 @@ func (ms *Server) GetSuiteSpansByReducedValueHash(reducedHash string) []*core.Sp
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 	return ms.suiteSpansByReducedValueHash[reducedHash]
+}
+
+func (ms *Server) GetSuiteSpansBySchemaHash(schemaHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.suiteSpansBySchemaHash[schemaHash]
+}
+
+func (ms *Server) GetSuiteSpansByReducedSchemaHash(reducedSchemaHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.suiteSpansByReducedSchemaHash[reducedSchemaHash]
 }
 
 func (ms *Server) CleanupTraceSpans(traceID string) {
