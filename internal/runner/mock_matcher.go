@@ -124,6 +124,71 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 		}, nil
 	}
 
+	// If the request is not pre-app-start, don't match against global spans
+	// This avoids false positives for requests like pg queries, where the
+	// schema hash is the same for very different calls.
+	if !requestIsPreAppStart {
+		return nil, nil, fmt.Errorf("no matching span found")
+	}
+
+	requestData := reqToRequestData(req)
+
+	// Priority 12: Input schema hash across suite (use index + similarity scoring)
+	inputSchemaHash := req.OutboundSpan.GetInputSchemaHash()
+	schemaCandidates := mm.server.GetSuiteSpansBySchemaHash(inputSchemaHash)
+	filteredSchemaCandidates := mm.filterByPreAppStart(schemaCandidates, true)
+
+	if unusedSchema := mm.filterUnused(filteredSchemaCandidates); len(unusedSchema) > 0 {
+		best, score, _ := mm.findBestMatchBySimilarity(requestData, unusedSchema, true, "pre-app-start")
+		if best != nil {
+			mm.markSpanAsUsed(best)
+			return best, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: fmt.Sprintf("Suite unused span by input schema hash (similarity: %.2f)", score),
+			}, nil
+		}
+	}
+	if usedSchema := mm.filterUsed(filteredSchemaCandidates); len(usedSchema) > 0 {
+		best, score, _ := mm.findBestMatchBySimilarity(requestData, usedSchema, false, "pre-app-start")
+		if best != nil {
+			mm.markSpanAsUsed(best)
+			return best, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: fmt.Sprintf("Suite used span by input schema hash (similarity: %.2f)", score),
+			}, nil
+		}
+	}
+
+	// Priority 13: Reduced input schema hash across suite (use index + similarity scoring)
+	reducedSchemaHash := reducedRequestSchemaHash(req)
+	reducedSchemaCandidates := mm.server.GetSuiteSpansByReducedSchemaHash(reducedSchemaHash)
+	filteredReducedSchemaCandidates := mm.filterByPreAppStart(reducedSchemaCandidates, true)
+
+	if unusedReduced := mm.filterUnused(filteredReducedSchemaCandidates); len(unusedReduced) > 0 {
+		best, score, _ := mm.findBestMatchBySimilarity(requestData, unusedReduced, true, "pre-app-start")
+		if best != nil {
+			mm.markSpanAsUsed(best)
+			return best, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: fmt.Sprintf("Suite unused span by reduced schema hash (similarity: %.2f)", score),
+			}, nil
+		}
+	}
+	if usedReduced := mm.filterUsed(filteredReducedSchemaCandidates); len(usedReduced) > 0 {
+		best, score, _ := mm.findBestMatchBySimilarity(requestData, usedReduced, false, "pre-app-start")
+		if best != nil {
+			mm.markSpanAsUsed(best)
+			return best, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: fmt.Sprintf("Suite used span by reduced schema hash (similarity: %.2f)", score),
+			}, nil
+		}
+	}
+
 	return nil, nil, fmt.Errorf("no matching span found")
 }
 
@@ -909,6 +974,8 @@ func (mm *MockMatcher) findUsedSpanByReducedInputSchemaHash(req *core.GetMockReq
 	}
 }
 
+// reqToRequestData converts a GetMockRequest to the MockMatcherRequestData
+// format used by the MockMatcher.
 func reqToRequestData(req *core.GetMockRequest) MockMatcherRequestData {
 	var body any
 	if req.OutboundSpan != nil && req.OutboundSpan.InputValue != nil {
