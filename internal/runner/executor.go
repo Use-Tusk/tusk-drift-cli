@@ -315,6 +315,11 @@ func (e *Executor) GetServer() *Server {
 	return e.server
 }
 
+// GetSuiteSpans returns the suite spans (includes pre-app-start spans)
+func (e *Executor) GetSuiteSpans() []*core.Span {
+	return e.suiteSpans
+}
+
 // WaitForSpanData blocks briefly until inbound or match events are recorded for a test
 func (e *Executor) WaitForSpanData(traceID string, timeout time.Duration) {
 	if e.server != nil {
@@ -477,11 +482,6 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	}
 
 	req.Header.Set("x-td-trace-id", test.TraceID)
-
-	// Only set fetch header if there are actually env vars to fetch
-	if _, hasEnvVars := test.Metadata["ENV_VARS"]; hasEnvVars {
-		req.Header.Set("x-td-fetch-env-vars", "true")
-	}
 
 	if test.Request.Body != nil {
 		req.Header.Set("Content-Type", "application/json")

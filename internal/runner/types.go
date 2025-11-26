@@ -7,8 +7,9 @@ type Test struct {
 	TraceID     string         `json:"trace_id"`
 	TraceTestID string         `json:"trace_test_id,omitempty"`
 	Spans       []*core.Span   `json:"-"`
-	Type        string         `json:"type"`         // Used for test execution
-	DisplayType string         `json:"display_type"` // Used for CLI display
+	Environment string         `json:"environment,omitempty"` // Environment extracted from span
+	Type        string         `json:"type"`                  // Used for test execution
+	DisplayType string         `json:"display_type"`          // Used for CLI display
 	Timestamp   string         `json:"timestamp"`
 	Method      string         `json:"method"`
 	Path        string         `json:"path"`         // Used for test execution

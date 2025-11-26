@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,6 +64,19 @@ type testExecutorModel struct {
 	serverStarted  bool
 	serviceStarted bool
 
+	// Environment grouping
+	environmentGroups      []*runner.EnvironmentGroup
+	currentGroupIndex      int
+	groupCleanup           func()
+	totalTestsAcrossEnvs   int
+	testToEnvIndex         map[int]int // Maps global test index to environment group index
+	currentEnvTestIndices  []int       // Global indices of tests in current environment
+	currentEnvTestsStarted int         // Number of tests started in current environment
+
+	// Retry tracking for crashed tests
+	testsToRetry []int // Global indices of tests to retry after crash
+	inRetryPhase bool  // Whether we're currently in retry phase
+
 	sizeWarning *components.TerminalSizeWarning
 
 	copyModeViewport viewport.Model
@@ -96,6 +110,8 @@ type executionCompleteMsg struct{}
 type executionFailedMsg struct {
 	reason string
 }
+
+type environmentGroupCompleteMsg struct{}
 
 type hideCopyNoticeMsg struct{}
 
@@ -388,7 +404,11 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case testStartedMsg:
 		m.activeTests[msg.index] = true
 		m.currentTestTraces[msg.test.TraceID] = true
-		m.addTestLog(msg.test.TraceID, fmt.Sprintf("🧪 Started: %s %s", msg.test.Method, msg.test.Path))
+		if m.inRetryPhase {
+			m.addTestLog(msg.test.TraceID, fmt.Sprintf("🔄 Retrying: %s %s", msg.test.Method, msg.test.Path))
+		} else {
+			m.addTestLog(msg.test.TraceID, fmt.Sprintf("🧪 Started: %s %s", msg.test.Method, msg.test.Path))
+		}
 		cmds = append(cmds, m.updateStats())
 		cmds = append(cmds, m.executeTest(msg.index))
 
@@ -399,7 +419,13 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errors[msg.index] = msg.err
 		m.completedCount++
 
-		m.testTable.UpdateTestResult(msg.index, msg.result, msg.err)
+		// Check if this test is pending retry - if so, don't update the UI yet
+		isPendingRetry := slices.Contains(m.testsToRetry, msg.index)
+
+		// Only update the test table if this is the final result (not pending retry)
+		if !isPendingRetry {
+			m.testTable.UpdateTestResult(msg.index, msg.result, msg.err)
+		}
 
 		test := m.tests[msg.index]
 		switch {
@@ -408,6 +434,9 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err != nil {
 				m.addTestLog(test.TraceID, fmt.Sprintf("  Error: %v", msg.err))
 			}
+		case isPendingRetry:
+			// Don't log final status for tests pending retry - they'll be retried
+			m.addTestLog(test.TraceID, fmt.Sprintf("⏳ %s %s - will retry (%dms)", test.Method, test.Path, msg.result.Duration))
 		case msg.err != nil:
 			m.addTestLog(test.TraceID, fmt.Sprintf("❌ %s %s - ERROR: %v", test.Method, test.Path, msg.err))
 		case msg.result.Passed:
@@ -448,28 +477,101 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Per-test cloud upload (non-blocking)
-		if m.opts != nil && m.opts.OnTestCompleted != nil {
-			res := msg.result
-			go m.opts.OnTestCompleted(res, test, m.executor)
+		// Invoke callbacks only for final results (not tests pending retry).
+		// There are two separate callbacks:
+		// - executor.OnTestCompleted: Set in cmd/run.go, handles cloud upload via UploadSingleTestResult
+		//   and trace span cleanup. This is the primary upload mechanism in CI/cloud mode.
+		// - opts.OnTestCompleted: TUI-specific callback for additional per-test processing.
+		if !isPendingRetry {
+			if m.executor.OnTestCompleted != nil {
+				m.executor.OnTestCompleted(msg.result, test)
+			}
+			if m.opts != nil && m.opts.OnTestCompleted != nil {
+				res := msg.result
+				go m.opts.OnTestCompleted(res, test, m.executor)
+			}
 		}
 
 		cmds = append(cmds, m.updateStats())
 
-		if m.nextTestIndex < len(m.tests) {
-			nextIndex := m.nextTestIndex
-			m.nextTestIndex++
-			cmds = append(cmds, func() tea.Msg {
-				return testStartedMsg{index: nextIndex, test: m.tests[nextIndex]}
-			})
+		// When using environment groups, check if there are more tests in the CURRENT environment
+		if len(m.environmentGroups) > 0 && len(m.currentEnvTestIndices) > 0 {
+			// Check if we need to start the next test in current environment
+			if m.currentEnvTestsStarted < len(m.currentEnvTestIndices) {
+				// In retry phase, run tests sequentially (wait for current test to complete)
+				// In normal phase, run tests concurrently
+				if !m.inRetryPhase || len(m.activeTests) == 0 {
+					nextGlobalIndex := m.currentEnvTestIndices[m.currentEnvTestsStarted]
+					m.currentEnvTestsStarted++
+					cmds = append(cmds, func() tea.Msg {
+						return testStartedMsg{index: nextGlobalIndex, test: m.tests[nextGlobalIndex]}
+					})
+				}
+			}
+
+			// Count how many tests from current environment have completed
+			completedInCurrentEnv := 0
+			for _, globalIdx := range m.currentEnvTestIndices {
+				if m.results[globalIdx].TestID != "" || m.errors[globalIdx] != nil {
+					completedInCurrentEnv++
+				}
+			}
+
+			// Check if current environment is complete
+			if completedInCurrentEnv >= len(m.currentEnvTestIndices) {
+				switch {
+				case !m.inRetryPhase && len(m.testsToRetry) > 0:
+					// Need retry phase first (only if not already in retry phase)
+					cmds = append(cmds, m.startRetryPhase())
+				case m.currentGroupIndex < len(m.environmentGroups):
+					// More groups to process - trigger environment group completion
+					cmds = append(cmds, func() tea.Msg {
+						return environmentGroupCompleteMsg{}
+					})
+				default:
+					cmds = append(cmds, m.completeExecution())
+				}
+			}
+		} else {
+			// Legacy path: no environment groups
+			if m.nextTestIndex < len(m.tests) {
+				nextIndex := m.nextTestIndex
+				m.nextTestIndex++
+				cmds = append(cmds, func() tea.Msg {
+					return testStartedMsg{index: nextIndex, test: m.tests[nextIndex]}
+				})
+			}
+
+			if m.completedCount >= len(m.tests) {
+				cmds = append(cmds, m.completeExecution())
+			}
 		}
 
-		if m.completedCount >= len(m.tests) {
-			if m.opts != nil && m.opts.OnAllCompleted != nil {
-				m.opts.OnAllCompleted(m.results, m.tests, m.executor)
+		return m, tea.Batch(cmds...)
+
+	case environmentGroupCompleteMsg:
+		// Reset retry state for next environment
+		m.inRetryPhase = false
+		m.testsToRetry = nil
+
+		// Stop current environment
+		m.addServiceLog("Stopping environment...")
+		if m.serviceStarted {
+			if err := m.executor.StopEnvironment(); err != nil {
+				m.addServiceLog(fmt.Sprintf("⚠️  Warning: Failed to stop environment: %v", err))
 			}
-			cmds = append(cmds, m.completeExecution())
+			m.serviceStarted = false
+			m.serverStarted = false
 		}
+
+		// Cleanup environment variables
+		if m.groupCleanup != nil {
+			m.groupCleanup()
+			m.groupCleanup = nil
+		}
+
+		// Start next environment group
+		cmds = append(cmds, m.startNextEnvironmentGroup())
 
 		return m, tea.Batch(cmds...)
 
@@ -483,9 +585,7 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.opts != nil && m.opts.OnAllCompleted != nil {
 			results := make([]runner.TestResult, len(m.results))
 			copy(results, m.results)
-			tests := make([]runner.Test, len(m.tests))
-			copy(tests, m.tests)
-			go m.opts.OnAllCompleted(results, tests, m.executor)
+			go m.opts.OnAllCompleted(results, m.tests, m.executor)
 		}
 
 		if m.executor.ResultsFile != "" {
@@ -794,7 +894,12 @@ func (m *testExecutorModel) addTestLog(testID, line string) {
 func (m *testExecutorModel) updateStats() tea.Cmd {
 	passed := 0
 	failed := 0
-	for i := 0; i < m.completedCount; i++ {
+	for i := 0; i < len(m.results); i++ {
+		// Skip tests that haven't completed yet
+		if m.results[i].TestID == "" && m.errors[i] == nil {
+			continue
+		}
+
 		switch {
 		case m.results[i].CrashedServer:
 			failed++ // Count crashed servers as failures
@@ -823,9 +928,77 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 			}
 		}
 
-		m.addServiceLog("Starting environment...")
+		// Get suite spans from executor (which includes pre-app-start spans)
+		suiteSpans := m.executor.GetSuiteSpans()
+
+		// Group tests by environment
+		groupResult, err := runner.GroupTestsByEnvironment(m.tests, suiteSpans)
+		if err != nil {
+			m.addServiceLog(fmt.Sprintf("⚠️  Warning: Failed to group by environment: %v", err))
+			// Fall through to single-environment mode
+			groupResult = &runner.EnvironmentExtractionResult{
+				Groups: []*runner.EnvironmentGroup{
+					{Name: "default", Tests: m.tests, EnvVars: make(map[string]string)},
+				},
+			}
+		}
+
+		// Log any warnings
+		for _, warn := range groupResult.Warnings {
+			m.addServiceLog(fmt.Sprintf("⚠️  %s", warn))
+		}
+
+		// Store groups for sequential processing
+		m.environmentGroups = groupResult.Groups
+		m.currentGroupIndex = 0
+		m.totalTestsAcrossEnvs = len(m.tests)
+
+		// Build mapping from global test index to environment group index
+		m.testToEnvIndex = make(map[int]int)
+		for envIdx, group := range groupResult.Groups {
+			for _, groupTest := range group.Tests {
+				// Find this test in the global m.tests array
+				for globalIdx, test := range m.tests {
+					if test.TraceID == groupTest.TraceID {
+						m.testToEnvIndex[globalIdx] = envIdx
+						break
+					}
+				}
+			}
+		}
+
+		// Initialize results and errors arrays for ALL tests
+		m.results = make([]runner.TestResult, len(m.tests))
+		m.errors = make([]error, len(m.tests))
+
+		// Start first environment group
+		return m.startNextEnvironmentGroup()()
+	}
+}
+
+func (m *testExecutorModel) startNextEnvironmentGroup() tea.Cmd {
+	return func() tea.Msg {
+		if m.currentGroupIndex >= len(m.environmentGroups) {
+			return executionCompleteMsg{}
+		}
+
+		group := m.environmentGroups[m.currentGroupIndex]
+		m.currentGroupIndex++
+
+		m.addServiceLog(fmt.Sprintf("Starting environment: %s (%d tests)", group.Name, len(group.Tests)))
+
+		// Set environment variables with cleanup
+		var err error
+		m.groupCleanup, err = runner.SetEnvironmentVariables(group.EnvVars)
+		if err != nil {
+			m.addServiceLog(fmt.Sprintf("❌ Failed to set env vars: %v", err))
+			return executionFailedMsg{reason: fmt.Sprintf("Failed to set env vars: %v", err)}
+		}
+
+		// Start environment
 		if err := m.executor.StartEnvironment(); err != nil {
-			m.addServiceLog(fmt.Sprintf("❌ Failed to start environment: %v", err))
+			m.groupCleanup()
+			m.addServiceLog(fmt.Sprintf("❌ Failed to start environment for %s: %v", group.Name, err))
 
 			helpMsg := m.executor.GetStartupFailureHelpMessage()
 			for _, line := range strings.Split(strings.TrimSpace(helpMsg), "\n") {
@@ -834,9 +1007,26 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 
 			return executionFailedMsg{reason: fmt.Sprintf("Failed to start environment: %v", err)}
 		}
+
 		m.serverStarted = true
 		m.serviceStarted = true
 		m.addServiceLog("✅ Environment ready")
+
+		// Build list of global test indices for this environment
+		envIdx := m.currentGroupIndex - 1 // We already incremented it above
+		m.currentEnvTestIndices = make([]int, 0, len(group.Tests))
+		for globalIdx, groupIdx := range m.testToEnvIndex {
+			if groupIdx == envIdx {
+				m.currentEnvTestIndices = append(m.currentEnvTestIndices, globalIdx)
+			}
+		}
+
+		// Reset environment-specific counters
+		m.currentEnvTestsStarted = 0
+		m.activeTests = make(map[int]bool)
+
+		// DON'T replace m.tests - keep the full test list
+		// DON'T recreate test table - keep showing all tests
 
 		return m.startConcurrentTests()()
 	}
@@ -844,23 +1034,64 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 
 func (m *testExecutorModel) startConcurrentTests() tea.Cmd {
 	return func() tea.Msg {
-		if len(m.tests) == 0 {
+		if len(m.currentEnvTestIndices) == 0 {
 			return executionCompleteMsg{}
 		}
 		concurrency := m.executor.GetConcurrency()
-		m.addServiceLog(fmt.Sprintf("🚀 Starting %d tests with max %d concurrency...\n", len(m.tests), concurrency))
+		m.addServiceLog(fmt.Sprintf("🚀 Starting %d tests with max %d concurrency...\n", len(m.currentEnvTestIndices), concurrency))
 
 		var cmds []tea.Cmd
-		for i := 0; i < concurrency && i < len(m.tests); i++ {
-			index := i
+		for i := 0; i < concurrency && i < len(m.currentEnvTestIndices); i++ {
+			globalIndex := m.currentEnvTestIndices[i]
 			cmds = append(cmds, func() tea.Msg {
-				return testStartedMsg{index: index, test: m.tests[index]}
+				return testStartedMsg{index: globalIndex, test: m.tests[globalIndex]}
 			})
 		}
 
-		m.nextTestIndex = min(concurrency, len(m.tests))
+		m.currentEnvTestsStarted = min(concurrency, len(m.currentEnvTestIndices))
 
 		return tea.Batch(cmds...)()
+	}
+}
+
+func (m *testExecutorModel) startRetryPhase() tea.Cmd {
+	return func() tea.Msg {
+		// Deduplicate testsToRetry (multiple concurrent tests may have added the same indices)
+		seen := make(map[int]bool)
+		dedupedRetries := make([]int, 0, len(m.testsToRetry))
+		for _, idx := range m.testsToRetry {
+			if !seen[idx] {
+				seen[idx] = true
+				dedupedRetries = append(dedupedRetries, idx)
+			}
+		}
+
+		m.addServiceLog(fmt.Sprintf("\n🔄 Starting retry phase for %d tests that failed during crash...", len(dedupedRetries)))
+
+		m.inRetryPhase = true
+
+		// Clear results for tests that need retry so completion check doesn't count them as done.
+		// Without this, old results in m.results cause premature completion detection.
+		for _, idx := range dedupedRetries {
+			m.results[idx] = runner.TestResult{}
+			m.errors[idx] = nil
+			m.completedCount--
+		}
+
+		// Reset state for retry execution
+		m.currentEnvTestIndices = dedupedRetries
+		m.testsToRetry = nil // Clear the retry queue
+		m.currentEnvTestsStarted = 0
+		m.activeTests = make(map[int]bool)
+
+		// Run retries sequentially (concurrency = 1)
+		if len(m.currentEnvTestIndices) > 0 {
+			firstIdx := m.currentEnvTestIndices[0]
+			m.currentEnvTestsStarted = 1
+			return testStartedMsg{index: firstIdx, test: m.tests[firstIdx]}
+		}
+
+		return environmentGroupCompleteMsg{}
 	}
 }
 
@@ -872,15 +1103,46 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 
 		result, err := m.executor.RunSingleTest(test)
 
+		// Set RetriedAfterCrash if in retry phase
+		if m.inRetryPhase {
+			result.RetriedAfterCrash = true
+		}
+
 		// Check if this test crashed the server
 		if err != nil && !m.executor.CheckServerHealth() {
 			slog.Warn("Test crashed the server in interactive mode", "testID", test.TraceID, "error", err)
-			m.addServiceLog(fmt.Sprintf("⚠️  Test %s crashed the server", test.TraceID))
 
-			result.CrashedServer = true
+			if m.inRetryPhase {
+				// Second crash during retry - mark as definitively crashed
+				result.CrashedServer = true
+				m.addServiceLog(fmt.Sprintf("❌ Test %s crashed server again on retry", test.TraceID))
+			} else {
+				// First crash - queue this test and all active tests for retry
+				m.addServiceLog(fmt.Sprintf("⚠️  Server crash detected during test %s - will retry failed tests later", test.TraceID))
+
+				// Queue this test for retry
+				m.testsToRetry = append(m.testsToRetry, index)
+
+				// Also queue all other active tests for retry (they failed due to the crash)
+				for activeIdx := range m.activeTests {
+					if activeIdx != index {
+						m.testsToRetry = append(m.testsToRetry, activeIdx)
+					}
+				}
+			}
+
+			// Determine if there are more tests to run
+			hasMoreTests := false
+			if m.inRetryPhase {
+				// In retry phase, check if there are more tests in the retry queue
+				hasMoreTests = m.currentEnvTestsStarted < len(m.currentEnvTestIndices)
+			} else {
+				// In normal phase, check if there are more tests overall
+				hasMoreTests = index < len(m.tests)-1
+			}
 
 			// Attempt to restart the server for next test
-			if index < len(m.tests)-1 {
+			if hasMoreTests {
 				m.addServiceLog("🔄 Restarting server...")
 				if restartErr := m.executor.RestartServerWithRetry(0); restartErr != nil {
 					m.addServiceLog(fmt.Sprintf("❌ Failed to restart server: %v", restartErr))
@@ -890,11 +1152,6 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 			}
 		} else {
 			slog.Debug("Test completed", "testID", test.TraceID, "result", result)
-		}
-
-		// Manually invoke callback with the updated result
-		if m.executor.OnTestCompleted != nil {
-			m.executor.OnTestCompleted(result, test)
 		}
 
 		return testCompletedMsg{
