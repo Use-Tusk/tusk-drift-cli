@@ -82,13 +82,16 @@ func cacheAuthInfo(bearerToken string) error {
 
 	// Handle client selection
 	var selectedClientID, selectedClientName string
-	if len(resp.Clients) == 1 {
+	switch len(resp.Clients) {
+	case 1:
 		selectedClientID = resp.Clients[0].Id
 		if resp.Clients[0].Name != nil {
 			selectedClientName = *resp.Clients[0].Name
 		}
 		fmt.Printf(" done\n📋 Organization: %s\n", selectedClientName)
-	} else if len(resp.Clients) > 1 {
+	case 0:
+		fmt.Println(" done")
+	default:
 		fmt.Println(" done")
 		// Check if previously selected client is still valid
 		if cfg.SelectedClientID != "" {
@@ -107,8 +110,6 @@ func cacheAuthInfo(bearerToken string) error {
 		if selectedClientID == "" {
 			selectedClientID, selectedClientName = promptClientSelection(resp.Clients)
 		}
-	} else {
-		fmt.Println(" done")
 	}
 
 	// Cache the auth info

@@ -95,8 +95,7 @@ func (t *Tracker) Close() {
 	if t == nil || t.client == nil {
 		return
 	}
-	// Errors ignored - analytics should never break the CLI
-	t.client.Close()
+	_ = t.client.Close() // Errors ignored - analytics should never break the CLI
 }
 
 // getCommandPath returns the full command path (e.g., "login select-client")

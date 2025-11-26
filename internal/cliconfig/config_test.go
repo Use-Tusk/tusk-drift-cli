@@ -1,13 +1,14 @@
 package cliconfig
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
 
-const anonymousIDPrefix = "cli-anon-"
-const uuidV4Length = 36 // Standard UUID v4 format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+const (
+	anonymousIDPrefix = "cli-anon-"
+	uuidV4Length      = 36 // Standard UUID v4 format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+)
 
 func TestGenerateAnonymousID(t *testing.T) {
 	id := generateAnonymousID()
@@ -173,7 +174,7 @@ func TestIsAnalyticsEnabledInCI(t *testing.T) {
 
 func TestIsCI(t *testing.T) {
 	// Clear env var first
-	os.Unsetenv(EnvCI)
+	t.Setenv(EnvCI, "")
 
 	if IsCI() {
 		t.Error("IsCI() should return false when CI env var not set")
