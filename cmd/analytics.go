@@ -80,17 +80,16 @@ func showAnalyticsStatus() {
 	fmt.Println("Analytics Settings")
 	fmt.Println("------------------")
 
-	// Check effective status (env var takes precedence)
-	effectivelyEnabled := cliconfig.IsAnalyticsEnabled()
-
-	if cfg.IsTuskDeveloper {
+	// Check disable reasons in same order as IsAnalyticsEnabled()
+	// (env var > CI > developer mode > user preference)
+	if cliconfig.IsAnalyticsDisabledByEnv() {
+		fmt.Println("Status:    Disabled (TUSK_ANALYTICS_DISABLED set)")
+	} else if cliconfig.IsCI() {
+		fmt.Println("Status:    Disabled (CI environment)")
+	} else if cfg.IsTuskDeveloper {
 		fmt.Println("Status:    Disabled (Tusk developer)")
 	} else if !cfg.AnalyticsEnabled {
 		fmt.Println("Status:    Disabled (user preference)")
-	} else if cliconfig.IsCI() {
-		fmt.Println("Status:    Disabled (CI environment)")
-	} else if !effectivelyEnabled {
-		fmt.Println("Status:    Disabled (TUSK_ANALYTICS_DISABLED set)")
 	} else {
 		fmt.Println("Status:    Enabled")
 	}

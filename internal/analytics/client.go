@@ -95,7 +95,9 @@ func (c *Client) Alias(userID string) {
 
 	// Mark as aliased and save
 	c.config.MarkAliased(userID)
-	_ = c.config.Save()
+	if err := c.config.Save(); err != nil {
+		slog.Debug("Failed to save config after alias", "error", err)
+	}
 }
 
 // Close flushes pending events and closes the client

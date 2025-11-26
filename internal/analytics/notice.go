@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -54,7 +55,9 @@ func ShowFirstRunNotice() bool {
 
 	// Mark as shown and save
 	cfg.NoticeShown = true
-	_ = cfg.Save()
+	if err := cfg.Save(); err != nil {
+		slog.Debug("Failed to save config after showing notice", "error", err)
+	}
 
 	return true
 }

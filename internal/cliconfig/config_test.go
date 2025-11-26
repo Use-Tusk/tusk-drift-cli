@@ -2,36 +2,30 @@ package cliconfig
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
+const anonymousIDPrefix = "cli-anon-"
+const uuidV4Length = 36 // Standard UUID v4 format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
 func TestGenerateAnonymousID(t *testing.T) {
 	id := generateAnonymousID()
-	if !strings.HasPrefix(id, "cli-anon-") {
-		t.Errorf("anonymous ID should have prefix 'cli-anon-', got %s", id)
+	if !strings.HasPrefix(id, anonymousIDPrefix) {
+		t.Errorf("anonymous ID should have prefix %q, got %s", anonymousIDPrefix, id)
 	}
-	// UUID v4 is 36 chars, plus "cli-anon-" prefix = 45 chars
-	if len(id) != 45 {
-		t.Errorf("anonymous ID should be 45 chars, got %d", len(id))
+	expectedLen := len(anonymousIDPrefix) + uuidV4Length
+	if len(id) != expectedLen {
+		t.Errorf("anonymous ID should be %d chars (prefix %d + UUID %d), got %d", expectedLen, len(anonymousIDPrefix), uuidV4Length, len(id))
 	}
 }
 
 func TestConfigLoadAndSave(t *testing.T) {
-	// Create temp dir for test
-	tmpDir := t.TempDir()
-	testPath := filepath.Join(tmpDir, "cli.json")
-
-	// Clear any cached config
-	Invalidate()
-
-	// Override GetPath for testing
-	originalGetPath := GetPath
-	defer func() {
-		// Reset cache after test
-		Invalidate()
-	}()
+	// Verify GetPath returns something on a normal system
+	path := GetPath()
+	if path == "" {
+		t.Error("GetPath() returned empty string")
+	}
 
 	// Create a config manually for testing
 	cfg := &Config{
@@ -44,18 +38,6 @@ func TestConfigLoadAndSave(t *testing.T) {
 		UserEmail:          "test@example.com",
 		SelectedClientID:   "client456",
 		SelectedClientName: "Test Corp",
-	}
-
-	// Write directly to test path
-	if err := os.MkdirAll(filepath.Dir(testPath), 0o700); err != nil {
-		t.Fatalf("failed to create test dir: %v", err)
-	}
-
-	// Save using the config's method (we need to test the actual path though)
-	// For now, just verify the path function returns something
-	path := originalGetPath()
-	if path == "" {
-		t.Error("GetPath() returned empty string")
 	}
 
 	// Test GetDistinctID
@@ -174,12 +156,6 @@ func TestNeedsAlias(t *testing.T) {
 }
 
 func TestIsAnalyticsEnabled(t *testing.T) {
-	// Clear any cached config and env
-	Invalidate()
-
-	// Note: This test is limited because IsAnalyticsEnabled() uses the real config path
-	// We're mainly testing the env var override here
-
 	// Test env var override
 	t.Setenv(EnvAnalyticsDisabled, "1")
 	if IsAnalyticsEnabled() {
@@ -188,9 +164,6 @@ func TestIsAnalyticsEnabled(t *testing.T) {
 }
 
 func TestIsAnalyticsEnabledInCI(t *testing.T) {
-	// Clear any cached config and env
-	Invalidate()
-
 	// Set CI=true, analytics should be disabled
 	t.Setenv(EnvCI, "true")
 	if IsAnalyticsEnabled() {

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/google/uuid"
 )
@@ -16,11 +15,6 @@ const (
 	EnvClientID = "TUSK_CLIENT_ID"
 	// EnvCI indicates CI environment (skip notice)
 	EnvCI = "CI"
-)
-
-var (
-	cachedConfig *Config
-	configMutex  sync.Mutex
 )
 
 // Config represents the user-level CLI configuration stored at ~/.config/tusk/cli.json
@@ -40,41 +34,41 @@ type Config struct {
 	AliasedToUserID    string `json:"aliased_to_user_id,omitempty"`   // Prevent re-aliasing
 }
 
-// GetPath returns the path to the CLI config file
+// GetPath returns the path to the CLI config file.
+// Returns empty string if no suitable config directory can be determined.
 func GetPath() string {
 	cfgDir, err := os.UserConfigDir()
 	if err != nil {
 		cfgDir = os.Getenv("HOME")
+		if cfgDir == "" {
+			return ""
+		}
+		// Use ~/.config/tusk when falling back to HOME
+		cfgDir = filepath.Join(cfgDir, ".config")
 	}
 	return filepath.Join(cfgDir, "tusk", "cli.json")
 }
 
 // Load loads the CLI config from disk, creating defaults if it doesn't exist
 func Load() (*Config, error) {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-
-	if cachedConfig != nil {
-		return cachedConfig, nil
+	path := GetPath()
+	if path == "" {
+		// No config directory available, return in-memory defaults
+		return &Config{
+			AnonymousID:      generateAnonymousID(),
+			AnalyticsEnabled: true,
+		}, nil
 	}
 
-	path := GetPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Create default config
+			// Create default config and save to disk so anonymous ID persists
 			cfg := &Config{
 				AnonymousID:      generateAnonymousID(),
 				AnalyticsEnabled: true,
-				IsTuskDeveloper:  false,
-				NoticeShown:      false,
 			}
-			// Save to disk so anonymous ID persists
-			cachedConfig = cfg
-			if saveErr := cfg.saveWithoutLock(); saveErr != nil {
-				// Log but don't fail - we can still use the in-memory config
-				// Next run will generate a new ID, but that's better than failing
-			}
+			_ = cfg.Save() // Best effort, ignore errors
 			return cfg, nil
 		}
 		return nil, err
@@ -90,20 +84,17 @@ func Load() (*Config, error) {
 		cfg.AnonymousID = generateAnonymousID()
 	}
 
-	cachedConfig = &cfg
-	return cachedConfig, nil
+	return &cfg, nil
 }
 
 // Save persists the config to disk
 func (c *Config) Save() error {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	return c.saveWithoutLock()
-}
-
-// saveWithoutLock persists the config to disk (caller must hold lock)
-func (c *Config) saveWithoutLock() error {
 	path := GetPath()
+	if path == "" {
+		// No config directory available, nothing to save
+		return nil
+	}
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -114,12 +105,7 @@ func (c *Config) saveWithoutLock() error {
 		return err
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return err
-	}
-
-	cachedConfig = c
-	return nil
+	return os.WriteFile(path, data, 0o600)
 }
 
 // IsAnalyticsEnabled checks if analytics is enabled (env var takes precedence)
@@ -151,6 +137,11 @@ func IsAnalyticsEnabled() bool {
 // IsCI returns true if running in a CI environment
 func IsCI() bool {
 	return os.Getenv(EnvCI) != ""
+}
+
+// IsAnalyticsDisabledByEnv returns true if analytics is disabled via environment variable
+func IsAnalyticsDisabledByEnv() bool {
+	return os.Getenv(EnvAnalyticsDisabled) != ""
 }
 
 // SetAuthInfo caches auth info from login
@@ -195,13 +186,6 @@ func (c *Config) NeedsAlias(userID string) bool {
 // MarkAliased records that we've aliased to this user ID
 func (c *Config) MarkAliased(userID string) {
 	c.AliasedToUserID = userID
-}
-
-// Invalidate clears the cached config, forcing a reload on next Load()
-func Invalidate() {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	cachedConfig = nil
 }
 
 // generateAnonymousID creates a new anonymous ID with the cli-anon- prefix
