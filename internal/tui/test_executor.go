@@ -67,7 +67,6 @@ type testExecutorModel struct {
 	environmentGroups      []*runner.EnvironmentGroup
 	currentGroupIndex      int
 	groupCleanup           func()
-	allGroupResults        []runner.TestResult
 	totalTestsAcrossEnvs   int
 	testToEnvIndex         map[int]int // Maps global test index to environment group index
 	currentEnvTestIndices  []int       // Global indices of tests in current environment
@@ -489,11 +488,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if current environment is complete
 			if completedInCurrentEnv >= len(m.currentEnvTestIndices) {
-				// Collect results from this group
-				for _, globalIdx := range m.currentEnvTestIndices {
-					m.allGroupResults = append(m.allGroupResults, m.results[globalIdx])
-				}
-
 				// Check if there are more environment groups to process
 				if m.currentGroupIndex < len(m.environmentGroups) {
 					// More groups to process - trigger environment group completion
@@ -551,15 +545,13 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// All-tests completed upload (non-blocking)
 		if m.opts != nil && m.opts.OnAllCompleted != nil {
-			results := make([]runner.TestResult, len(m.allGroupResults))
-			copy(results, m.allGroupResults)
-			// Note: m.tests only contains the last group's tests, but callbacks should handle all results
+			results := make([]runner.TestResult, len(m.results))
+			copy(results, m.results)
 			go m.opts.OnAllCompleted(results, m.tests, m.executor)
 		}
 
 		if m.executor.ResultsFile != "" {
-			// Write all collected results across all environments
-			if path, err := m.executor.WriteRunResultsToFile(m.tests, m.allGroupResults); err != nil {
+			if path, err := m.executor.WriteRunResultsToFile(m.tests, m.results); err != nil {
 				m.addServiceLog(fmt.Sprintf("❌ Failed to write results to file: %v", err))
 			} else {
 				m.addServiceLog(fmt.Sprintf("📝 Results written to %s", path))
@@ -864,7 +856,12 @@ func (m *testExecutorModel) addTestLog(testID, line string) {
 func (m *testExecutorModel) updateStats() tea.Cmd {
 	passed := 0
 	failed := 0
-	for i := 0; i < m.completedCount; i++ {
+	for i := 0; i < len(m.results); i++ {
+		// Skip tests that haven't completed yet
+		if m.results[i].TestID == "" && m.errors[i] == nil {
+			continue
+		}
+
 		switch {
 		case m.results[i].CrashedServer:
 			failed++ // Count crashed servers as failures
@@ -917,7 +914,6 @@ func (m *testExecutorModel) startExecution() tea.Cmd {
 		m.environmentGroups = groupResult.Groups
 		m.currentGroupIndex = 0
 		m.totalTestsAcrossEnvs = len(m.tests)
-		m.allGroupResults = make([]runner.TestResult, 0, len(m.tests))
 
 		// Build mapping from global test index to environment group index
 		m.testToEnvIndex = make(map[int]int)
