@@ -519,15 +519,16 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if current environment is complete
 			if completedInCurrentEnv >= len(m.currentEnvTestIndices) {
-				// Check if we need retry phase first (only if not already in retry phase)
-				if !m.inRetryPhase && len(m.testsToRetry) > 0 {
+				switch {
+				case !m.inRetryPhase && len(m.testsToRetry) > 0:
+					// Need retry phase first (only if not already in retry phase)
 					cmds = append(cmds, m.startRetryPhase())
-				} else if m.currentGroupIndex < len(m.environmentGroups) {
+				case m.currentGroupIndex < len(m.environmentGroups):
 					// More groups to process - trigger environment group completion
 					cmds = append(cmds, func() tea.Msg {
 						return environmentGroupCompleteMsg{}
 					})
-				} else {
+				default:
 					cmds = append(cmds, m.completeExecution())
 				}
 			}
