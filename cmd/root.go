@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
@@ -25,6 +26,9 @@ var (
 	cleanupFuncs []func()
 	cleanupMutex sync.Mutex
 	signalSetup  sync.Once
+
+	// Analytics tracker for the current command
+	tracker *analytics.Tracker
 )
 
 //go:embed short_docs/overview.md
@@ -37,12 +41,17 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		showASCIIArt()
 	},
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if showVersion {
 			version.PrintVersion()
 			os.Exit(0)
 		}
 		setupLogger()
+
+		// Initialize analytics tracker
+		tracker = analytics.NewTracker(cmd)
+
+		return nil
 	},
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
@@ -51,6 +60,12 @@ var rootCmd = &cobra.Command{
 
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// GetTracker returns the analytics tracker for the current command
+// Used by main.go to track the command result
+func GetTracker() *analytics.Tracker {
+	return tracker
 }
 
 func showASCIIArt() {
@@ -124,6 +139,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&showVersion, "ver", "V", false, "show version and exit")
 
 	_ = rootCmd.PersistentFlags().MarkHidden("ver")
+
+	// Note: Analytics cleanup happens in main.go after TrackResult is called
 }
 
 func setupLogger() {

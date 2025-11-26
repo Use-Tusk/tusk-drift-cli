@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 )
 
 var logoutCmd = &cobra.Command{
@@ -30,6 +31,13 @@ func logout(cmd *cobra.Command, args []string) error {
 	err = authenticator.Logout()
 	if err != nil {
 		return fmt.Errorf("failed to logout: %w", err)
+	}
+
+	// Clear cached auth info from CLI config
+	cfg, err := cliconfig.Load()
+	if err == nil {
+		cfg.ClearAuthInfo()
+		_ = cfg.Save() // Best effort, don't fail logout if this fails
 	}
 
 	fmt.Println("✓ Successfully logged out")

@@ -7,7 +7,16 @@ import (
 )
 
 func main() {
-	if err := cmd.Execute(); err != nil {
+	err := cmd.Execute()
+
+	// Track command result and close tracker
+	// Must happen after Execute but before exit
+	if tracker := cmd.GetTracker(); tracker != nil {
+		tracker.TrackResult(err)
+		tracker.Close()
+	}
+
+	if err != nil {
 		os.Exit(1)
 	}
 }
