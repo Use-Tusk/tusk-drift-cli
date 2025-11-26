@@ -492,7 +492,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	if !interactive && !quiet {
-		fmt.Fprintf(os.Stderr, "➤ Running %d tests across %d environment(s) (concurrency: %d)...\n\n", len(tests), len(groupResult.Groups), executor.GetConcurrency())
+		envCount := 1
+		if groupResult != nil {
+			envCount = len(groupResult.Groups)
+		}
+		fmt.Fprintf(os.Stderr, "➤ Running %d tests across %d environment(s) (concurrency: %d)...\n\n", len(tests), envCount, executor.GetConcurrency())
 	}
 
 	// Step 4: Run tests by environment

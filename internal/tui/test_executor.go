@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -71,6 +72,10 @@ type testExecutorModel struct {
 	testToEnvIndex         map[int]int // Maps global test index to environment group index
 	currentEnvTestIndices  []int       // Global indices of tests in current environment
 	currentEnvTestsStarted int         // Number of tests started in current environment
+
+	// Retry tracking for crashed tests
+	testsToRetry []int // Global indices of tests to retry after crash
+	inRetryPhase bool  // Whether we're currently in retry phase
 
 	sizeWarning *components.TerminalSizeWarning
 
@@ -399,7 +404,11 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case testStartedMsg:
 		m.activeTests[msg.index] = true
 		m.currentTestTraces[msg.test.TraceID] = true
-		m.addTestLog(msg.test.TraceID, fmt.Sprintf("🧪 Started: %s %s", msg.test.Method, msg.test.Path))
+		if m.inRetryPhase {
+			m.addTestLog(msg.test.TraceID, fmt.Sprintf("🔄 Retrying: %s %s", msg.test.Method, msg.test.Path))
+		} else {
+			m.addTestLog(msg.test.TraceID, fmt.Sprintf("🧪 Started: %s %s", msg.test.Method, msg.test.Path))
+		}
 		cmds = append(cmds, m.updateStats())
 		cmds = append(cmds, m.executeTest(msg.index))
 
@@ -410,7 +419,13 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errors[msg.index] = msg.err
 		m.completedCount++
 
-		m.testTable.UpdateTestResult(msg.index, msg.result, msg.err)
+		// Check if this test is pending retry - if so, don't update the UI yet
+		isPendingRetry := slices.Contains(m.testsToRetry, msg.index)
+
+		// Only update the test table if this is the final result (not pending retry)
+		if !isPendingRetry {
+			m.testTable.UpdateTestResult(msg.index, msg.result, msg.err)
+		}
 
 		test := m.tests[msg.index]
 		switch {
@@ -419,6 +434,9 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err != nil {
 				m.addTestLog(test.TraceID, fmt.Sprintf("  Error: %v", msg.err))
 			}
+		case isPendingRetry:
+			// Don't log final status for tests pending retry - they'll be retried
+			m.addTestLog(test.TraceID, fmt.Sprintf("⏳ %s %s - will retry (%dms)", test.Method, test.Path, msg.result.Duration))
 		case msg.err != nil:
 			m.addTestLog(test.TraceID, fmt.Sprintf("❌ %s %s - ERROR: %v", test.Method, test.Path, msg.err))
 		case msg.result.Passed:
@@ -459,10 +477,19 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Per-test cloud upload (non-blocking)
-		if m.opts != nil && m.opts.OnTestCompleted != nil {
-			res := msg.result
-			go m.opts.OnTestCompleted(res, test, m.executor)
+		// Invoke callbacks only for final results (not tests pending retry).
+		// There are two separate callbacks:
+		// - executor.OnTestCompleted: Set in cmd/run.go, handles cloud upload via UploadSingleTestResult
+		//   and trace span cleanup. This is the primary upload mechanism in CI/cloud mode.
+		// - opts.OnTestCompleted: TUI-specific callback for additional per-test processing.
+		if !isPendingRetry {
+			if m.executor.OnTestCompleted != nil {
+				m.executor.OnTestCompleted(msg.result, test)
+			}
+			if m.opts != nil && m.opts.OnTestCompleted != nil {
+				res := msg.result
+				go m.opts.OnTestCompleted(res, test, m.executor)
+			}
 		}
 
 		cmds = append(cmds, m.updateStats())
@@ -471,11 +498,15 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.environmentGroups) > 0 && len(m.currentEnvTestIndices) > 0 {
 			// Check if we need to start the next test in current environment
 			if m.currentEnvTestsStarted < len(m.currentEnvTestIndices) {
-				nextGlobalIndex := m.currentEnvTestIndices[m.currentEnvTestsStarted]
-				m.currentEnvTestsStarted++
-				cmds = append(cmds, func() tea.Msg {
-					return testStartedMsg{index: nextGlobalIndex, test: m.tests[nextGlobalIndex]}
-				})
+				// In retry phase, run tests sequentially (wait for current test to complete)
+				// In normal phase, run tests concurrently
+				if !m.inRetryPhase || len(m.activeTests) == 0 {
+					nextGlobalIndex := m.currentEnvTestIndices[m.currentEnvTestsStarted]
+					m.currentEnvTestsStarted++
+					cmds = append(cmds, func() tea.Msg {
+						return testStartedMsg{index: nextGlobalIndex, test: m.tests[nextGlobalIndex]}
+					})
+				}
 			}
 
 			// Count how many tests from current environment have completed
@@ -488,8 +519,10 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if current environment is complete
 			if completedInCurrentEnv >= len(m.currentEnvTestIndices) {
-				// Check if there are more environment groups to process
-				if m.currentGroupIndex < len(m.environmentGroups) {
+				// Check if we need retry phase first (only if not already in retry phase)
+				if !m.inRetryPhase && len(m.testsToRetry) > 0 {
+					cmds = append(cmds, m.startRetryPhase())
+				} else if m.currentGroupIndex < len(m.environmentGroups) {
 					// More groups to process - trigger environment group completion
 					cmds = append(cmds, func() tea.Msg {
 						return environmentGroupCompleteMsg{}
@@ -516,6 +549,10 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case environmentGroupCompleteMsg:
+		// Reset retry state for next environment
+		m.inRetryPhase = false
+		m.testsToRetry = nil
+
 		// Stop current environment
 		m.addServiceLog("Stopping environment...")
 		if m.serviceStarted {
@@ -1016,6 +1053,47 @@ func (m *testExecutorModel) startConcurrentTests() tea.Cmd {
 	}
 }
 
+func (m *testExecutorModel) startRetryPhase() tea.Cmd {
+	return func() tea.Msg {
+		// Deduplicate testsToRetry (multiple concurrent tests may have added the same indices)
+		seen := make(map[int]bool)
+		dedupedRetries := make([]int, 0, len(m.testsToRetry))
+		for _, idx := range m.testsToRetry {
+			if !seen[idx] {
+				seen[idx] = true
+				dedupedRetries = append(dedupedRetries, idx)
+			}
+		}
+
+		m.addServiceLog(fmt.Sprintf("\n🔄 Starting retry phase for %d tests that failed during crash...", len(dedupedRetries)))
+
+		m.inRetryPhase = true
+
+		// Clear results for tests that need retry so completion check doesn't count them as done.
+		// Without this, old results in m.results cause premature completion detection.
+		for _, idx := range dedupedRetries {
+			m.results[idx] = runner.TestResult{}
+			m.errors[idx] = nil
+			m.completedCount--
+		}
+
+		// Reset state for retry execution
+		m.currentEnvTestIndices = dedupedRetries
+		m.testsToRetry = nil // Clear the retry queue
+		m.currentEnvTestsStarted = 0
+		m.activeTests = make(map[int]bool)
+
+		// Run retries sequentially (concurrency = 1)
+		if len(m.currentEnvTestIndices) > 0 {
+			firstIdx := m.currentEnvTestIndices[0]
+			m.currentEnvTestsStarted = 1
+			return testStartedMsg{index: firstIdx, test: m.tests[firstIdx]}
+		}
+
+		return environmentGroupCompleteMsg{}
+	}
+}
+
 func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 	return func() tea.Msg {
 		test := m.tests[index]
@@ -1024,15 +1102,46 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 
 		result, err := m.executor.RunSingleTest(test)
 
+		// Set RetriedAfterCrash if in retry phase
+		if m.inRetryPhase {
+			result.RetriedAfterCrash = true
+		}
+
 		// Check if this test crashed the server
 		if err != nil && !m.executor.CheckServerHealth() {
 			slog.Warn("Test crashed the server in interactive mode", "testID", test.TraceID, "error", err)
-			m.addServiceLog(fmt.Sprintf("⚠️  Test %s crashed the server", test.TraceID))
 
-			result.CrashedServer = true
+			if m.inRetryPhase {
+				// Second crash during retry - mark as definitively crashed
+				result.CrashedServer = true
+				m.addServiceLog(fmt.Sprintf("❌ Test %s crashed server again on retry", test.TraceID))
+			} else {
+				// First crash - queue this test and all active tests for retry
+				m.addServiceLog(fmt.Sprintf("⚠️  Server crash detected during test %s - will retry failed tests later", test.TraceID))
+
+				// Queue this test for retry
+				m.testsToRetry = append(m.testsToRetry, index)
+
+				// Also queue all other active tests for retry (they failed due to the crash)
+				for activeIdx := range m.activeTests {
+					if activeIdx != index {
+						m.testsToRetry = append(m.testsToRetry, activeIdx)
+					}
+				}
+			}
+
+			// Determine if there are more tests to run
+			hasMoreTests := false
+			if m.inRetryPhase {
+				// In retry phase, check if there are more tests in the retry queue
+				hasMoreTests = m.currentEnvTestsStarted < len(m.currentEnvTestIndices)
+			} else {
+				// In normal phase, check if there are more tests overall
+				hasMoreTests = index < len(m.tests)-1
+			}
 
 			// Attempt to restart the server for next test
-			if index < len(m.tests)-1 {
+			if hasMoreTests {
 				m.addServiceLog("🔄 Restarting server...")
 				if restartErr := m.executor.RestartServerWithRetry(0); restartErr != nil {
 					m.addServiceLog(fmt.Sprintf("❌ Failed to restart server: %v", restartErr))
@@ -1042,11 +1151,6 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 			}
 		} else {
 			slog.Debug("Test completed", "testID", test.TraceID, "result", result)
-		}
-
-		// Manually invoke callback with the updated result
-		if m.executor.OnTestCompleted != nil {
-			m.executor.OnTestCompleted(result, test)
 		}
 
 		return testCompletedMsg{
