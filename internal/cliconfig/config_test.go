@@ -37,7 +37,7 @@ func TestConfigLoadAndSave(t *testing.T) {
 	cfg := &Config{
 		AnonymousID:        "cli-anon-test-uuid",
 		AnalyticsEnabled:   true,
-		IsTuskDeveloper:        false,
+		IsTuskDeveloper:    false,
 		NoticeShown:        false,
 		UserID:             "user123",
 		UserName:           "Test User",

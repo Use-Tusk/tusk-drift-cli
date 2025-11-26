@@ -26,10 +26,10 @@ var (
 // Config represents the user-level CLI configuration stored at ~/.config/tusk/cli.json
 type Config struct {
 	// Analytics settings
-	AnonymousID      string `json:"anonymous_id"`       // "cli-anon-<uuid>" generated on first run
-	AnalyticsEnabled bool   `json:"analytics_enabled"`  // Default true
-	IsTuskDeveloper  bool   `json:"is_tusk_developer"`  // For Tusk employees
-	NoticeShown      bool   `json:"notice_shown"`       // First-run notice displayed
+	AnonymousID      string `json:"anonymous_id"`      // "cli-anon-<uuid>" generated on first run
+	AnalyticsEnabled bool   `json:"analytics_enabled"` // Default true
+	IsTuskDeveloper  bool   `json:"is_tusk_developer"` // For Tusk employees
+	NoticeShown      bool   `json:"notice_shown"`      // First-run notice displayed
 
 	// Cached auth info (updated on login/logout, avoids backend calls)
 	UserID             string `json:"user_id,omitempty"`              // From authInfo.User.Id
