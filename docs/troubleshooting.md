@@ -10,7 +10,7 @@
 
 - **Port Already in Use**: The CLI will block if `service.port` is already taken.
 - **Readiness Check**: If `service.readiness_check.command` is omitted, the CLI waits ~10s before replay.
-- **Cloud Mode Setup**: Ensure `service.id`, `tusk_api.url`, and `TUSK_API_KEY` or `tusk login` are set.
+- **Cloud Mode Setup**: Ensure `service.id`, `tusk_api.url`, and `TUSK_API_KEY` or `tusk auth login` are set.
 
 ## Replay Issues
 

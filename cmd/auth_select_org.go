@@ -12,26 +12,34 @@ import (
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
-var selectClientCmd = &cobra.Command{
-	Use:   "select-client",
+var selectOrgCmd = &cobra.Command{
+	Use:   "select-org",
 	Short: "Select a different organization",
 	Long:  `Select a different organization if you belong to multiple.`,
-	RunE:  selectClient,
+	RunE:  selectOrg,
 }
 
 func init() {
-	loginCmd.AddCommand(selectClientCmd)
+	authCmd.AddCommand(selectOrgCmd)
 }
 
-func selectClient(cmd *cobra.Command, args []string) error {
-	// Get existing auth
+func selectOrg(cmd *cobra.Command, args []string) error {
+	// Get existing auth to check JWT status
 	authenticator, err := auth.NewAuthenticator()
 	if err != nil {
 		return err
 	}
 
-	if err := authenticator.TryExistingAuth(context.Background()); err != nil {
-		return fmt.Errorf("not logged in. Please run 'tusk login' first")
+	hasJWT := authenticator.TryExistingAuth(context.Background()) == nil
+
+	// Determine effective auth method
+	_, effectiveMethod := cliconfig.GetAuthMethod(hasJWT)
+
+	switch effectiveMethod {
+	case cliconfig.AuthMethodAPIKey:
+		return fmt.Errorf("Organization selection is not available with API key authentication.\nThe organization is determined by your API key")
+	case cliconfig.AuthMethodNone:
+		return fmt.Errorf("Not logged in. Please run 'tusk auth login' first")
 	}
 
 	// Fetch available clients
@@ -42,11 +50,11 @@ func selectClient(cmd *cobra.Command, args []string) error {
 
 	resp, err := client.GetAuthInfo(context.Background(), &backend.GetAuthInfoRequest{}, authOpts)
 	if err != nil {
-		return fmt.Errorf("failed to get auth info: %w", err)
+		return fmt.Errorf("Failed to get auth info: %w", err)
 	}
 
 	if len(resp.Clients) == 0 {
-		return fmt.Errorf("no organizations found for your account")
+		return fmt.Errorf("No organizations found for your account")
 	}
 
 	if len(resp.Clients) == 1 {
@@ -61,7 +69,7 @@ func selectClient(cmd *cobra.Command, args []string) error {
 	// Show current selection
 	cfg, err := cliconfig.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load CLI config: %w", err)
+		return fmt.Errorf("Failed to load CLI config: %w", err)
 	}
 
 	if cfg.SelectedClientName != "" {
@@ -76,7 +84,7 @@ func selectClient(cmd *cobra.Command, args []string) error {
 	cfg.SelectedClientName = selectedName
 
 	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save selection: %w", err)
+		return fmt.Errorf("Failed to save selection: %w", err)
 	}
 
 	return nil

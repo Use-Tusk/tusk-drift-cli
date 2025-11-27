@@ -26,7 +26,7 @@ var loginCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(loginCmd)
+	authCmd.AddCommand(loginCmd)
 }
 
 func login(cmd *cobra.Command, args []string) error {

@@ -58,7 +58,7 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 	resp, err := client.GetAuthInfo(context.Background(), req, authOptions)
 	if err != nil {
 		if strings.Contains(err.Error(), "http 401") {
-			return fmt.Errorf("authentication failed - your session may have expired.\n\nPlease try running 'tusk logout' followed by 'tusk login' to refresh your credentials.\n\nIf the issue persists, please contact support at support@usetusk.ai")
+			return fmt.Errorf("authentication failed - your session may have expired.\n\nPlease try running 'tusk auth logout' followed by 'tusk auth login' to refresh your credentials.\n\nIf the issue persists, please contact support at support@usetusk.ai")
 		}
 		return fmt.Errorf("failed to get auth info: %w", err)
 	}

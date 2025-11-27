@@ -210,7 +210,7 @@ See: [Docker Compose example](#starting-your-service-with-docker-compose).
 
 For authentication in cloud mode, either use:
 
-- Auth0: `tusk login`
+- Auth0: `tusk auth login`
 - API key: `TUSK_API_KEY`
 
 ## Test execution

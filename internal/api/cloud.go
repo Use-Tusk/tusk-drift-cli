@@ -45,11 +45,11 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 		// Provide context-specific error messages
 		switch methodEnv {
 		case "jwt":
-			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'jwt' selected, but no valid JWT found. Run `tusk login`")
+			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'jwt' selected, but no valid JWT found. Run `tusk auth login`")
 		case "api_key":
 			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'api_key' selected, but TUSK_API_KEY is not set")
 		case "auto":
-			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. Either run `tusk login` or set TUSK_API_KEY")
+			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. Either run `tusk auth login` or set TUSK_API_KEY")
 		default:
 			return nil, AuthOptions{}, nil, fmt.Errorf("invalid TUSK_AUTH_METHOD '%s'. Valid values: auth0|jwt, api_key, auto", methodEnv)
 		}
