@@ -11,8 +11,8 @@ import (
 
 var logoutCmd = &cobra.Command{
 	Use:   "logout",
-	Short: "Log out from Tusk",
-	Long:  `Log out from Tusk by removing stored authentication credentials.`,
+	Short: "Log out from Tusk Cloud",
+	Long:  `Log out from Tusk Cloud by removing stored authentication credentials.`,
 	RunE:  logout,
 }
 

@@ -20,8 +20,8 @@ const defaultAPIURL = "https://api.usetusk.ai"
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate with Tusk",
-	Long:  `Authenticate with Tusk using WorkOS SSO device authorization flow.`,
+	Short: "Authenticate with Tusk Cloud",
+	Long:  `Authenticate with Tusk Cloud using Auth0 SSO device authorization flow.`,
 	RunE:  login,
 }
 
@@ -39,7 +39,7 @@ func login(cmd *cobra.Command, args []string) error {
 
 	err = authenticator.Login(context.Background())
 	if err != nil {
-		return fmt.Errorf("failed to login: %w", err)
+		return fmt.Errorf("Failed to login: %w", err)
 	}
 
 	fmt.Printf("✅ Authenticated as %s\n", authenticator.Email)
@@ -63,13 +63,13 @@ func cacheAuthInfo(bearerToken string) error {
 
 	resp, err := client.GetAuthInfo(context.Background(), &backend.GetAuthInfoRequest{}, authOpts)
 	if err != nil {
-		return fmt.Errorf("failed to get auth info: %w", err)
+		return fmt.Errorf("Failed to get auth info: %w", err)
 	}
 
 	// Load or create CLI config
 	cfg, err := cliconfig.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load CLI config: %w", err)
+		return fmt.Errorf("Failed to load CLI config: %w", err)
 	}
 
 	// Extract user info
@@ -116,7 +116,7 @@ func cacheAuthInfo(bearerToken string) error {
 	cfg.SetAuthInfo(userID, userName, userEmail, selectedClientID, selectedClientName)
 
 	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save CLI config: %w", err)
+		return fmt.Errorf("Failed to save CLI config: %w", err)
 	}
 
 	// Alias anonymous ID to user ID in PostHog (only happens once per user)

@@ -329,9 +329,9 @@ Press [enter] to continue...`,
 	}
 
 	if m.Err != nil {
-		return "Failed to create API key.\n\nAPI keys are needed for CI/CD workflows to authenticate with Tusk."
+		return "Failed to create API key.\n\nAPI keys are needed for CI/CD workflows to authenticate with Tusk Cloud."
 	}
-	return fmt.Sprintf(`API keys are needed for CI/CD workflows to authenticate with Tusk.
+	return fmt.Sprintf(`API keys are needed for CI/CD workflows to authenticate with Tusk Cloud.
 
 Alternatively, you can also create an API key here: %s
 
