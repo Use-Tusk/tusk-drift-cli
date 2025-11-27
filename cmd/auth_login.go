@@ -28,7 +28,9 @@ func init() {
 }
 
 func login(cmd *cobra.Command, args []string) error {
-	fmt.Println("🔐 Tusk CLI Authentication\n")
+	fmt.Print("🔐 Tusk CLI Authentication")
+	fmt.Println()
+	fmt.Println()
 
 	authenticator, err := auth.NewAuthenticator()
 	if err != nil {
@@ -94,8 +96,11 @@ func cacheAuthInfo(bearerToken string) error {
 		fmt.Printf(" done\n\n📋 Organization: %s (%s)\n", selectedClientName, selectedClientID)
 	case 0:
 		fmt.Println(" done")
+		fmt.Println()
 	default:
-		fmt.Println(" done\n")
+		fmt.Print(" done")
+		fmt.Println()
+		fmt.Println()
 		// Check if previously selected client is still valid
 		if cfg.SelectedClientID != "" {
 			for _, c := range resp.Clients {

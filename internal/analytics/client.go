@@ -132,6 +132,10 @@ func (c *Client) baseProperties() map[string]any {
 }
 
 // getAuthType returns the authentication type for analytics.
+// Note: This uses cached UserID to determine JWT status, not actual JWT validity.
+// If a JWT expires but UserID is cached, this may incorrectly report "jwt".
+// Fixing this would require validating the JWT on every analytics call, which
+// adds latency. Accepted as a minor limitation for the expired JWT edge case.
 func (c *Client) getAuthType() string {
 	hasJWT := c.config.UserID != ""
 	_, effective := cliconfig.GetAuthMethod(hasJWT)
