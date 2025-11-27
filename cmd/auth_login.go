@@ -1,18 +1,16 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
@@ -30,7 +28,7 @@ func init() {
 }
 
 func login(cmd *cobra.Command, args []string) error {
-	fmt.Println("🔐 Tusk CLI Authentication")
+	fmt.Println("🔐 Tusk CLI Authentication\n")
 
 	authenticator, err := auth.NewAuthenticator()
 	if err != nil {
@@ -76,7 +74,7 @@ func cacheAuthInfo(bearerToken string) error {
 	userID := resp.User.GetId()
 	userName := resp.User.GetName()
 	userEmail := ""
-	if resp.User.Email != nil {
+	if resp.User != nil && resp.User.Email != nil {
 		userEmail = *resp.User.Email
 	}
 
@@ -85,30 +83,33 @@ func cacheAuthInfo(bearerToken string) error {
 	switch len(resp.Clients) {
 	case 1:
 		selectedClientID = resp.Clients[0].Id
+		selectedClientName = "Unnamed"
 		if resp.Clients[0].Name != nil {
 			selectedClientName = *resp.Clients[0].Name
 		}
-		fmt.Printf(" done\n📋 Organization: %s\n", selectedClientName)
+		fmt.Printf(" done\n\n📋 Organization: %s (%s)\n", selectedClientName, selectedClientID)
 	case 0:
 		fmt.Println(" done")
 	default:
-		fmt.Println(" done")
+		fmt.Println(" done\n")
 		// Check if previously selected client is still valid
 		if cfg.SelectedClientID != "" {
 			for _, c := range resp.Clients {
 				if c.Id == cfg.SelectedClientID {
 					selectedClientID = c.Id
+					selectedClientName = "Unnamed"
 					if c.Name != nil {
 						selectedClientName = *c.Name
 					}
-					fmt.Printf("📋 Organization: %s (remembered from last session)\n", selectedClientName)
+					boldStyle := lipgloss.NewStyle().Bold(true)
+					fmt.Printf("📋 Organization: %s (%s) - remembered from last session, use %s to change\n", selectedClientName, selectedClientID, boldStyle.Render("tusk auth select-org"))
 					break
 				}
 			}
 		}
 		// If no valid previous selection, prompt
 		if selectedClientID == "" {
-			selectedClientID, selectedClientName = promptClientSelection(resp.Clients)
+			selectedClientID, selectedClientName = promptClientSelection(resp.Clients, "")
 		}
 	}
 
@@ -127,40 +128,31 @@ func cacheAuthInfo(bearerToken string) error {
 	return nil
 }
 
-// promptClientSelection prompts the user to select from multiple clients
-func promptClientSelection(clients []*backend.AuthInfoClient) (string, string) {
-	fmt.Println("\nYou belong to multiple organizations:")
+// promptClientSelection prompts the user to select from multiple clients using an interactive selector
+func promptClientSelection(clients []*backend.AuthInfoClient, currentID string) (string, string) {
+	// Build options for the selector
+	options := make([]components.SelectorOption, len(clients))
 	for i, c := range clients {
 		name := "Unnamed"
 		if c.Name != nil {
 			name = *c.Name
 		}
-		fmt.Printf("  %d. %s\n", i+1, name)
+		options[i] = components.SelectorOption{
+			ID:    c.Id,
+			Label: name,
+		}
 	}
 
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Printf("Select organization [1-%d]: ", len(clients))
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		// Default to first option if empty
-		if input == "" {
-			input = "1"
-		}
-
-		choice, err := strconv.Atoi(input)
-		if err != nil || choice < 1 || choice > len(clients) {
-			fmt.Printf("Please enter a number between 1 and %d\n", len(clients))
-			continue
-		}
-
-		selected := clients[choice-1]
+	selected, err := components.RunSelector("Select organization", options, currentID)
+	if err != nil || selected == nil {
+		// User cancelled or error - default to first
 		name := "Unnamed"
-		if selected.Name != nil {
-			name = *selected.Name
+		if clients[0].Name != nil {
+			name = *clients[0].Name
 		}
-		fmt.Printf("📋 Selected organization: %s\n", name)
-		return selected.Id, name
+		return clients[0].Id, name
 	}
+
+	fmt.Printf("📋 Selected organization: %s (%s)\n", selected.Label, selected.ID)
+	return selected.ID, selected.Label
 }

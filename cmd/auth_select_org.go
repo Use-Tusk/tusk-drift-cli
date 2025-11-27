@@ -62,7 +62,7 @@ func selectOrg(cmd *cobra.Command, args []string) error {
 		if resp.Clients[0].Name != nil {
 			name = *resp.Clients[0].Name
 		}
-		fmt.Printf("You only belong to one organization: %s\n", name)
+		fmt.Printf("You only belong to one organization: %s (%s)\n", name, resp.Clients[0].Id)
 		return nil
 	}
 
@@ -72,12 +72,8 @@ func selectOrg(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Failed to load CLI config: %w", err)
 	}
 
-	if cfg.SelectedClientName != "" {
-		fmt.Printf("Current organization: %s\n", cfg.SelectedClientName)
-	}
-
-	// Prompt for new selection
-	selectedID, selectedName := promptClientSelection(resp.Clients)
+	// Prompt for new selection (selector shows current selection)
+	selectedID, selectedName := promptClientSelection(resp.Clients, cfg.SelectedClientID)
 
 	// Update config
 	cfg.SelectedClientID = selectedID
