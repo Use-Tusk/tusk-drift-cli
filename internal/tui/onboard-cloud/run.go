@@ -24,6 +24,7 @@ func Run() error {
 		slog.Debug("Failed to fetch user info", "error", err)
 		return err
 	}
+	// TODO-CLI-ANALYTICS: we can use selected client from the config instead of having user select? or we could let user select again
 
 	m.flow = createFlow()
 

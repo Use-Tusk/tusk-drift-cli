@@ -3,93 +3,135 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"github.com/spf13/cobra"
 )
 
-// TODO: make this a connection/health check by actually hitting a Tusk BE endpoint
-
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show authentication status",
+	Short: "Show authentication and connection status",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		methodEnv := strings.ToLower(os.Getenv("TUSK_AUTH_METHOD"))
-		if methodEnv == "" {
-			methodEnv = "auto"
-		}
-
 		// Auth0/JWT status
 		auth0LoggedIn := false
-		var auth0Email string
 		var auth0ExpiresAt time.Time
+		var bearerToken string
 
 		a, aerr := auth.NewAuthenticator()
 		if aerr == nil {
 			if err := a.TryExistingAuth(ctx); err == nil {
 				auth0LoggedIn = true
-				auth0Email = a.Email
 				auth0ExpiresAt = a.ExpiresAt
+				bearerToken = a.AccessToken
 			}
 		}
 
-		// API key status
-		apiKey := config.GetAPIKey()
+		// Get effective auth method
+		apiKey := cliconfig.GetAPIKey()
+		_, effectiveMethod := cliconfig.GetAuthMethod(auth0LoggedIn)
 		apiKeyPresent := apiKey != ""
 
-		// Effective method (what would be used)
-		effective := "none"
-		switch methodEnv {
-		case "auto":
-			if auth0LoggedIn {
-				effective = "auth0"
-			} else if apiKeyPresent {
-				effective = "api_key"
-			}
-		case "auth0", "jwt":
-			if auth0LoggedIn {
-				effective = "auth0"
-			} else {
-				effective = "invalid (auth0 selected but not logged in)"
-			}
-		case "api_key", "api-key", "apikey":
-			if apiKeyPresent {
-				effective = "api_key"
-			} else {
-				effective = "invalid (api_key selected but TUSK_API_KEY not set)"
-			}
-		default:
-			effective = "invalid (unknown TUSK_AUTH_METHOD)"
+		// Get client ID from cliconfig (for JWT auth)
+		var localClientID string
+		var clientSource cliconfig.ClientIDSource
+		if cfg, err := cliconfig.Load(); err == nil {
+			localClientID, clientSource = cfg.GetClientIDWithSource()
 		}
 
-		clientID := os.Getenv("TUSK_CLIENT_ID")
-		clientStatus := clientID
-		if clientStatus == "" {
-			clientStatus = "(unset)"
+		// Check cloud connection (if we have credentials)
+		var cloudResp *backend.GetAuthInfoResponse
+		var cloudErr error
+		if effectiveMethod != cliconfig.AuthMethodNone {
+			authAPIKey := ""
+			if effectiveMethod == cliconfig.AuthMethodAPIKey {
+				authAPIKey = apiKey
+			}
+
+			client := api.NewClient(defaultAPIURL, authAPIKey)
+			authOpts := api.AuthOptions{
+				BearerToken:  bearerToken,
+				APIKey:       authAPIKey,
+				TuskClientID: localClientID,
+			}
+
+			cloudResp, cloudErr = client.GetAuthInfo(ctx, &backend.GetAuthInfoRequest{}, authOpts)
 		}
 
+		// Print status
 		fmt.Printf("⚙️ Tusk CLI status\n\n")
-		fmt.Printf("Preferred auth method: %s\n", methodEnv)
-		fmt.Printf("Effective method: %s\n", effective)
 
-		fmt.Printf("Auth0 logged in: %v\n", auth0LoggedIn)
-		if auth0LoggedIn {
-			if auth0Email != "" {
-				fmt.Printf("    Email: %s\n", auth0Email)
+		// User and Organization (from cloud response)
+		if effectiveMethod == cliconfig.AuthMethodNone {
+			fmt.Printf("User: (not authenticated)\n")
+			fmt.Printf("Organization: (not authenticated)\n")
+		} else if cloudErr != nil {
+			fmt.Printf("User: (unknown - connection failed)\n")
+			fmt.Printf("Organization: (unknown - connection failed)\n")
+		} else {
+			// User info
+			if effectiveMethod == cliconfig.AuthMethodAPIKey {
+				fmt.Printf("User: (API key)\n")
+			} else if cloudResp.User != nil && cloudResp.User.GetName() != "" {
+				fmt.Printf("User: %s\n", cloudResp.User.GetName())
+			} else {
+				fmt.Printf("User: (unknown)\n")
 			}
-			if !auth0ExpiresAt.IsZero() {
-				fmt.Printf("    Token expires at: %s\n", auth0ExpiresAt.Format(time.RFC3339))
+
+			// Organization info - find active client
+			var activeClientID, activeClientName string
+			if effectiveMethod == cliconfig.AuthMethodJWT && localClientID != "" {
+				// For JWT, use locally selected client ID
+				activeClientID = localClientID
+				for _, c := range cloudResp.Clients {
+					if c.Id == localClientID && c.Name != nil {
+						activeClientName = *c.Name
+						break
+					}
+				}
+			} else if len(cloudResp.Clients) > 0 {
+				// For API key, use client from response (backend derives it)
+				activeClientID = cloudResp.Clients[0].Id
+				if cloudResp.Clients[0].Name != nil {
+					activeClientName = *cloudResp.Clients[0].Name
+				}
+			}
+
+			if activeClientName != "" {
+				if effectiveMethod == cliconfig.AuthMethodJWT && clientSource != cliconfig.ClientIDSourceNone {
+					fmt.Printf("Organization: %s (%s, %s)\n", activeClientName, activeClientID, clientSource)
+				} else {
+					fmt.Printf("Organization: %s (%s)\n", activeClientName, activeClientID)
+				}
+			} else if activeClientID != "" {
+				fmt.Printf("Organization: %s\n", activeClientID)
+			} else {
+				fmt.Printf("Organization: (none)\n")
 			}
 		}
 
-		fmt.Printf("API key present (TUSK_API_KEY): %v\n", apiKeyPresent)
-		fmt.Printf("Active Tusk client ID (TUSK_CLIENT_ID): %s\n", clientStatus)
+		// Auth method details
+		fmt.Printf("\nAuth method: %s\n", effectiveMethod)
+		if auth0LoggedIn {
+			fmt.Printf("Auth0 logged in: true (expires %s)\n", auth0ExpiresAt.Format(time.RFC3339))
+		} else {
+			fmt.Printf("Auth0 logged in: false\n")
+		}
+		fmt.Printf("API key present: %v (set via TUSK_API_KEY env var)\n", apiKeyPresent)
+
+		// Cloud connection status
+		if effectiveMethod == cliconfig.AuthMethodNone {
+			fmt.Printf("\nTusk Cloud connection: ⚠️  Not authenticated\n")
+		} else if cloudErr != nil {
+			fmt.Printf("\nTusk Cloud connection: ❌ Failed (%v)\n", cloudErr)
+		} else {
+			fmt.Printf("\nTusk Cloud connection: ✅ Success\n")
+		}
 
 		return nil
 	},

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -15,6 +16,24 @@ const (
 	EnvClientID = "TUSK_CLIENT_ID"
 	// EnvCI indicates CI environment (skip notice)
 	EnvCI = "CI"
+	// EnvAuthMethod is the environment variable to force a specific auth method
+	EnvAuthMethod = "TUSK_AUTH_METHOD"
+	// EnvAPIKey is the environment variable for API key authentication
+	EnvAPIKey = "TUSK_API_KEY"
+)
+
+// GetAPIKey returns the API key from the environment variable
+func GetAPIKey() string {
+	return os.Getenv(EnvAPIKey)
+}
+
+// AuthMethod represents the authentication method being used
+type AuthMethod string
+
+const (
+	AuthMethodNone   AuthMethod = "none"
+	AuthMethodJWT    AuthMethod = "jwt"
+	AuthMethodAPIKey AuthMethod = "api_key"
 )
 
 // Config represents the user-level CLI configuration stored at ~/.config/tusk/cli.json
@@ -144,6 +163,38 @@ func IsAnalyticsDisabledByEnv() bool {
 	return os.Getenv(EnvAnalyticsDisabled) != ""
 }
 
+// GetAuthMethod returns the effective auth method based on TUSK_AUTH_METHOD env var
+// and available credentials. Returns the raw env var value (normalized) and effective method.
+// hasJWT should be true if the user has a valid JWT token (checked via authenticator.TryExistingAuth).
+func GetAuthMethod(hasJWT bool) (envValue string, effective AuthMethod) {
+	hasAPIKey := GetAPIKey() != ""
+	envValue = strings.ToLower(os.Getenv(EnvAuthMethod))
+	if envValue == "" {
+		envValue = "auto"
+	}
+
+	switch envValue {
+	case "api_key", "api-key", "apikey":
+		envValue = "api_key" // normalize
+		if hasAPIKey {
+			return envValue, AuthMethodAPIKey
+		}
+	case "auth0", "jwt":
+		envValue = "jwt" // normalize
+		if hasJWT {
+			return envValue, AuthMethodJWT
+		}
+	default: // "auto" or empty - prefer JWT over API key
+		if hasJWT {
+			return envValue, AuthMethodJWT
+		}
+		if hasAPIKey {
+			return envValue, AuthMethodAPIKey
+		}
+	}
+	return envValue, AuthMethodNone
+}
+
 // SetAuthInfo caches auth info from login
 func (c *Config) SetAuthInfo(userID, userName, userEmail, selectedClientID, selectedClientName string) {
 	c.UserID = userID
@@ -170,12 +221,31 @@ func (c *Config) GetDistinctID() string {
 	return c.AnonymousID
 }
 
+// ClientIDSource indicates where the client ID came from
+type ClientIDSource string
+
+const (
+	ClientIDSourceNone     ClientIDSource = ""
+	ClientIDSourceEnvVar   ClientIDSource = "TUSK_CLIENT_ID env var"
+	ClientIDSourceSelected ClientIDSource = "selected from login"
+)
+
 // GetClientID returns the client ID (env var takes precedence, then selected client)
 func (c *Config) GetClientID() string {
+	id, _ := c.GetClientIDWithSource()
+	return id
+}
+
+// GetClientIDWithSource returns the client ID and its source
+// Note that if auth method is API key, we don't know the client ID and so return empty string.
+func (c *Config) GetClientIDWithSource() (clientID string, source ClientIDSource) {
 	if envClientID := os.Getenv(EnvClientID); envClientID != "" {
-		return envClientID
+		return envClientID, ClientIDSourceEnvVar
 	}
-	return c.SelectedClientID
+	if c.SelectedClientID != "" {
+		return c.SelectedClientID, ClientIDSourceSelected
+	}
+	return "", ClientIDSourceNone
 }
 
 // NeedsAlias returns true if we should alias anonymous ID to user ID

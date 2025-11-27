@@ -290,9 +290,6 @@ func findConfigFile() string {
 	return ""
 }
 
-func GetAPIKey() string {
-	return os.Getenv("TUSK_API_KEY")
-}
 
 // Invalidate clears all cached config state, forcing a reload on next Get().
 // Used when updating the config file and for testing.

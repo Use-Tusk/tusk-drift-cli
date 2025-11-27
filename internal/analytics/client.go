@@ -63,9 +63,21 @@ func (c *Client) TrackEvent(event string, properties map[string]any) {
 		Properties: props,
 	}
 
-	// Add group if we have a client ID
-	if clientID := c.config.GetClientID(); clientID != "" {
-		capture.Groups = posthog.NewGroups().Set("company", clientID)
+	// Add group if we have a client ID and are using JWT auth
+	// (For API key auth, we don't know the actual client - backend derives it from the key)
+	//
+	// TODO-CLI-ANALYTICS: Unlike SDK analytics (internal/sdkanalytics/posthog.go), CLI analytics
+	// does not fetch auth info from the backend. SDK analytics calls fetchAuthInfo() which retrieves
+	// the correct client ID for both JWT and API key auth methods. For CLI analytics, we skip this
+	// to avoid adding latency to every CLI command. As a result, we only send company group for JWT
+	// auth where we have the client ID cached locally from login. For API key users, the backend
+	// can derive the client from the key itself when processing events.
+	// Can consider fetching auth info (and caching with a hash of API key?) and then using that to send company group.
+	authType := c.getAuthType()
+	if authType == string(cliconfig.AuthMethodJWT) {
+		if clientID := c.config.GetClientID(); clientID != "" {
+			capture.Groups = posthog.NewGroups().Set("company", clientID)
+		}
 	}
 
 	if err := c.posthog.Enqueue(capture); err != nil {
@@ -114,6 +126,14 @@ func (c *Client) baseProperties() map[string]any {
 		"cli_version":   version.Version,
 		"os":            runtime.GOOS,
 		"arch":          runtime.GOARCH,
-		"authenticated": c.config.UserID != "",
+		"authenticated": c.config.UserID != "" || cliconfig.GetAPIKey() != "",
+		"auth_type":     c.getAuthType(),
 	}
+}
+
+// getAuthType returns the authentication type for analytics.
+func (c *Client) getAuthType() string {
+	hasJWT := c.config.UserID != ""
+	_, effective := cliconfig.GetAuthMethod(hasJWT)
+	return string(effective)
 }

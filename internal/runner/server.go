@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/sdkanalytics"
@@ -196,16 +197,17 @@ func (ms *Server) GetPostHogClient() *sdkanalytics.PostHogClient {
 	}
 
 	// Get API key from environment (this works even without config loaded)
-	apiKey = config.GetAPIKey()
+	apiKey = cliconfig.GetAPIKey()
 
 	// Try to get bearer token from auth
 	var bearerToken string
 	// Note: We can't easily get auth here without creating a dependency issue
 	// The auth token will be set via another mechanism if needed
 
-	// Get client ID from environment
-	// TODO-CLI-ANALYTICS: why only getting TUSK_CLIENT_ID from environment?
-	clientID = os.Getenv("TUSK_CLIENT_ID")
+	// Get client ID (env var takes precedence, then selected client from login)
+	if cliCfg, err := cliconfig.Load(); err == nil {
+		clientID = cliCfg.GetClientID()
+	}
 
 	ms.posthogClient = sdkanalytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry)
 	return ms.posthogClient

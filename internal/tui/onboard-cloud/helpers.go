@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
@@ -149,7 +150,7 @@ func loadExistingConfig(m *Model) error {
 		m.EnableEnvVarRecording = false
 	}
 
-	m.HasApiKey = config.GetAPIKey() != ""
+	m.HasApiKey = cliconfig.GetAPIKey() != ""
 
 	return nil
 }
