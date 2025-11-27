@@ -155,6 +155,17 @@ func loadExistingConfig(m *Model) error {
 	return nil
 }
 
+// saveSelectedClientToCLIConfig persists the selected client to CLI config
+func saveSelectedClientToCLIConfig(clientID, clientName string) {
+	cfg, err := cliconfig.Load()
+	if err != nil {
+		return // Silently fail - not critical
+	}
+	cfg.SelectedClientID = clientID
+	cfg.SelectedClientName = clientName
+	_ = cfg.Save()
+}
+
 func getGitRootDir() (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()

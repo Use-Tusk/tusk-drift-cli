@@ -115,19 +115,19 @@ type SelectClientStep struct{ BaseStep }
 
 func (SelectClientStep) ID() onboardStep       { return stepSelectClient }
 func (SelectClientStep) InputIndex() int       { return 0 }
-func (SelectClientStep) Heading(*Model) string { return "Select team" }
+func (SelectClientStep) Heading(*Model) string { return "Select organization" }
 func (SelectClientStep) Description(m *Model) string {
 	if len(m.AvailableClients) == 0 {
-		return "No teams found"
+		return "No organizations found"
 	}
 	if len(m.AvailableClients) == 1 {
 		return fmt.Sprintf("Using: %s", m.AvailableClients[0].Name)
 	}
-	desc := "You're a member of the following teams:\n"
+	desc := "You're a member of the following organizations:\n"
 	for i, c := range m.AvailableClients {
 		desc += fmt.Sprintf("  %d. %s\n", i+1, c.Name)
 	}
-	return desc + "\nChoose a team to set up Tusk Drift Cloud for (enter number):"
+	return desc + "\nChoose an organization to set up Tusk Drift Cloud for (enter number):"
 }
 func (SelectClientStep) Default(*Model) string    { return "1" }
 func (SelectClientStep) ShouldSkip(m *Model) bool { return len(m.AvailableClients) == 1 }
@@ -151,6 +151,9 @@ func (SelectClientStep) Validate(m *Model, input string) error {
 func (SelectClientStep) Apply(m *Model, input string) {
 	num, _ := strconv.Atoi(input)
 	m.SelectedClient = &m.AvailableClients[num-1]
+
+	// Save selected client to CLI config
+	saveSelectedClientToCLIConfig(m.SelectedClient.ID, m.SelectedClient.Name)
 }
 
 type VerifyRepoAccessStep struct{ BaseStep }
@@ -175,7 +178,7 @@ func (VerifyRepoAccessStep) Description(m *Model) string {
 			m.GitRepoOwner, m.GitRepoName)
 
 		if len(m.AvailableClients) > 1 {
-			instructions += "\n  2. If you belong to multiple teams, ensure this repository belongs to the correct team"
+			instructions += "\n  2. If you belong to multiple organizations, ensure this repository belongs to the correct organization"
 		}
 
 		return instructions

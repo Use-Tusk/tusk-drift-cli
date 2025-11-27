@@ -10,7 +10,7 @@ import (
 	"golang.org/x/term"
 )
 
-const noticeText = `Tusk CLI collects usage analytics to help improve the product.
+const NoticeText = `Tusk CLI collects usage analytics to help improve the product.
 Before login, data is anonymous. After login, it's associated with your account.
 To disable: export TUSK_ANALYTICS_DISABLED=1 or run: tusk analytics disable`
 
@@ -39,7 +39,7 @@ func ShowFirstRunNotice() bool {
 
 	// Display notice
 	fmt.Println()
-	fmt.Println(noticeText)
+	fmt.Println(NoticeText)
 	fmt.Println()
 
 	// Countdown

@@ -75,7 +75,7 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 
 	m.AvailableClients = make([]ClientInfo, len(resp.Clients))
 	for i, c := range resp.Clients {
-		name := "Unnamed Team"
+		name := "Unnamed"
 		if c.Name != nil {
 			name = *c.Name
 		}

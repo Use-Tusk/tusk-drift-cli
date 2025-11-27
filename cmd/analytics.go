@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 )
 
@@ -84,27 +85,25 @@ func showAnalyticsStatus() {
 	// (env var > CI > developer mode > user preference)
 	switch {
 	case cliconfig.IsAnalyticsDisabledByEnv():
-		fmt.Println("Status:    Disabled (TUSK_ANALYTICS_DISABLED set)")
+		fmt.Println("Status:      Disabled (TUSK_ANALYTICS_DISABLED set)")
 	case cliconfig.IsCI():
-		fmt.Println("Status:    Disabled (CI environment)")
+		fmt.Println("Status:      Disabled (CI environment)")
 	case cfg.IsTuskDeveloper:
-		fmt.Println("Status:    Disabled (Tusk developer)")
+		fmt.Println("Status:      Disabled (Tusk developer)")
 	case !cfg.AnalyticsEnabled:
-		fmt.Println("Status:    Disabled (user preference)")
+		fmt.Println("Status:      Disabled (user preference)")
 	default:
-		fmt.Println("Status:    Enabled")
+		fmt.Println("Status:      Enabled")
 	}
 
-	fmt.Printf("Device ID: %s\n", cfg.AnonymousID)
+	fmt.Printf("Device ID:   %s\n", cfg.AnonymousID)
 
 	if cfg.UserID != "" {
-		fmt.Printf("Account:    %s (analytics linked to your account)\n", cfg.UserID)
+		fmt.Printf("Account:     %s (analytics linked to your account)\n", cfg.UserID)
 	} else {
-		fmt.Println("Account:    Not logged in (analytics are anonymous)")
+		fmt.Println("Account:     Not logged in (analytics are anonymous)")
 	}
 
-	fmt.Println("\nTo change:")
-	fmt.Println("  tusk analytics enable    - Enable analytics")
-	fmt.Println("  tusk analytics disable   - Disable analytics")
-	fmt.Println("  TUSK_ANALYTICS_DISABLED=1 - Disable via environment")
+	fmt.Println()
+	fmt.Println(analytics.NoticeText)
 }
