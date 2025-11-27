@@ -65,10 +65,10 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 
 	m.UserId = resp.User.Id
 	m.UserEmail = ""
-	if resp.User.Email != nil {
-		m.UserEmail = *resp.User.Email
-	} else if resp.User.CodeHostingUsername != nil {
+	if resp.User.CodeHostingUsername != nil {
 		m.UserEmail = *resp.User.CodeHostingUsername
+	} else if resp.User.Email != nil {
+		m.UserEmail = *resp.User.Email
 	}
 	m.IsLoggedIn = true
 	m.BearerToken = authenticator.AccessToken

@@ -74,8 +74,12 @@ func cacheAuthInfo(bearerToken string) error {
 	userID := resp.User.GetId()
 	userName := resp.User.GetName()
 	userEmail := ""
-	if resp.User != nil && resp.User.Email != nil {
-		userEmail = *resp.User.Email
+	if resp.User != nil {
+		if resp.User.CodeHostingUsername != nil {
+			userEmail = *resp.User.CodeHostingUsername
+		} else if resp.User.Email != nil {
+			userEmail = *resp.User.Email
+		}
 	}
 
 	// Handle client selection
