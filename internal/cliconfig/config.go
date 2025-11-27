@@ -19,7 +19,7 @@ const (
 	// EnvAuthMethod is the environment variable to force a specific auth method
 	EnvAuthMethod = "TUSK_AUTH_METHOD"
 	// EnvAPIKey is the environment variable for API key authentication
-	EnvAPIKey = "TUSK_API_KEY"
+	EnvAPIKey = "TUSK_API_KEY" // #nosec G101 -- This is an env var name, not a credential
 )
 
 // GetAPIKey returns the API key from the environment variable

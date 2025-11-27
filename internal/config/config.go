@@ -290,7 +290,6 @@ func findConfigFile() string {
 	return ""
 }
 
-
 // Invalidate clears all cached config state, forcing a reload on next Get().
 // Used when updating the config file and for testing.
 func Invalidate() {
