@@ -46,7 +46,6 @@ func RunSelector(prompt string, options []SelectorOption, currentID string) (*Se
 		Value(&selected).
 		WithTheme(styles.HuhTheme()).
 		Run()
-
 	if err != nil {
 		return nil, err
 	}
