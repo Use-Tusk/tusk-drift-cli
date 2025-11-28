@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
@@ -149,9 +150,20 @@ func loadExistingConfig(m *Model) error {
 		m.EnableEnvVarRecording = false
 	}
 
-	m.HasApiKey = config.GetAPIKey() != ""
+	m.HasApiKey = cliconfig.GetAPIKey() != ""
 
 	return nil
+}
+
+// saveSelectedClientToCLIConfig persists the selected client to CLI config
+func saveSelectedClientToCLIConfig(clientID, clientName string) {
+	cfg, err := cliconfig.Load()
+	if err != nil {
+		return // Silently fail - not critical
+	}
+	cfg.SelectedClientID = clientID
+	cfg.SelectedClientName = clientName
+	_ = cfg.Save()
 }
 
 func getGitRootDir() (string, error) {

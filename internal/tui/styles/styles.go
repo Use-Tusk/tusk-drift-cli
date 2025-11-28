@@ -2,6 +2,7 @@
 package styles
 
 import (
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -103,4 +104,24 @@ var (
 
 func NoColor() bool {
 	return termenv.EnvNoColor()
+}
+
+// HuhTheme returns a huh theme using our style system
+func HuhTheme() *huh.Theme {
+	t := huh.ThemeBase()
+
+	primary := lipgloss.Color(PrimaryColor)
+
+	// Title styling - bold and underlined, default color
+	t.Focused.Title = lipgloss.NewStyle().Bold(true).Underline(true)
+
+	// Remove the vertical line on the left (base border)
+	t.Focused.Base = lipgloss.NewStyle().PaddingLeft(0)
+	t.Blurred.Base = lipgloss.NewStyle().PaddingLeft(0)
+
+	// Selection styling - ">" indicator in primary color
+	t.Focused.SelectSelector = lipgloss.NewStyle().Foreground(primary).SetString("> ")
+	t.Focused.SelectedOption = lipgloss.NewStyle().Foreground(primary)
+
+	return t
 }

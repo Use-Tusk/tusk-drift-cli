@@ -2,7 +2,7 @@
 
 ## Getting started
 
-[Sign up for a Tusk account](https://app.usetusk.ai/app) or run `tusk login`. You must also have created a Tusk config file (i.e., complete `tusk init` first).
+[Sign up for a Tusk account](https://app.usetusk.ai/app) or run `tusk auth login`. You must also have created a Tusk config file (i.e., complete `tusk init` first).
 
 Then, execute
 

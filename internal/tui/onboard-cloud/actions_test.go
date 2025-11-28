@@ -78,7 +78,7 @@ recording:
 //     ~/.config on Linux), and we can't reliably override these paths in tests without risking
 //     interference with real user credentials.
 //   - API key auth exercises the same API client code paths as JWT auth, just with different headers.
-//   - In production, users authenticate via `tusk login` (JWT), but for unit test isolation and
+//   - In production, users authenticate via `tusk auth login` (JWT), but for unit test isolation and
 //     simplicity, API key mode is more appropriate.
 func setupTestAuth(t *testing.T) {
 	t.Helper()

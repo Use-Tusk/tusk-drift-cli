@@ -1,4 +1,4 @@
-package analytics
+package sdkanalytics
 
 import (
 	"context"

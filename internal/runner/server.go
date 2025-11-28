@@ -19,10 +19,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/sdkanalytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
@@ -76,7 +77,7 @@ type Server struct {
 	tcpPort           int
 
 	// Analytics
-	posthogClient *analytics.PostHogClient
+	posthogClient *sdkanalytics.PostHogClient
 }
 
 // MessageType represents the type of message sent by the SDK
@@ -176,7 +177,7 @@ func (ms *Server) Start() error {
 }
 
 // GetPostHogClient returns the PostHog client, initializing it lazily if needed
-func (ms *Server) GetPostHogClient() *analytics.PostHogClient {
+func (ms *Server) GetPostHogClient() *sdkanalytics.PostHogClient {
 	if ms.posthogClient != nil {
 		return ms.posthogClient
 	}
@@ -196,17 +197,19 @@ func (ms *Server) GetPostHogClient() *analytics.PostHogClient {
 	}
 
 	// Get API key from environment (this works even without config loaded)
-	apiKey = config.GetAPIKey()
+	apiKey = cliconfig.GetAPIKey()
 
 	// Try to get bearer token from auth
 	var bearerToken string
 	// Note: We can't easily get auth here without creating a dependency issue
 	// The auth token will be set via another mechanism if needed
 
-	// Get client ID from environment
-	clientID = os.Getenv("TUSK_CLIENT_ID")
+	// Get client ID (env var takes precedence, then selected client from login)
+	if cliCfg, err := cliconfig.Load(); err == nil {
+		clientID = cliCfg.GetClientID()
+	}
 
-	ms.posthogClient = analytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry)
+	ms.posthogClient = sdkanalytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry)
 	return ms.posthogClient
 }
 
