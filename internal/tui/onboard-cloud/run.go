@@ -69,12 +69,14 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 		return fmt.Errorf("failed to get auth info: %w", err)
 	}
 
-	m.UserId = resp.User.Id
+	m.UserId = resp.User.GetId()
 	m.UserEmail = ""
-	if resp.User.CodeHostingUsername != nil {
-		m.UserEmail = *resp.User.CodeHostingUsername
-	} else if resp.User.Email != nil {
-		m.UserEmail = *resp.User.Email
+	if resp.User != nil {
+		if resp.User.CodeHostingUsername != nil {
+			m.UserEmail = *resp.User.CodeHostingUsername
+		} else if resp.User.Email != nil {
+			m.UserEmail = *resp.User.Email
+		}
 	}
 	m.IsLoggedIn = true
 	m.BearerToken = authenticator.AccessToken
