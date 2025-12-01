@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"gopkg.in/yaml.v3"
 )
@@ -102,7 +103,7 @@ func (m *Model) getCurrentConfig() Config {
 			Dir: ".tusk/traces",
 		},
 		TuskAPI: &TuskAPI{
-			URL: "https://api.usetusk.ai",
+			URL: api.DefaultBaseURL,
 		},
 		TestExecution: TestExecution{
 			Timeout: "30s",

@@ -8,11 +8,18 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func Run() error {
+	// Ensure tusk_api.url is set in config before proceeding
+	if err := ensureTuskAPIURL(); err != nil {
+		return err
+	}
+
 	authenticator, err := ensureAuthenticated()
 	if err != nil {
 		return err
@@ -57,24 +64,26 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 	resp, err := client.GetAuthInfo(context.Background(), req, authOptions)
 	if err != nil {
 		if strings.Contains(err.Error(), "http 401") {
-			return fmt.Errorf("authentication failed - your session may have expired.\n\nPlease try running 'tusk logout' followed by 'tusk login' to refresh your credentials.\n\nIf the issue persists, please contact support at support@usetusk.ai")
+			return fmt.Errorf("authentication failed - your session may have expired.\n\nPlease try running 'tusk auth logout' followed by 'tusk auth login' to refresh your credentials.\n\nIf the issue persists, please contact support at support@usetusk.ai")
 		}
 		return fmt.Errorf("failed to get auth info: %w", err)
 	}
 
-	m.UserId = resp.User.Id
+	m.UserId = resp.User.GetId()
 	m.UserEmail = ""
-	if resp.User.Email != nil {
-		m.UserEmail = *resp.User.Email
-	} else if resp.User.CodeHostingUsername != nil {
-		m.UserEmail = *resp.User.CodeHostingUsername
+	if resp.User != nil {
+		if resp.User.CodeHostingUsername != nil {
+			m.UserEmail = *resp.User.CodeHostingUsername
+		} else if resp.User.Email != nil {
+			m.UserEmail = *resp.User.Email
+		}
 	}
 	m.IsLoggedIn = true
 	m.BearerToken = authenticator.AccessToken
 
 	m.AvailableClients = make([]ClientInfo, len(resp.Clients))
 	for i, c := range resp.Clients {
-		name := "Unnamed Team"
+		name := "Unnamed"
 		if c.Name != nil {
 			name = *c.Name
 		}
@@ -102,6 +111,38 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 			ids[i] = c.ID
 		}
 		slog.Debug("Found clients", "ids", ids)
+
+		// Check if there's a previously selected client in cli.json
+		if cliCfg, err := cliconfig.Load(); err == nil && cliCfg.SelectedClientID != "" {
+			for i, c := range m.AvailableClients {
+				if c.ID == cliCfg.SelectedClientID {
+					m.DefaultClientIndex = i + 1 // 1-based index
+					slog.Debug("Found previously selected client", "id", c.ID, "index", m.DefaultClientIndex)
+					break
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// ensureTuskAPIURL checks if tusk_api.url is set in config, and adds it if missing
+func ensureTuskAPIURL() error {
+	cfg, err := config.Get()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// If URL is already set, nothing to do
+	if cfg.TuskAPI.URL != "" {
+		return nil
+	}
+
+	// Add the default URL to config
+	slog.Debug("Adding tusk_api.url to config", "url", api.DefaultBaseURL)
+	if err := saveTuskAPIURLToConfig(api.DefaultBaseURL); err != nil {
+		return fmt.Errorf("failed to save tusk_api.url to config: %w", err)
 	}
 
 	return nil

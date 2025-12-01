@@ -144,18 +144,18 @@ func updateField(node *yaml.Node, path []string, value any) error {
 		if keyNode.Value == path[0] {
 			if len(path) == 1 {
 				// Found the target - update its value
+				// Clear Tag and Style to prevent explicit tags in output.
+				// yaml.v3 outputs explicit tags when Style has TaggedStyle bit set,
+				// even if Tag is empty (it infers the tag). Setting Style = 0 prevents this.
+				valueNode.Kind = yaml.ScalarNode
+				valueNode.Tag = ""
+				valueNode.Style = 0
 				switch v := value.(type) {
 				case bool:
-					valueNode.Kind = yaml.ScalarNode
-					valueNode.Tag = "!!bool"
 					valueNode.Value = fmt.Sprintf("%t", v)
 				case float64:
-					valueNode.Kind = yaml.ScalarNode
-					valueNode.Tag = "!!float"
 					valueNode.Value = fmt.Sprintf("%v", v)
 				default:
-					valueNode.Kind = yaml.ScalarNode
-					valueNode.Tag = "!!str"
 					valueNode.Value = fmt.Sprintf("%v", v)
 				}
 				return nil
@@ -173,30 +173,12 @@ func updateField(node *yaml.Node, path []string, value any) error {
 		// Add key-value pair to current mapping
 		keyNode := &yaml.Node{
 			Kind:  yaml.ScalarNode,
-			Tag:   "!!str",
 			Value: path[0],
 		}
 
-		var valueNode *yaml.Node
-		switch v := value.(type) {
-		case bool:
-			valueNode = &yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Tag:   "!!bool",
-				Value: fmt.Sprintf("%t", v),
-			}
-		case float64:
-			valueNode = &yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Tag:   "!!float",
-				Value: fmt.Sprintf("%v", v),
-			}
-		default:
-			valueNode = &yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Tag:   "!!str",
-				Value: fmt.Sprintf("%v", v),
-			}
+		valueNode := &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Value: fmt.Sprintf("%v", value),
 		}
 
 		node.Content = append(node.Content, keyNode, valueNode)
@@ -206,12 +188,10 @@ func updateField(node *yaml.Node, path []string, value any) error {
 	// Need to create nested structure - create the intermediate mapping
 	keyNode := &yaml.Node{
 		Kind:  yaml.ScalarNode,
-		Tag:   "!!str",
 		Value: path[0],
 	}
 	nestedMapping := &yaml.Node{
 		Kind: yaml.MappingNode,
-		Tag:  "!!map",
 	}
 	node.Content = append(node.Content, keyNode, nestedMapping)
 
@@ -236,6 +216,14 @@ func saveRecordingConfig(samplingRate float64, exportSpans, enableEnvVarRecordin
 		u.Set([]string{"recording", "sampling_rate"}, samplingRate)
 		u.Set([]string{"recording", "export_spans"}, exportSpans)
 		u.Set([]string{"recording", "enable_env_var_recording"}, enableEnvVarRecording)
+		return nil
+	})
+}
+
+func saveTuskAPIURLToConfig(url string) error {
+	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
+		cfg.TuskAPI.URL = url
+		u.Set([]string{"tusk_api", "url"}, url)
 		return nil
 	})
 }

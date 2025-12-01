@@ -3,10 +3,9 @@ package api
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 )
 
@@ -16,7 +15,7 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 		return nil, AuthOptions{}, nil, fmt.Errorf("failed to load config: %w", cfgErr)
 	}
 	if cfg.TuskAPI.URL == "" {
-		return nil, AuthOptions{}, nil, fmt.Errorf("Tusk API base URL must be provided in '.tusk/config.yaml' (tusk_api.url)")
+		return nil, AuthOptions{}, nil, fmt.Errorf("Tusk API URL is required. Set tusk_api.url in '.tusk/config.yaml' or run 'tusk init-cloud'")
 	}
 	if requireServiceID && cfg.Service.ID == "" {
 		return nil, AuthOptions{}, nil, fmt.Errorf("Service ID is required. Set config.service.id in '.tusk/config.yaml'")
@@ -27,39 +26,46 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 		return nil, AuthOptions{}, nil, fmt.Errorf("auth init failed: %w", aerr)
 	}
 
-	bearer := ""
-	apiKey := ""
+	// Try to get credentials
+	var bearer, apiKey string
+	var hasJWT bool
+	if err := authenticator.TryExistingAuth(ctx); err == nil {
+		hasJWT = true
+	}
 
-	switch strings.ToLower(os.Getenv("TUSK_AUTH_METHOD")) {
-	case "", "auto":
-		// Default: prefer JWT if available, otherwise API key
-		if err := authenticator.TryExistingAuth(ctx); err == nil {
-			bearer = authenticator.AccessToken
-		} else {
-			apiKey = config.GetAPIKey()
-			if apiKey == "" {
-				return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. Either run `tusk login` or set TUSK_API_KEY")
-			}
-		}
-	case "auth0", "jwt":
-		if err := authenticator.TryExistingAuth(ctx); err != nil {
-			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'auth0' selected, but no valid JWT found. Run `tusk login`")
-		}
+	// Determine which auth method to use
+	methodEnv, effectiveMethod := cliconfig.GetAuthMethod(hasJWT)
+
+	switch effectiveMethod {
+	case cliconfig.AuthMethodJWT:
 		bearer = authenticator.AccessToken
-	case "api_key", "api-key", "apikey":
-		apiKey = config.GetAPIKey()
-		if apiKey == "" {
+	case cliconfig.AuthMethodAPIKey:
+		apiKey = cliconfig.GetAPIKey()
+	case cliconfig.AuthMethodNone:
+		// Provide context-specific error messages
+		switch methodEnv {
+		case "jwt":
+			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'jwt' selected, but no valid JWT found. Run `tusk auth login`")
+		case "api_key":
 			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'api_key' selected, but TUSK_API_KEY is not set")
+		case "auto":
+			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. Either run `tusk auth login` or set TUSK_API_KEY")
+		default:
+			return nil, AuthOptions{}, nil, fmt.Errorf("invalid TUSK_AUTH_METHOD '%s'. Valid values: auth0|jwt, api_key, auto", methodEnv)
 		}
-	default:
-		return nil, AuthOptions{}, nil, fmt.Errorf("invalid TUSK_AUTH_METHOD. Valid values: auth0|jwt, api_key")
+	}
+
+	// Get client ID (env var takes precedence, then selected client from login)
+	var tuskClientID string
+	if cliCfg, err := cliconfig.Load(); err == nil {
+		tuskClientID = cliCfg.GetClientID()
 	}
 
 	client := NewClient(cfg.TuskAPI.URL, apiKey)
 	authOptions := AuthOptions{
 		APIKey:       apiKey,
 		BearerToken:  bearer,
-		TuskClientID: os.Getenv("TUSK_CLIENT_ID"),
+		TuskClientID: tuskClientID,
 	}
 	return client, authOptions, cfg, nil
 }

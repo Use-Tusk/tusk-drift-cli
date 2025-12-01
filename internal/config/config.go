@@ -89,7 +89,7 @@ type RecordingConfig struct {
 }
 
 type ReplayConfig struct {
-	EnableTelemetry *bool `koanf:"enable_telemetry"`
+	// Reserved for future replay-specific options
 }
 
 type TracesConfig struct {
@@ -288,10 +288,6 @@ func findConfigFile() string {
 	}
 
 	return ""
-}
-
-func GetAPIKey() string {
-	return os.Getenv("TUSK_API_KEY")
 }
 
 // Invalidate clears all cached config state, forcing a reload on next Get().

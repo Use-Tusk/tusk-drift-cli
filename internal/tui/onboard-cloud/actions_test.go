@@ -78,7 +78,7 @@ recording:
 //     ~/.config on Linux), and we can't reliably override these paths in tests without risking
 //     interference with real user credentials.
 //   - API key auth exercises the same API client code paths as JWT auth, just with different headers.
-//   - In production, users authenticate via `tusk login` (JWT), but for unit test isolation and
+//   - In production, users authenticate via `tusk auth login` (JWT), but for unit test isolation and
 //     simplicity, API key mode is more appropriate.
 func setupTestAuth(t *testing.T) {
 	t.Helper()
@@ -506,7 +506,14 @@ func TestVerifyRepoAccess_MissingConfig(t *testing.T) {
 	errMsg, ok := msg.(verifyRepoAccessErrorMsg)
 	assert.True(t, ok, "Expected verifyRepoAccessErrorMsg, got %T: %+v", msg, msg)
 	if ok {
-		assert.Contains(t, errMsg.err.Error(), "failed to setup cloud connection")
+		// With missing config, SetupCloud falls back to default URL,
+		// so the API call proceeds but fails with auth error or config error
+		err := errMsg.err.Error()
+		assert.True(t,
+			strings.Contains(err, "failed to setup cloud connection") ||
+				strings.Contains(err, "failed to load config") ||
+				strings.Contains(err, "API call failed"),
+			"Error should mention config, cloud connection, or API failure: %s", err)
 	}
 }
 
@@ -574,7 +581,14 @@ func TestCreateApiKey_MissingConfig(t *testing.T) {
 	errMsg, ok := msg.(createApiKeyErrorMsg)
 	assert.True(t, ok, "Expected createApiKeyErrorMsg, got %T: %+v", msg, msg)
 	if ok {
-		assert.Contains(t, errMsg.err.Error(), "failed to setup cloud connection")
+		// With missing config, SetupCloud falls back to default URL,
+		// so the API call proceeds but fails with auth error or config error
+		err := errMsg.err.Error()
+		assert.True(t,
+			strings.Contains(err, "failed to setup cloud connection") ||
+				strings.Contains(err, "failed to load config") ||
+				strings.Contains(err, "API call failed"),
+			"Error should mention config, cloud connection, or API failure: %s", err)
 	}
 }
 
