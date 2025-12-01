@@ -34,13 +34,14 @@ type Model struct {
 	progress progress.Model
 
 	// State - Authentication
-	IsLoggedIn       bool
-	BearerToken      string
-	UserId           string
-	UserEmail        string
-	HasApiKey        bool
-	SelectedClient   *ClientInfo
-	AvailableClients []ClientInfo
+	IsLoggedIn         bool
+	BearerToken        string
+	UserId             string
+	UserEmail          string
+	HasApiKey          bool
+	SelectedClient     *ClientInfo
+	AvailableClients   []ClientInfo
+	DefaultClientIndex int // 1-based index of default client from cli.json (0 means use first)
 
 	// State - Git & Repo
 	GitRepoOwner            string

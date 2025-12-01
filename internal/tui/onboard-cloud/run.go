@@ -8,6 +8,7 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,7 +31,6 @@ func Run() error {
 		slog.Debug("Failed to fetch user info", "error", err)
 		return err
 	}
-	// TODO-CLI-ANALYTICS: we can use selected client from the config instead of having user select? or we could let user select again
 
 	m.flow = createFlow()
 
@@ -111,6 +111,17 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 			ids[i] = c.ID
 		}
 		slog.Debug("Found clients", "ids", ids)
+
+		// Check if there's a previously selected client in cli.json
+		if cliCfg, err := cliconfig.Load(); err == nil && cliCfg.SelectedClientID != "" {
+			for i, c := range m.AvailableClients {
+				if c.ID == cliCfg.SelectedClientID {
+					m.DefaultClientIndex = i + 1 // 1-based index
+					slog.Debug("Found previously selected client", "id", c.ID, "index", m.DefaultClientIndex)
+					break
+				}
+			}
+		}
 	}
 
 	return nil

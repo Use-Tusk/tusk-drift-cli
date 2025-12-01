@@ -129,7 +129,12 @@ func (SelectClientStep) Description(m *Model) string {
 	}
 	return desc + "\nChoose an organization to set up Tusk Drift Cloud for (enter number):"
 }
-func (SelectClientStep) Default(*Model) string    { return "1" }
+func (SelectClientStep) Default(m *Model) string {
+	if m.DefaultClientIndex > 0 {
+		return fmt.Sprintf("%d", m.DefaultClientIndex)
+	}
+	return "1"
+}
 func (SelectClientStep) ShouldSkip(m *Model) bool { return len(m.AvailableClients) == 1 }
 func (SelectClientStep) Help(*Model) string {
 	return "enter: use default • esc: quit"
