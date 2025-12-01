@@ -63,6 +63,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		step := m.flow.Current(m.stepIdx)
 
+		// Check if RecordingConfigTable is in edit mode - let it handle esc first
+		if step != nil && step.ID() == stepRecordingConfig && m.RecordingConfigTable != nil && m.RecordingConfigTable.EditMode {
+			if msg.String() == "esc" || msg.String() == "tab" {
+				_, cmd := m.RecordingConfigTable.Update(msg)
+				return m, cmd
+			}
+		}
+
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c", "esc"))):
 			return m, tea.Quit

@@ -8,11 +8,17 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func Run() error {
+	// Ensure tusk_api.url is set in config before proceeding
+	if err := ensureTuskAPIURL(); err != nil {
+		return err
+	}
+
 	authenticator, err := ensureAuthenticated()
 	if err != nil {
 		return err
@@ -103,6 +109,27 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 			ids[i] = c.ID
 		}
 		slog.Debug("Found clients", "ids", ids)
+	}
+
+	return nil
+}
+
+// ensureTuskAPIURL checks if tusk_api.url is set in config, and adds it if missing
+func ensureTuskAPIURL() error {
+	cfg, err := config.Get()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// If URL is already set, nothing to do
+	if cfg.TuskAPI.URL != "" {
+		return nil
+	}
+
+	// Add the default URL to config
+	slog.Debug("Adding tusk_api.url to config", "url", api.DefaultBaseURL)
+	if err := saveTuskAPIURLToConfig(api.DefaultBaseURL); err != nil {
+		return fmt.Errorf("failed to save tusk_api.url to config: %w", err)
 	}
 
 	return nil
