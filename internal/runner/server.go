@@ -19,11 +19,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/sdkanalytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
@@ -77,7 +76,7 @@ type Server struct {
 	tcpPort           int
 
 	// Analytics
-	posthogClient *sdkanalytics.PostHogClient
+	analyticsClient *analytics.Client
 }
 
 // MessageType represents the type of message sent by the SDK
@@ -176,41 +175,14 @@ func (ms *Server) Start() error {
 	return ms.startUnix()
 }
 
-// GetPostHogClient returns the PostHog client, initializing it lazily if needed
-func (ms *Server) GetPostHogClient() *sdkanalytics.PostHogClient {
-	if ms.posthogClient != nil {
-		return ms.posthogClient
+// GetAnalyticsClient returns the analytics client, initializing it lazily if needed
+func (ms *Server) GetAnalyticsClient() *analytics.Client {
+	if ms.analyticsClient != nil {
+		return ms.analyticsClient
 	}
 
-	var apiBaseURL string
-	var apiKey string
-	var clientID string
-	enableTelemetry := true // Default to enabled (opt-out)
-
-	// Try to get config - but don't fail if not available yet
-	fullConfig, err := config.Get()
-	if err == nil && fullConfig != nil {
-		apiBaseURL = fullConfig.TuskAPI.URL
-		if fullConfig.Replay.EnableTelemetry != nil {
-			enableTelemetry = *fullConfig.Replay.EnableTelemetry
-		}
-	}
-
-	// Get API key from environment (this works even without config loaded)
-	apiKey = cliconfig.GetAPIKey()
-
-	// Try to get bearer token from auth
-	var bearerToken string
-	// Note: We can't easily get auth here without creating a dependency issue
-	// The auth token will be set via another mechanism if needed
-
-	// Get client ID (env var takes precedence, then selected client from login)
-	if cliCfg, err := cliconfig.Load(); err == nil {
-		clientID = cliCfg.GetClientID()
-	}
-
-	ms.posthogClient = sdkanalytics.NewPostHogClient(apiBaseURL, apiKey, bearerToken, clientID, enableTelemetry)
-	return ms.posthogClient
+	ms.analyticsClient = analytics.NewClient()
+	return ms.analyticsClient
 }
 
 func (ms *Server) startUnix() error {
@@ -275,10 +247,10 @@ func (ms *Server) Stop() error {
 
 	ms.wg.Wait()
 
-	// Flush and close PostHog client
-	if ms.posthogClient != nil {
-		if err := ms.posthogClient.Close(); err != nil {
-			slog.Error("Failed to close PostHog client", "error", err)
+	// Flush and close analytics client
+	if ms.analyticsClient != nil {
+		if err := ms.analyticsClient.Close(); err != nil {
+			slog.Error("Failed to close analytics client", "error", err)
 		}
 	}
 
@@ -882,15 +854,15 @@ func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.Instrume
 	)
 
 	// Send to PostHog
-	if client := ms.GetPostHogClient(); client != nil {
-		client.CaptureInstrumentationVersionMismatch(
-			alert.ModuleName,
-			alert.RequestedVersion,
-			alert.SupportedVersions,
-			alert.SdkVersion,
-		)
+	if client := ms.GetAnalyticsClient(); client != nil {
+		client.Track("drift_cli:instrumentation_version_mismatch", map[string]any{
+			"module_name":        alert.ModuleName,
+			"requested_version":  alert.RequestedVersion,
+			"supported_versions": alert.SupportedVersions,
+			"sdk_version":        alert.SdkVersion,
+		})
 	} else {
-		slog.Debug("PostHog client not initialized, skipping instrumentation version mismatch alert")
+		slog.Debug("Analytics client not initialized, skipping instrumentation version mismatch alert")
 	}
 }
 
@@ -902,14 +874,14 @@ func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependency
 	)
 
 	// Send to PostHog
-	if client := ms.GetPostHogClient(); client != nil {
-		client.CaptureUnpatchedDependency(
-			alert.TraceTestServerSpanId,
-			alert.StackTrace,
-			alert.SdkVersion,
-		)
+	if client := ms.GetAnalyticsClient(); client != nil {
+		client.Track("drift_cli:unpatched_dependency", map[string]any{
+			"trace_test_server_span_id": alert.TraceTestServerSpanId,
+			"stack_trace":               alert.StackTrace,
+			"sdk_version":               alert.SdkVersion,
+		})
 	} else {
-		slog.Debug("PostHog client not initialized, skipping unpatched dependency alert")
+		slog.Debug("Analytics client not initialized, skipping unpatched dependency alert")
 	}
 }
 

@@ -43,7 +43,7 @@ func selectOrg(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fetch available clients
-	client := api.NewClient(defaultAPIURL, "")
+	client := api.NewClient(api.GetBaseURL(), "")
 	authOpts := api.AuthOptions{
 		BearerToken: authenticator.AccessToken,
 	}

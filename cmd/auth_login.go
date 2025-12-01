@@ -14,8 +14,6 @@ import (
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
-const defaultAPIURL = "https://api.usetusk.ai"
-
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with Tusk Cloud",
@@ -56,7 +54,7 @@ func login(cmd *cobra.Command, args []string) error {
 
 // cacheAuthInfo fetches user/client info from the backend and caches it locally
 func cacheAuthInfo(bearerToken string) error {
-	client := api.NewClient(defaultAPIURL, "")
+	client := api.NewClient(api.GetBaseURL(), "")
 	authOpts := api.AuthOptions{
 		BearerToken: bearerToken,
 	}

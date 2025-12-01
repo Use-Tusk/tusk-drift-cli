@@ -53,7 +53,7 @@ var statusCmd = &cobra.Command{
 				authAPIKey = apiKey
 			}
 
-			client := api.NewClient(defaultAPIURL, authAPIKey)
+			client := api.NewClient(api.GetBaseURL(), authAPIKey)
 			authOpts := api.AuthOptions{
 				BearerToken:  bearerToken,
 				APIKey:       authAPIKey,

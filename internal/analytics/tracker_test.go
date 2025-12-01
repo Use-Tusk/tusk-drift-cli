@@ -107,7 +107,7 @@ func TestTrackerNilSafety(t *testing.T) {
 
 	// These should not panic
 	tracker.TrackResult(nil)
-	tracker.TrackEvent("test", nil)
+	tracker.Track("test", nil)
 	tracker.Alias("user123")
 	tracker.Close()
 }

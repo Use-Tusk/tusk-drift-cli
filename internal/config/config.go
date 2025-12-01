@@ -89,7 +89,7 @@ type RecordingConfig struct {
 }
 
 type ReplayConfig struct {
-	EnableTelemetry *bool `koanf:"enable_telemetry"`
+	// Reserved for future replay-specific options
 }
 
 type TracesConfig struct {

@@ -115,6 +115,8 @@ Testing auth to Tusk dev:
 - `TUSK_AUTH0_DOMAIN`
 - `TUSK_AUTH0_CLIENT_ID`
 
+By default, if there's a `.tusk/config.yaml` we'll use the API url in that for all Tusk Cloud requests. If no `.tusk/config.yaml` is found, we'll use the default API url (prod API url). You can override this by setting `TUSK_CLOUD_API_URL` in your shell.
+
 ### Disabling analytics
 
 Analytics can be disabled by setting `is_tusk_developer` to `true` in the config file (e.g. `Users/name/Library/Application Support/tusk/cli.json`).

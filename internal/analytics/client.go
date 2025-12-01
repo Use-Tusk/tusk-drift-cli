@@ -1,22 +1,42 @@
 package analytics
 
 import (
+	"context"
 	"log/slog"
+	"os"
 	"runtime"
+	"sync"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"github.com/posthog/posthog-go"
 )
 
-// Client wraps the PostHog client for CLI analytics
+const (
+	// #nosec G101 -- This is a public PostHog API key, safe to hardcode
+	posthogAPIKey   = "phc_mUFon9ykhVY9tga0zS6TPQ7FQloQNO91PQRtXdAREqz"
+	posthogEndpoint = "https://us.i.posthog.com"
+	groupName       = "company"
+)
+
+// Client wraps the PostHog client for analytics
 type Client struct {
 	posthog posthog.Client
 	config  *cliconfig.Config
+
+	// For API key auth: backend fetch capability to resolve user/client identity
+	tuskClient *api.TuskClient
+	apiKey     string
+
+	// Cached identity from backend fetch (API key auth only)
+	authInfo     *backend.GetAuthInfoResponse
+	authInfoOnce sync.Once
 }
 
-// NewClient creates a new analytics client
-// Returns nil if analytics is disabled
+// NewClient creates a new analytics client.
+// Returns nil if analytics is disabled.
 func NewClient() *Client {
 	if !cliconfig.IsAnalyticsEnabled() {
 		slog.Debug("Analytics disabled, not creating client")
@@ -29,28 +49,37 @@ func NewClient() *Client {
 		return nil
 	}
 
-	// #nosec G101 -- This is a public PostHog API key, safe to hardcode
-	posthogAPIKey := "phc_mUFon9ykhVY9tga0zS6TPQ7FQloQNO91PQRtXdAREqz"
-
-	client, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
-		Endpoint: "https://us.i.posthog.com",
+	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
+		Endpoint: posthogEndpoint,
 	})
 	if err != nil {
 		slog.Debug("Failed to create PostHog client", "error", err)
 		return nil
 	}
 
+	// Set up backend fetch capability for API key auth
+	apiKey := cliconfig.GetAPIKey()
+	var tuskClient *api.TuskClient
+	if apiKey != "" {
+		tuskClient = api.NewClient(api.GetBaseURL(), apiKey)
+	}
+
 	return &Client{
-		posthog: client,
-		config:  cfg,
+		posthog:    phClient,
+		config:     cfg,
+		tuskClient: tuskClient,
+		apiKey:     apiKey,
 	}
 }
 
-// TrackEvent sends a generic event to PostHog
-func (c *Client) TrackEvent(event string, properties map[string]any) {
+// Track sends an event to PostHog with the provided properties.
+func (c *Client) Track(event string, properties map[string]any) {
 	if c == nil || c.posthog == nil {
 		return
 	}
+
+	// Resolve identity for API key auth (no-op for JWT/anonymous)
+	c.resolveIdentity()
 
 	props := c.baseProperties()
 	for k, v := range properties {
@@ -58,26 +87,13 @@ func (c *Client) TrackEvent(event string, properties map[string]any) {
 	}
 
 	capture := posthog.Capture{
-		DistinctId: c.config.GetDistinctID(),
+		DistinctId: c.getDistinctID(),
 		Event:      event,
 		Properties: props,
 	}
 
-	// Add group if we have a client ID and are using JWT auth
-	// (For API key auth, we don't know the actual client - backend derives it from the key)
-	//
-	// TODO-CLI-ANALYTICS: Unlike SDK analytics (internal/sdkanalytics/posthog.go), CLI analytics
-	// does not fetch auth info from the backend. SDK analytics calls fetchAuthInfo() which retrieves
-	// the correct client ID for both JWT and API key auth methods. For CLI analytics, we skip this
-	// to avoid adding latency to every CLI command. As a result, we only send company group for JWT
-	// auth where we have the client ID cached locally from login. For API key users, the backend
-	// can derive the client from the key itself when processing events.
-	// Can consider fetching auth info (and caching with a hash of API key?) and then using that to send company group.
-	authType := c.getAuthType()
-	if authType == string(cliconfig.AuthMethodJWT) {
-		if clientID := c.config.GetClientID(); clientID != "" {
-			capture.Groups = posthog.NewGroups().Set("company", clientID)
-		}
+	if clientID := c.getClientID(); clientID != "" {
+		capture.Groups = posthog.NewGroups().Set(groupName, clientID)
 	}
 
 	if err := c.posthog.Enqueue(capture); err != nil {
@@ -87,7 +103,7 @@ func (c *Client) TrackEvent(event string, properties map[string]any) {
 
 // Alias connects the anonymous ID to a user ID (call after login)
 func (c *Client) Alias(userID string) {
-	if c == nil || c.posthog == nil || userID == "" {
+	if c == nil || c.posthog == nil || c.config == nil || userID == "" {
 		return
 	}
 
@@ -120,24 +136,101 @@ func (c *Client) Close() error {
 	return c.posthog.Close()
 }
 
+// resolveIdentity fetches auth info from backend if needed.
+// Only fetches for API key auth - JWT auth uses cached cliconfig data.
+func (c *Client) resolveIdentity() {
+	// Only fetch for API key auth
+	if c.getAuthType() != string(cliconfig.AuthMethodAPIKey) {
+		return
+	}
+
+	c.fetchAuthInfo()
+}
+
+// fetchAuthInfo fetches auth info from the backend (called once, cached)
+func (c *Client) fetchAuthInfo() {
+	c.authInfoOnce.Do(func() {
+		if c.tuskClient == nil || c.apiKey == "" {
+			return
+		}
+
+		resp, err := c.tuskClient.GetAuthInfo(
+			context.Background(),
+			&backend.GetAuthInfoRequest{},
+			api.AuthOptions{APIKey: c.apiKey},
+		)
+		if err != nil {
+			slog.Warn("Failed to fetch auth info for analytics", "error", err)
+			return
+		}
+
+		c.authInfo = resp
+		slog.Debug("Successfully fetched auth info for analytics",
+			"userId", resp.User.GetId(),
+			"clientCount", len(resp.Clients))
+	})
+}
+
+// getDistinctID returns the distinct ID for PostHog events
+func (c *Client) getDistinctID() string {
+	// First try user ID from fetched auth info (API key auth)
+	if c.authInfo != nil && c.authInfo.User != nil && c.authInfo.User.Id != "" {
+		return c.authInfo.User.Id
+	}
+
+	// Fall back to cliconfig (JWT auth or anonymous)
+	if c.config != nil {
+		return c.config.GetDistinctID()
+	}
+
+	// Last resort: anonymous hostname-based ID
+	hostname, _ := os.Hostname()
+	if hostname != "" {
+		return "anonymous-" + hostname
+	}
+	return "anonymous-unknown"
+}
+
+// getClientID returns the client ID for group identification
+func (c *Client) getClientID() string {
+	// First try from fetched auth info (API key auth)
+	if c.authInfo != nil && len(c.authInfo.Clients) > 0 && c.authInfo.Clients[0].Id != "" {
+		return c.authInfo.Clients[0].Id
+	}
+
+	// Fall back to cliconfig (JWT auth)
+	if c.config != nil {
+		return c.config.GetClientID()
+	}
+
+	return ""
+}
+
 // baseProperties returns common properties for all events
 func (c *Client) baseProperties() map[string]any {
+	// Check if actually authenticated:
+	// - JWT: config.UserID is set (cached from login)
+	// - API key: authInfo was successfully fetched
+	authenticated := false
+	if c.config != nil && c.config.UserID != "" {
+		authenticated = true
+	} else if c.authInfo != nil {
+		authenticated = true
+	}
+
 	return map[string]any{
 		"cli_version":   version.Version,
 		"os":            runtime.GOOS,
 		"arch":          runtime.GOARCH,
-		"authenticated": c.config.UserID != "" || cliconfig.GetAPIKey() != "",
+		"authenticated": authenticated,
 		"auth_type":     c.getAuthType(),
 	}
 }
 
 // getAuthType returns the authentication type for analytics.
 // Note: This uses cached UserID to determine JWT status, not actual JWT validity.
-// If a JWT expires but UserID is cached, this may incorrectly report "jwt".
-// Fixing this would require validating the JWT on every analytics call, which
-// adds latency. Accepted as a minor limitation for the expired JWT edge case.
 func (c *Client) getAuthType() string {
-	hasJWT := c.config.UserID != ""
+	hasJWT := c.config != nil && c.config.UserID != ""
 	_, effective := cliconfig.GetAuthMethod(hasJWT)
 	return string(effective)
 }

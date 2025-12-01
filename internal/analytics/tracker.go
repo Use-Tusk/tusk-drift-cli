@@ -33,7 +33,7 @@ func NewTracker(cmd *cobra.Command) *Tracker {
 
 	// Track first run event if notice was just shown
 	if firstRun {
-		client.TrackEvent("drift_cli:first_run", nil)
+		client.Track("drift_cli:first_run", nil)
 	}
 
 	return &Tracker{
@@ -71,15 +71,15 @@ func (t *Tracker) TrackResult(err error) {
 		props["error_type"] = errorType
 	}
 
-	t.client.TrackEvent("drift_cli:command_executed", props)
+	t.client.Track("drift_cli:command_executed", props)
 }
 
-// TrackEvent sends a custom event (delegates to client)
-func (t *Tracker) TrackEvent(event string, props map[string]any) {
+// Track sends a custom event (delegates to client)
+func (t *Tracker) Track(event string, props map[string]any) {
 	if t == nil || t.client == nil {
 		return
 	}
-	t.client.TrackEvent(event, props)
+	t.client.Track(event, props)
 }
 
 // Alias connects anonymous ID to user ID (call after login)

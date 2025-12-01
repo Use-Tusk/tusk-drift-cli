@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"google.golang.org/protobuf/proto"
 )
@@ -59,9 +60,17 @@ func FastRetryConfig(maxRetries int) RetryConfig {
 }
 
 const (
+	// DefaultBaseURL is the default Tusk Cloud API URL
+	DefaultBaseURL = "https://api.usetusk.ai"
+
 	TestRunServiceAPIPath = "/api/drift/test_run_service"
 	ClientServiceAPIPath  = "/api/drift/client_service"
 )
+
+// GetBaseURL returns the API base URL, allowing override via TUSK_CLOUD_API_URL env var
+func GetBaseURL() string {
+	return utils.EnvDefault("TUSK_CLOUD_API_URL", DefaultBaseURL)
+}
 
 func NewClient(baseURL, apiKey string) *TuskClient {
 	// https://app.usetusk.ai/api/vi/drift/test_run_service -> https://app.usetusk.ai
