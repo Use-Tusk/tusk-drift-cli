@@ -167,7 +167,7 @@ recording:
 	require.NoError(t, err)
 
 	// Read the file back
-	data, err := os.ReadFile(filepath.Join(tuskDir, "config.yaml"))
+	data, err := os.ReadFile(filepath.Join(tuskDir, "config.yaml")) // #nosec G304
 	require.NoError(t, err)
 
 	result := string(data)
@@ -209,7 +209,7 @@ func TestSaveTuskAPIURLToConfig_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read the file back
-	data, err := os.ReadFile(filepath.Join(tuskDir, "config.yaml"))
+	data, err := os.ReadFile(filepath.Join(tuskDir, "config.yaml")) // #nosec G304
 	require.NoError(t, err)
 
 	result := string(data)
