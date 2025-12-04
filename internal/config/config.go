@@ -176,7 +176,7 @@ func parseAndValidate() (*Config, error) {
 		cfg.Service.Port = 3000
 	}
 	if cfg.TestExecution.Concurrency == 0 {
-		cfg.TestExecution.Concurrency = 5
+		cfg.TestExecution.Concurrency = 1
 	}
 	if cfg.TestExecution.Timeout == "" {
 		cfg.TestExecution.Timeout = "30s"

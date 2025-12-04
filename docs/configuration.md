@@ -229,9 +229,9 @@ For authentication in cloud mode, either use:
     <tr>
       <td><code>test_execution.concurrency</code></td>
       <td>number</td>
-      <td>5</td>
+      <td>1</td>
       <td>no</td>
-      <td>Max concurrent tests. CLI flag <code>--concurrency</code> overrides. You generally do not need to modify this.</td>
+      <td>Max concurrent tests. CLI flag <code>--concurrency</code> overrides. For Node.js applications with CPU-intensive synchronous operations (such as synchronous JWT sign/verify), concurrency of 1 is recommended to avoid test interference, since these operations block the single-threaded event loop and can cause concurrent requests to timeout.</td>
     </tr>
     <tr>
       <td><code>test_execution.timeout</code></td>
