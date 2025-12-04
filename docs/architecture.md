@@ -214,7 +214,7 @@ tusk_api:
   url: "https://example.usetusk.ai"   # required for --cloud
 
 test_execution:
-  concurrency: 5
+  concurrency: 1
   timeout: "30s"
 
 comparison:
@@ -232,7 +232,7 @@ results:
 
 - **Env/Flags**: `TUSK_MOCK_SOCKET` and `TUSK_DRIFT_MODE=REPLAY` are injected by the CLI into the service env.
 - **Readiness**: If no readiness command is configured, the CLI waits ~10s before replay.
-- **Concurrency**: Tests run concurrently (default 5), with per‑test attribution for mock events.
+- **Concurrency**: Tests can run concurrently, with per‑test attribution for mock events.
 - **Service logs**: Written to `.tusk/logs/tusk-replay-*.log` when `--enable-service-logs` is provided.
 - **Timeouts**: SDK ACK ~10s, HTTP client ~30s. Socket messages are capped at 1MB.
 

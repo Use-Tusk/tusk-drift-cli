@@ -71,7 +71,7 @@ func init() {
 	runCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
 	runCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Quiet output, only show deviations (only works with --print and --output-format text)")
 	runCmd.Flags().BoolVarP(&verbose, "verbose", "", false, "Verbose output, show detailed deviation information (only works with --print)")
-	runCmd.Flags().IntVar(&concurrency, "concurrency", 5, "Maximum number of concurrent tests. If set, overrides the concurrency setting in the config file.")
+	runCmd.Flags().IntVar(&concurrency, "concurrency", 1, "Maximum number of concurrent tests. If set, overrides the concurrency setting in the config file.")
 	runCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
 	runCmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
 	runCmd.Flags().StringVar(&resultsDir, "results-dir", "", "Path to directory to save results (only works with --save-results). Default is '.tusk/results'")
