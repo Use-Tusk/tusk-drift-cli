@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"syscall"
 	"time"
@@ -14,6 +15,22 @@ import (
 // createServiceCommand creates a shell command for Unix systems
 func createServiceCommand(ctx context.Context, command string) *exec.Cmd {
 	return exec.CommandContext(ctx, "/bin/sh", "-c", command) // #nosec G204
+}
+
+// createSandboxedServiceCommand wraps the command with sandbox restrictions
+func createSandboxedServiceCommand(ctx context.Context, command string, opts SandboxOptions) (*exec.Cmd, func(), error) {
+	wrappedCommand, configFile, err := WrapCommandWithSandbox(command, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cleanup := func() {
+		if configFile != "" {
+			_ = os.Remove(configFile)
+		}
+	}
+
+	return exec.CommandContext(ctx, "/bin/sh", "-c", wrappedCommand), cleanup, nil // #nosec G204
 }
 
 // createReadinessCommand creates a shell command for Unix systems

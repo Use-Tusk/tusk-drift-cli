@@ -26,7 +26,11 @@ func (e *Executor) StartEnvironment() error {
 		_ = e.StopServer()
 		return fmt.Errorf("start service: %w", err)
 	}
-	logging.LogToService("✅ Service started")
+	if e.sandboxEnabled {
+		logging.LogToService("✅ Service started (🔒 secure sandbox)")
+	} else {
+		logging.LogToService("✅ Service started")
+	}
 
 	logging.LogToService("Waiting for SDK acknowledgement...")
 	if err := e.WaitForSDKAcknowledgement(); err != nil {

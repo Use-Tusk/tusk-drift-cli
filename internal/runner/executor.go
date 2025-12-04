@@ -34,6 +34,8 @@ type Executor struct {
 	OnTestCompleted   func(TestResult, Test)
 	suiteSpans        []*core.Span
 	cancelTests       context.CancelFunc
+	sandboxEnabled    bool
+	sandboxCleanup    func()
 }
 
 func NewExecutor() *Executor {

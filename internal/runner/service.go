@@ -41,7 +41,36 @@ func (e *Executor) StartService() error {
 	slog.Debug("Starting service", "command", cfg.Service.Start.Command)
 
 	ctx := context.Background()
-	e.serviceCmd = createServiceCommand(ctx, cfg.Service.Start.Command)
+
+	sandboxEnabled := IsSandboxAvailable()
+
+	if sandboxEnabled {
+		slog.Debug("Starting service with sandbox isolation")
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			cwd = "."
+		}
+
+		sandboxOpts := SandboxOptions{
+			Enabled:     true,
+			SocketPath:  e.server.GetSocketPath(),
+			ServicePort: cfg.Service.Port,
+			WorkDir:     cwd,
+		}
+
+		cmd, cleanup, err := createSandboxedServiceCommand(ctx, cfg.Service.Start.Command, sandboxOpts)
+		if err != nil {
+			return fmt.Errorf("failed to create sandboxed command: %w", err)
+		}
+
+		e.serviceCmd = cmd
+		e.sandboxEnabled = true
+		e.sandboxCleanup = cleanup
+	} else {
+		slog.Debug("Sandbox not available, starting service without sandbox isolation")
+		e.serviceCmd = createServiceCommand(ctx, cfg.Service.Start.Command)
+	}
 
 	// Set up process group so we can kill all child processes
 	setupProcessGroup(e.serviceCmd)
@@ -126,6 +155,11 @@ func (e *Executor) StopService() error {
 			slog.Debug("Process group kill completed with error", "error", err)
 		}
 		e.serviceCmd = nil
+	}
+
+	if e.sandboxCleanup != nil {
+		e.sandboxCleanup()
+		e.sandboxCleanup = nil
 	}
 
 	return nil
