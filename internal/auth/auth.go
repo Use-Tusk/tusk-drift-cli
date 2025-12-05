@@ -121,13 +121,16 @@ func (a *Authenticator) Login(c context.Context) error {
 		}
 
 		if a.RefreshToken != "" {
-			if err := a.refreshAccessToken(c); err != nil {
-				return err
+			if err := a.refreshAccessToken(c); err == nil {
+				if err := a.saveTokenFile(); err != nil {
+					return fmt.Errorf("write token file: %w", err)
+				}
+				return nil
 			}
-			if err := a.saveTokenFile(); err != nil {
-				return fmt.Errorf("write token file: %w", err)
-			}
-			return nil
+
+			// Refresh failed - clear the invalid token and fall through to device code flow
+			a.RefreshToken = ""
+			a.AccessToken = ""
 		}
 	}
 
