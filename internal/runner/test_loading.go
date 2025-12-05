@@ -55,16 +55,27 @@ func (e *Executor) LoadTestsFromTraceFile(path string) ([]Test, error) {
 	traceMap := make(map[string]*core.Span) // traceId -> representative span
 	filename := filepath.Base(path)
 
-	// Choose a representative span per trace for display (prefer root; skip pre-app-start)
+	// First pass: identify which traces have a root span
+	tracesWithRoot := make(map[string]bool)
+	for _, span := range spans {
+		if span.IsRootSpan {
+			tracesWithRoot[span.TraceId] = true
+		}
+	}
+
+	// Second pass: only add spans from traces that have a root span
 	for _, span := range spans {
 		if span.IsPreAppStart {
 			continue
 		}
 
-		if span.IsRootSpan || traceMap[span.TraceId] == nil {
-			traceMap[span.TraceId] = span
+		// Skip traces that don't have a root span
+		if !tracesWithRoot[span.TraceId] {
+			continue
 		}
-		if span.IsRootSpan && traceMap[span.TraceId] != nil {
+
+		// Prefer root span as representative
+		if span.IsRootSpan || traceMap[span.TraceId] == nil {
 			traceMap[span.TraceId] = span
 		}
 	}
