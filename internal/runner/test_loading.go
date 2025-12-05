@@ -20,11 +20,13 @@ func (e *Executor) LoadTestsFromFolder(folder string) ([]Test, error) {
 		}
 
 		if strings.HasSuffix(path, ".jsonl") {
-			traceTests, err := e.LoadTestsFromTraceFile(path)
+			test, err := e.LoadTestFromTraceFile(path)
 			if err != nil {
 				return err
 			}
-			tests = append(tests, traceTests...)
+			if test != nil {
+				tests = append(tests, *test)
+			}
 		}
 
 		return nil
@@ -39,48 +41,33 @@ func (e *Executor) LoadTestsFromFolder(folder string) ([]Test, error) {
 	return tests, nil
 }
 
-// LoadTestsFromTraceFile loads all tests from a trace file
-func (e *Executor) LoadTestsFromTraceFile(path string) ([]Test, error) {
+// LoadTestFromTraceFile loads a test from a trace file (one trace per file)
+func (e *Executor) LoadTestFromTraceFile(path string) (*Test, error) {
 	spans, err := utils.ParseSpansFromFile(path, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Group all spans by trace ID so each test can include full context (including pre-app-start)
-	fullByTrace := make(map[string][]*core.Span) // traceId -> spans
-	for _, s := range spans {
-		fullByTrace[s.TraceId] = append(fullByTrace[s.TraceId], s)
-	}
-
-	traceMap := make(map[string]*core.Span) // traceId -> representative span
 	filename := filepath.Base(path)
 
-	// Choose a representative span per trace for display (prefer root; skip pre-app-start)
+	// Find the root span
+	var rootSpan *core.Span
 	for _, span := range spans {
-		if span.IsPreAppStart {
-			continue
-		}
-
-		if span.IsRootSpan || traceMap[span.TraceId] == nil {
-			traceMap[span.TraceId] = span
-		}
-		if span.IsRootSpan && traceMap[span.TraceId] != nil {
-			traceMap[span.TraceId] = span
+		if span.IsRootSpan {
+			rootSpan = span
+			break
 		}
 	}
 
-	var tests []Test
-	for _, span := range traceMap {
-		test := spanToTest(span, filename)
-		// Attach full span set for this trace to enable suite/global matching locally
-		// This will be deduped in buildSuiteSpansForRun()
-		if all := fullByTrace[span.TraceId]; len(all) > 0 {
-			test.Spans = all
-		}
-		tests = append(tests, test)
+	// No root span means no test
+	if rootSpan == nil {
+		return nil, nil
 	}
 
-	return tests, nil
+	test := spanToTest(rootSpan, filename)
+	test.Spans = spans // All spans belong to the same trace
+
+	return &test, nil
 }
 
 func (e *Executor) LoadSpansForTrace(traceID string, filename string) ([]*core.Span, error) {

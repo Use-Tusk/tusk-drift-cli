@@ -199,11 +199,11 @@ func TestExecutorLoadTestsFromFolderPropagatesParseErrors(t *testing.T) {
 	assert.Nil(t, tests)
 }
 
-func TestExecutorLoadTestsFromTraceFileReturnsErrorOnMalformed(t *testing.T) {
+func TestExecutorLoadTestFromTraceFileReturnsErrorOnMalformed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.jsonl")
 	require.NoError(t, os.WriteFile(path, []byte("{bad"), 0o600))
 
-	_, err := (&Executor{}).LoadTestsFromTraceFile(path)
+	_, err := (&Executor{}).LoadTestFromTraceFile(path)
 	require.Error(t, err)
 }
 
