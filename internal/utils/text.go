@@ -26,14 +26,14 @@ func StripNoWrapMarker(text string) string {
 // ANSI color code regex pattern
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-// stripANSI removes ANSI escape sequences from a string
-func stripANSI(s string) string {
+// StripANSI removes ANSI escape sequences from a string
+func StripANSI(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")
 }
 
 // visibleLen returns the visible length of a string (excluding ANSI codes)
 func visibleLen(s string) int {
-	return len(stripANSI(s))
+	return len(StripANSI(s))
 }
 
 // WrapLine wraps a single line of text to the specified width, trying to break at word boundaries
@@ -140,7 +140,7 @@ func splitLongWord(word string, maxWidth int) []string {
 
 	// For simplicity with ANSI codes, we'll strip them, split, then try to preserve
 	// This is a basic implementation that works for most cases
-	stripped := stripANSI(word)
+	stripped := StripANSI(word)
 	if len(stripped) <= maxWidth {
 		return []string{word}
 	}
@@ -301,7 +301,7 @@ func formatJSONForDiff(v any) string {
 }
 
 func TruncateWithEllipsis(text string, maxWidth int) string {
-	visibleLength := runewidth.StringWidth(stripANSI(text))
+	visibleLength := runewidth.StringWidth(StripANSI(text))
 
 	if visibleLength <= maxWidth {
 		return text

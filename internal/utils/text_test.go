@@ -134,7 +134,7 @@ func TestFormatJSONDiff_DifferentValues(t *testing.T) {
 
 	for _, line := range lines {
 		// Strip both ANSI codes and the NoWrapMarker before checking
-		stripped := StripNoWrapMarker(stripANSI(line))
+		stripped := StripNoWrapMarker(StripANSI(line))
 		trimmed := strings.TrimSpace(stripped)
 
 		if strings.HasPrefix(trimmed, "-") && strings.Contains(line, "value1") {
@@ -175,7 +175,7 @@ func TestTruncateWithEllipsis_WithANSICodes(t *testing.T) {
 	text := red + "hello" + reset + " " + green + "world" + reset + " test"
 
 	got := TruncateWithEllipsis(text, 10)
-	visibleText := stripANSI(got)
+	visibleText := StripANSI(got)
 	assert.Equal(t, 10, len(visibleText), "visible length should be exactly maxWidth")
 	assert.True(t, strings.HasSuffix(visibleText, "..."), "should end with ellipsis")
 }
@@ -188,7 +188,7 @@ func TestTruncateWithEllipsis_UTF8MultibyteCharacters(t *testing.T) {
 
 	// When dealing with wide characters, we might not hit exactly maxWidth
 	// because we can't split a 2-column character
-	visibleLen := runewidth.StringWidth(stripANSI(got))
+	visibleLen := runewidth.StringWidth(StripANSI(got))
 	assert.LessOrEqual(t, visibleLen, 10, "visible length should not exceed maxWidth")
 	assert.GreaterOrEqual(t, visibleLen, 10-2, "visible length should be close to maxWidth (within 2 columns for wide chars)")
 
@@ -215,8 +215,8 @@ func TestTruncateWithEllipsis_ANSIAtTruncationPoint(t *testing.T) {
 	text := "hello" + red + " world" + reset
 
 	got := TruncateWithEllipsis(text, 8)
-	assert.True(t, strings.HasSuffix(stripANSI(got), "..."), "should end with ellipsis")
+	assert.True(t, strings.HasSuffix(StripANSI(got), "..."), "should end with ellipsis")
 
-	visibleText := stripANSI(got)
+	visibleText := StripANSI(got)
 	assert.Equal(t, 8, len(visibleText), "visible length should be maxWidth")
 }

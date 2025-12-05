@@ -625,7 +625,7 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "down":
+	case "up", "down", "j", "k":
 		cmd := m.testTable.Update(msg)
 
 		// Update log panel based on selection
@@ -637,7 +637,7 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 
 		return m, cmd
 
-	case "right":
+	case "right", "l":
 		m.viewMode = logNavigation
 		m.testTable.SetFocused(false)
 		m.logPanel.SetFocused(true)
@@ -659,19 +659,19 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 
 func (m *testExecutorModel) handleLogNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "down", "pgup", "pgdown", "g", "G":
+	case "up", "down", "pgup", "pgdown", "g", "G", "j", "k":
 		return m, m.logPanel.Update(msg)
 
 	case "y":
 		return m, m.copyLogsToClipboard()
 
-	case "c":
+	case "f":
 		m.viewMode = logCopyMode
 		m.copyModeViewport = viewport.Model{}
 
 		return m, nil
 
-	case "left", "esc":
+	case "left", "esc", "h":
 		m.viewMode = tableNavigation
 		m.testTable.SetFocused(true)
 		m.logPanel.SetFocused(false)
@@ -692,6 +692,14 @@ func (m *testExecutorModel) handleLogCopyMode(msg tea.KeyMsg) (tea.Model, tea.Cm
 		m.copyModeViewport, cmd = m.copyModeViewport.Update(msg)
 		return m, cmd
 
+	case "j":
+		m.copyModeViewport.ScrollDown(1)
+		return m, nil
+
+	case "k":
+		m.copyModeViewport.ScrollUp(1)
+		return m, nil
+
 	case "g":
 		m.copyModeViewport.GotoTop()
 
@@ -701,7 +709,7 @@ func (m *testExecutorModel) handleLogCopyMode(msg tea.KeyMsg) (tea.Model, tea.Cm
 	case "y":
 		return m, m.copyLogsToClipboard()
 
-	case "esc", "c":
+	case "esc", "f":
 		m.viewMode = logNavigation
 		return m, nil
 
@@ -716,11 +724,11 @@ func (m *testExecutorModel) handleLogCopyMode(msg tea.KeyMsg) (tea.Model, tea.Cm
 func (m *testExecutorModel) getFooterText() string {
 	switch m.viewMode {
 	case tableNavigation:
-		return "↑/↓: navigate • g: go to top • G: go to bottom • →: view logs • q: quit"
+		return "↑/↓/j/k: navigate • g: go to top • G: go to bottom • →/l: view logs • q: quit"
 	case logNavigation:
-		return "↑/↓: scroll logs • g: go to top • G: go to bottom • y: copy • c: full screen mode • ←/Esc: back to table • q: quit"
+		return "↑/↓/j/k: scroll • g: go to top • G: go to bottom • y: copy • f: full screen • ←/h/Esc: back to table • q: quit"
 	case logCopyMode:
-		return "FULL SCREEN MODE • g: go to top • G: go to bottom • y: copy • c/Esc: exit full screen • q: quit"
+		return "FULL SCREEN MODE • ↑/↓/j/k: scroll • g: go to top • G: go to bottom • y: copy • f/Esc: exit full screen • q: quit"
 	default:
 		return ""
 	}
