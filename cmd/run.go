@@ -731,12 +731,20 @@ func makeLoadTestsFunc(
 			case traceDir != "":
 				tests, err = executor.LoadTestsFromFolder(traceDir)
 			case traceFile != "":
-				tests, err = executor.LoadTestsFromTraceFile(traceFile)
+				var test *runner.Test
+				test, err = executor.LoadTestFromTraceFile(traceFile)
+				if test != nil {
+					tests = []runner.Test{*test}
+				}
 			case traceID != "":
 				var traceFilePath string
 				traceFilePath, err = utils.FindTraceFile(traceID, "")
 				if err == nil {
-					tests, err = executor.LoadTestsFromTraceFile(traceFilePath)
+					var test *runner.Test
+					test, err = executor.LoadTestFromTraceFile(traceFilePath)
+					if test != nil {
+						tests = []runner.Test{*test}
+					}
 				}
 			default:
 				tests, err = executor.LoadTestsFromFolder(utils.GetTracesDir())
