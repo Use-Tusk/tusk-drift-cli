@@ -48,6 +48,12 @@ func (lp *LogPanelComponent) Update(msg tea.Msg) tea.Cmd {
 			case "G":
 				lp.viewport.GotoBottom()
 				return nil
+			case "j":
+				lp.viewport.ScrollDown(1)
+				return nil
+			case "k":
+				lp.viewport.ScrollUp(1)
+				return nil
 			}
 		}
 
@@ -70,7 +76,7 @@ func (lp *LogPanelComponent) View(width, height int) string {
 		height = 10
 	}
 
-	lp.updateViewport()
+	lp.updateViewport(false)
 
 	viewportWidth := width - 4   // Account for borders (2) and padding (2)
 	viewportHeight := height - 3 // Space for title and borders
@@ -138,7 +144,7 @@ func (lp *LogPanelComponent) AddServiceLog(line string) {
 
 	// Update viewport if showing service logs
 	if lp.currentTestID == "" {
-		lp.updateViewport()
+		lp.updateViewport(true)
 	}
 }
 
@@ -159,7 +165,7 @@ func (lp *LogPanelComponent) AddTestLog(testID, line string) {
 
 	// Update viewport if showing this test's logs
 	if lp.currentTestID == testID {
-		lp.updateViewport()
+		lp.updateViewport(true)
 	}
 }
 
@@ -168,16 +174,18 @@ func (lp *LogPanelComponent) GetRawLogs() string {
 	lp.logMutex.RLock()
 	defer lp.logMutex.RUnlock()
 
+	var raw string
 	if lp.currentTestID == "" {
-		// Return unwrapped service logs
-		return strings.Join(lp.serviceLogs, "\n")
+		raw = strings.Join(lp.serviceLogs, "\n")
 	} else {
-		// Return unwrapped test logs
 		if logs, exists := lp.testLogs[lp.currentTestID]; exists {
-			return strings.Join(logs, "\n")
+			raw = strings.Join(logs, "\n")
+		} else {
+			return "No logs available for this test yet..."
 		}
-		return "No logs available for this test yet..."
 	}
+
+	return utils.StripANSI(utils.StripNoWrapMarker(raw))
 }
 
 func (lp *LogPanelComponent) SetCurrentTest(testID string) {
@@ -185,7 +193,7 @@ func (lp *LogPanelComponent) SetCurrentTest(testID string) {
 	defer lp.logMutex.Unlock()
 
 	lp.currentTestID = testID
-	lp.updateViewport()
+	lp.updateViewport(true)
 }
 
 func (lp *LogPanelComponent) SetFocused(focused bool) {
@@ -197,7 +205,7 @@ func (lp *LogPanelComponent) IsFocused() bool {
 	return lp.focused
 }
 
-func (lp *LogPanelComponent) updateViewport() {
+func (lp *LogPanelComponent) updateViewport(gotoBottom bool) {
 	var content string
 
 	wrapWidth := lp.viewport.Width - 4 // Subtract borders (2) and padding (2)
@@ -235,5 +243,7 @@ func (lp *LogPanelComponent) updateViewport() {
 	}
 
 	lp.viewport.SetContent(utils.StripNoWrapMarker(content))
-	lp.viewport.GotoBottom()
+	if gotoBottom {
+		lp.viewport.GotoBottom()
+	}
 }
