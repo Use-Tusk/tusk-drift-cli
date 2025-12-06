@@ -83,7 +83,7 @@ func (VerifyGitRepoStep) Description(m *Model) string {
 		return fmt.Sprintf("Found %d git remotes. Please select which one to use.", len(m.AvailableRemotes))
 	}
 	if m.Err != nil {
-		return fmt.Sprintf("Error detecting repository:\n%s", m.Err.Error())
+		return fmt.Sprintf("Error detecting repository: %s", m.Err.Error())
 	}
 	return "Checking current directory..."
 }
