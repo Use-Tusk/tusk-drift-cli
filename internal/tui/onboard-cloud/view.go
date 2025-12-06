@@ -108,6 +108,11 @@ func (m Model) View() string {
 					shouldShowError = false
 				}
 
+				if step.ID() == stepVerifyGitRepo {
+					// Description already shows the error
+					shouldShowError = false
+				}
+
 				if shouldShowError {
 					body.WriteString(styles.ErrorStyle.Render(fmt.Sprintf("Error: %s", m.Err.Error())) + "\n")
 				}
