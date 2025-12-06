@@ -79,6 +79,9 @@ func (VerifyGitRepoStep) Description(m *Model) string {
 		}
 		return fmt.Sprintf("✓ Found %s: %s/%s", repoType, m.GitRepoOwner, m.GitRepoName)
 	}
+	if len(m.AvailableRemotes) > 1 && m.Err == nil {
+		return fmt.Sprintf("Found %d git remotes. Please select which one to use.", len(m.AvailableRemotes))
+	}
 	if m.Err != nil {
 		return fmt.Sprintf("Error detecting repository:\n%s", m.Err.Error())
 	}
@@ -96,6 +99,10 @@ func (VerifyGitRepoStep) Help(m *Model) string {
 }
 
 func (VerifyGitRepoStep) ShouldAutoProcess(m *Model) bool {
+	// Don't auto-process if we need remote selection
+	if len(m.AvailableRemotes) > 1 && m.GitRepoOwner == "" {
+		return true
+	}
 	return m.Err == nil
 }
 
@@ -109,6 +116,85 @@ func (VerifyGitRepoStep) Execute(m *Model) tea.Cmd {
 		return func() tea.Msg { return stepCompleteMsg{} }
 	}
 	return nil
+}
+
+type SelectRemoteStep struct{ BaseStep }
+
+func (SelectRemoteStep) ID() onboardStep       { return stepSelectRemote }
+func (SelectRemoteStep) InputIndex() int       { return 0 }
+func (SelectRemoteStep) Heading(*Model) string { return "Select Git Remote" }
+
+func (SelectRemoteStep) Description(m *Model) string {
+	if len(m.AvailableRemotes) == 0 {
+		return "No remotes found."
+	}
+
+	desc := "Multiple git remotes found. Please select which one to use:\n\n"
+	names := getSortedRemoteNames(m.AvailableRemotes)
+	for i, name := range names {
+		url := m.AvailableRemotes[name]
+		desc += fmt.Sprintf("  %d. %s → %s\n", i+1, name, url)
+	}
+	desc += "\nEnter the number of the remote to use:"
+	return desc
+}
+
+func (SelectRemoteStep) Default(*Model) string { return "1" }
+
+func (SelectRemoteStep) Help(*Model) string {
+	return "enter: select • esc: quit"
+}
+
+func (SelectRemoteStep) ShouldSkip(m *Model) bool {
+	// Skip if:
+	// 1. We already have repo info (origin was found or only one remote)
+	// 2. There are no remotes (error case handled by VerifyGitRepoStep)
+	return m.GitRepoOwner != "" || len(m.AvailableRemotes) <= 1
+}
+
+func (SelectRemoteStep) SkipReason(m *Model) string {
+	if m.GitRepoOwner != "" {
+		return fmt.Sprintf("Using remote '%s'", m.SelectedRemoteName)
+	}
+	return ""
+}
+
+func (SelectRemoteStep) Validate(m *Model, input string) error {
+	num, err := strconv.Atoi(input)
+	if err != nil {
+		return fmt.Errorf("please enter a valid number")
+	}
+
+	if num < 1 || num > len(m.AvailableRemotes) {
+		return fmt.Errorf("please enter a number between 1 and %d", len(m.AvailableRemotes))
+	}
+
+	return nil
+}
+
+func (SelectRemoteStep) Apply(m *Model, input string) {
+	num, _ := strconv.Atoi(input)
+	names := getSortedRemoteNames(m.AvailableRemotes)
+	selectedName := names[num-1]
+	m.SelectedRemoteName = selectedName
+}
+
+func (SelectRemoteStep) Execute(m *Model) tea.Cmd {
+	if m.SelectedRemoteName != "" && m.GitRepoOwner == "" {
+		url := m.AvailableRemotes[m.SelectedRemoteName]
+		if err := detectRepoFromURL(m, url); err != nil {
+			m.Err = err
+			return nil
+		}
+		return func() tea.Msg { return stepCompleteMsg{} }
+	}
+	return nil
+}
+
+func (SelectRemoteStep) Clear(m *Model) {
+	m.SelectedRemoteName = ""
+	m.GitRepoOwner = ""
+	m.GitRepoName = ""
 }
 
 type SelectClientStep struct{ BaseStep }
@@ -522,6 +608,7 @@ func createFlow() *Flow {
 		IntroStep{},
 		ValidateConfigStep{},
 		VerifyGitRepoStep{},
+		SelectRemoteStep{},
 		SelectClientStep{},
 		VerifyRepoAccessStep{},
 		CreateObservableServiceStep{},
