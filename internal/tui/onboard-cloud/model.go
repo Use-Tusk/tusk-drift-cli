@@ -12,6 +12,7 @@ const (
 	stepIntro
 	stepLogin
 	stepVerifyGitRepo
+	stepSelectRemote
 	stepSelectClient
 	stepGithubAuth
 	stepVerifyRepoAccess
@@ -50,6 +51,8 @@ type Model struct {
 	NeedsCodeHostingAuth    bool
 	RepoAccessVerified      bool
 	RepoID                  int64
+	AvailableRemotes        map[string]string
+	SelectedRemoteName      string
 
 	// State - Observable Service
 	ServiceID      string

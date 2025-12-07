@@ -97,6 +97,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					currentStep.Clear(&m)
 				}
 
+				prevStep := m.flow.Current(m.stepIdx)
+				if prevStep != nil {
+					prevStep.Clear(&m)
+				}
+
 				// Clear errors
 				m.Err = nil
 				m.ValidationErr = nil

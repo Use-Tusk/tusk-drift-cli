@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
@@ -14,13 +15,57 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
-func getGitRemoteURL() (string, error) {
-	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
+func listGitRemotes() (map[string]string, error) {
+	cmd := exec.Command("git", "remote", "-v")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to get git remote: %w", err)
+		return nil, fmt.Errorf("failed to list git remotes: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+
+	output := strings.TrimSpace(string(out))
+	if output == "" {
+		return nil, fmt.Errorf("no git remotes configured")
+	}
+
+	remotes := make(map[string]string)
+	lines := strings.SplitSeq(output, "\n")
+
+	for line := range lines {
+		// Format: "name\turl (fetch|push)"
+		// We only care about fetch URLs
+		if !strings.Contains(line, "(fetch)") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			remotes[parts[0]] = parts[1]
+		}
+	}
+
+	if len(remotes) == 0 {
+		return nil, fmt.Errorf("no git remotes configured")
+	}
+
+	return remotes, nil
+}
+
+func getSortedRemoteNames(remotes map[string]string) []string {
+	names := make([]string, 0, len(remotes))
+	for name := range remotes {
+		names = append(names, name)
+	}
+
+	// Sort with "origin" first if it exists
+	sort.Slice(names, func(i, j int) bool {
+		if names[i] == "origin" {
+			return true
+		}
+		if names[j] == "origin" {
+			return false
+		}
+		return names[i] < names[j]
+	})
+	return names
 }
 
 func parseGitHubRepo(remoteURL string) (owner, repo string, isGitHub bool) {
@@ -207,11 +252,35 @@ Run these commands to initialize:
   git remote add origin <your-repo-url>`)
 	}
 
-	remoteURL, err := getGitRemoteURL()
+	remotes, err := listGitRemotes()
 	if err != nil {
-		return fmt.Errorf("failed to get git remote URL: %w", err)
+		return fmt.Errorf(`no git remotes configured.
+
+Please add a remote:
+  git remote add origin <your-repo-url>`)
 	}
 
+	m.AvailableRemotes = remotes
+
+	// If there's an "origin" remote, use it
+	if url, hasOrigin := remotes["origin"]; hasOrigin {
+		m.SelectedRemoteName = "origin"
+		return detectRepoFromURL(m, url)
+	}
+
+	if len(remotes) == 1 {
+		for name, url := range remotes {
+			m.SelectedRemoteName = name
+			return detectRepoFromURL(m, url)
+		}
+	}
+
+	// Multiple remotes without origin - need user selection
+	// Return nil to proceed to SelectRemoteStep
+	return nil
+}
+
+func detectRepoFromURL(m *Model, remoteURL string) error {
 	// Try GitHub first
 	owner, repo, isGitHub := parseGitHubRepo(remoteURL)
 	if isGitHub {
@@ -231,7 +300,6 @@ Run these commands to initialize:
 	}
 
 	// Fallback: check for platform-specific files/dirs
-	// This handles self-hosted GitHub/GitLab instances
 	if detectGitHubIndicators() {
 		owner, repo, err := parseGenericGitURL(remoteURL)
 		if err != nil {
