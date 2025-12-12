@@ -153,6 +153,10 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 					msg = fmt.Sprintf("Test caused server to crash: %s", r.Error)
 				}
 				tr.TestFailureMessage = &msg
+				r.Deviations = append(r.Deviations, Deviation{
+					Field:       "response",
+					Description: fmt.Sprintf("No response received: %s", msg),
+				})
 			case e != nil && e.server != nil && e.server.HasMockNotFoundEvents(r.TestID):
 				// Check if there were any mock-not-found events during replay
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_MOCK_NOT_FOUND
@@ -164,6 +168,10 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_NO_RESPONSE
 				tr.TestFailureReason = &reason
 				tr.TestFailureMessage = &r.Error
+				r.Deviations = append(r.Deviations, Deviation{
+					Field:       "response",
+					Description: fmt.Sprintf("No response received: %s", r.Error),
+				})
 			default:
 				// Response received but doesn't match expected
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_RESPONSE_MISMATCH

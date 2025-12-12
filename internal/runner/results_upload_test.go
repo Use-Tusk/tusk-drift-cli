@@ -526,6 +526,105 @@ func TestBuildTraceTestResultsProto_WithMockNotFound(t *testing.T) {
 	})
 }
 
+func TestBuildTraceTestResultsProto_WithNoResponse(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NO_RESPONSE with error creates deviation", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, _ := config.Get()
+		server, err := NewServer("test-service", &cfg.Service)
+		require.NoError(t, err)
+		defer func() { _ = server.Stop() }()
+
+		executor := &Executor{
+			server: server,
+		}
+
+		tests := []Test{
+			{TraceID: "trace-1", TraceTestID: "tt-1"},
+		}
+
+		results := []TestResult{
+			{
+				TestID: "trace-1",
+				Passed: false,
+				Error:  "context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+			},
+		}
+
+		protoResults := BuildTraceTestResultsProto(executor, results, tests)
+
+		require.Len(t, protoResults, 1)
+		result := protoResults[0]
+
+		assert.Equal(t, "tt-1", result.TraceTestId)
+		assert.False(t, result.TestSuccess)
+
+		require.NotNil(t, result.TestFailureReason)
+		assert.Equal(t, backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_NO_RESPONSE, *result.TestFailureReason)
+
+		require.NotNil(t, result.TestFailureMessage)
+		assert.Equal(t, "context deadline exceeded (Client.Timeout exceeded while awaiting headers)", *result.TestFailureMessage)
+
+		require.Len(t, result.SpanResults, 1, "Should have inbound span result with deviation")
+
+		inboundSpanResult := result.SpanResults[0]
+		require.Len(t, inboundSpanResult.Deviations, 1, "Should have exactly one deviation")
+		assert.Equal(t, "response", inboundSpanResult.Deviations[0].Field)
+		assert.Contains(t, inboundSpanResult.Deviations[0].Description, "No response received:")
+		assert.Contains(t, inboundSpanResult.Deviations[0].Description, "context deadline exceeded")
+	})
+
+	t.Run("NO_RESPONSE with crashed server creates deviation", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, _ := config.Get()
+		server, err := NewServer("test-service", &cfg.Service)
+		require.NoError(t, err)
+		defer func() { _ = server.Stop() }()
+
+		executor := &Executor{
+			server: server,
+		}
+
+		tests := []Test{
+			{TraceID: "trace-1", TraceTestID: "tt-1"},
+		}
+
+		results := []TestResult{
+			{
+				TestID:        "trace-1",
+				Passed:        false,
+				CrashedServer: true,
+				Error:         "server process exited unexpectedly",
+			},
+		}
+
+		protoResults := BuildTraceTestResultsProto(executor, results, tests)
+
+		require.Len(t, protoResults, 1)
+		result := protoResults[0]
+
+		assert.Equal(t, "tt-1", result.TraceTestId)
+		assert.False(t, result.TestSuccess)
+
+		require.NotNil(t, result.TestFailureReason)
+		assert.Equal(t, backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_NO_RESPONSE, *result.TestFailureReason)
+
+		require.NotNil(t, result.TestFailureMessage)
+		assert.Contains(t, *result.TestFailureMessage, "Test caused server to crash")
+
+		require.Len(t, result.SpanResults, 1, "Should have inbound span result with deviation")
+
+		inboundSpanResult := result.SpanResults[0]
+		require.Len(t, inboundSpanResult.Deviations, 1, "Should have exactly one deviation")
+		assert.Equal(t, "response", inboundSpanResult.Deviations[0].Field)
+		assert.Contains(t, inboundSpanResult.Deviations[0].Description, "No response received:")
+		assert.Contains(t, inboundSpanResult.Deviations[0].Description, "Test caused server to crash")
+	})
+}
+
 // Benchmarks
 func BenchmarkBuildTraceTestResultsProto(b *testing.B) {
 	tests := make([]Test, 100)
