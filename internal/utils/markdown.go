@@ -65,9 +65,15 @@ func RenderMarkdown(markdown string) string {
 	if err != nil {
 		return markdown
 	}
+
+	if styles.NoColor() || !IsTerminal() {
+		return markdown
+	}
+
 	rendered, err := renderer.Render(markdown)
 	if err != nil {
 		return markdown
 	}
+
 	return rendered
 }
