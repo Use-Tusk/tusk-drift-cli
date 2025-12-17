@@ -151,6 +151,10 @@ func (m *Model) saveConfig() error {
 	raw := []byte(buf.String())
 	data := formatYAMLWithBlankLines(raw)
 
+	// Prepend header comment with link to documentation
+	header := []byte("# Tusk Drift configuration\n# For all configuration options, see:\n# https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md\n\n")
+	data = append(header, data...)
+
 	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
