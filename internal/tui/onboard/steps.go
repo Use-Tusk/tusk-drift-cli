@@ -74,7 +74,7 @@ func (SDKCompatibilityStep) Description(*Model) string {
 
 Some dependencies may use one or more of these packages under the hood (e.g., your ORM may use PG).
 
-If your service uses other packages, submit an issue at https://github.com/Use-Tusk/drift-node-sdk/issues.
+If your service uses other packages or you're unsure, select "n" and we'll help you.
 
 Are the above packages compatible with your service? (y/n)`
 }
