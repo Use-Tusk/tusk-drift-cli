@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,6 +24,8 @@ var listContent string
 //go:embed short_docs/filter.md
 var filterContent string
 
+var listJSON bool
+
 var listCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List available traces for replay",
@@ -37,6 +41,7 @@ func init() {
 	listCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
 	listCmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "List trace tests from Tusk Drift Cloud")
 	listCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs if you start a test. Logs from the SDK will be present.")
+	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output trace list as JSON (non-interactive)")
 
 	listCmd.Flags().SortFlags = false
 }
@@ -162,6 +167,10 @@ func listTests(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if listJSON {
+		return outputTestsAsJSON(tests)
+	}
+
 	suiteOpts := runner.SuiteSpanOptions{
 		IsCloudMode: cloud,
 		Client:      client,
@@ -174,4 +183,44 @@ func listTests(cmd *cobra.Command, args []string) error {
 	}
 
 	return tui.ShowTestListWithExecutor(tests, executor, suiteOpts)
+}
+
+func outputTestsAsJSON(tests []runner.Test) error {
+	type testOutput struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Type        string `json:"type,omitempty"`
+		Method      string `json:"method,omitempty"`
+		Path        string `json:"path,omitempty"`
+		Status      string `json:"status,omitempty"`
+		DurationMs  int    `json:"duration_ms,omitempty"`
+		Environment string `json:"environment,omitempty"`
+		FileName    string `json:"file_name,omitempty"`
+	}
+
+	output := struct {
+		Count int          `json:"count"`
+		Tests []testOutput `json:"tests"`
+	}{
+		Count: len(tests),
+		Tests: make([]testOutput, 0, len(tests)),
+	}
+
+	for _, t := range tests {
+		output.Tests = append(output.Tests, testOutput{
+			ID:          t.TraceID,
+			Type:        t.DisplayType,
+			Name:        t.DisplayName,
+			Method:      t.Method,
+			Path:        t.Path,
+			Status:      t.Status,
+			DurationMs:  t.Duration,
+			Environment: t.Environment,
+			FileName:    t.FileName,
+		})
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(output)
 }
