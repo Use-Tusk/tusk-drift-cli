@@ -66,29 +66,27 @@ func NewMockMatcher(server *Server) *MockMatcher {
 	return &MockMatcher{server: server}
 }
 
-// FindBestMatch implements the priority matching algorithm for spans within a trace
-func (mm *MockMatcher) FindBestMatchInTrace(req *core.GetMockRequest, traceID string) (*core.Span, *backend.MatchLevel, error) {
+// FindBestMatchWithTracePriority implements the priority matching algorithm.
+// It first searches the current trace (Priorities 1-4), then checks suite-wide by value hash
+// (Priorities 5-6), then falls back to schema-based matching in the current trace (Priorities 7-10).
+func (mm *MockMatcher) FindBestMatchWithTracePriority(req *core.GetMockRequest, traceID string) (*core.Span, *backend.MatchLevel, error) {
 	filteredSpans := mm.server.GetSpansByPackageForTrace(traceID, req.OutboundSpan.PackageName)
 
-	if len(filteredSpans) == 0 {
-		return nil, nil, fmt.Errorf("no spans found for package name %s in trace %s", req.OutboundSpan.PackageName, traceID)
-	}
 	return mm.runPriorityMatchingWithTraceSpans(req, traceID, filteredSpans)
 }
 
 // FindBestMatchInSpans implements the priority matching algorithm for spans across a test suite
 func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, traceID string, spans []*core.Span) (*core.Span, *backend.MatchLevel, error) {
-	// Priorities 11–12 over the whole suite (value hash, then reduced value hash)
+	// Priorities 11–15 over the whole suite
 
 	requestIsPreAppStart := req.OutboundSpan.IsPreAppStart
 	inputValueHash := req.OutboundSpan.GetInputValueHash()
 
-	// Priority 10: Check global spans from Tusk Drift Cloud
+	// Priority 11: Check global spans from Tusk Drift Cloud
 	// TODO: not implemented
 
-	// Priority 11: Input value hash across suite (use index)
-	// Note: this is duplicate of Priority 5 in runPriorityMatchingWithTraceSpans but is needed here since
-	// we only call FindBestMatchAcrossTraces pre app start
+	// Priority 12: Input value hash across suite (use index)
+	// Note: This is duplicated in Priority 5 in runPriorityMatchingWithTraceSpans for all requests.
 	candidates := mm.server.GetSuiteSpansByValueHash(inputValueHash)
 	filteredCandidates := mm.filterByPreAppStart(candidates, requestIsPreAppStart)
 	if match := mm.findFirstUnused(filteredCandidates); match != nil {
@@ -106,7 +104,8 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 		}, nil
 	}
 
-	// Priority 12: Reduced input value hash across suite (use index)
+	// Priority 13: Reduced input value hash across suite (use index)
+	// Note: This is duplicated in Priority 6 in runPriorityMatchingWithTraceSpans for all requests.
 	reducedHash := reducedRequestValueHash(req)
 	reducedCandidates := mm.server.GetSuiteSpansByReducedValueHash(reducedHash)
 	filteredReducedCandidates := mm.filterByPreAppStart(reducedCandidates, requestIsPreAppStart)
@@ -135,7 +134,7 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 
 	requestData := reqToRequestData(req)
 
-	// Priority 13: Input schema hash across suite (use index + similarity scoring)
+	// Priority 14: Input schema hash across suite (use index + similarity scoring)
 	inputSchemaHash := req.OutboundSpan.GetInputSchemaHash()
 	schemaCandidates := mm.server.GetSuiteSpansBySchemaHash(inputSchemaHash)
 	filteredSchemaCandidates := mm.filterByPreAppStart(schemaCandidates, true)
@@ -163,7 +162,7 @@ func (mm *MockMatcher) FindBestMatchAcrossTraces(req *core.GetMockRequest, trace
 		}
 	}
 
-	// Priority 14: Reduced input schema hash across suite (use index + similarity scoring)
+	// Priority 15: Reduced input schema hash across suite (use index + similarity scoring)
 	reducedSchemaHash := reducedRequestSchemaHash(req)
 	reducedSchemaCandidates := mm.server.GetSuiteSpansByReducedSchemaHash(reducedSchemaHash)
 	filteredReducedSchemaCandidates := mm.filterByPreAppStart(reducedSchemaCandidates, true)
@@ -324,11 +323,38 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	}
 	slog.Debug("Priority 5 failed: No suite span by input value hash", "traceId", traceID)
 
-	// Priority 6-9: Schema-based matching still uses sortedSpans (by package)
+	// Priority 6: Reduced input value hash across suite
+	// Some requests (e.g., db auth) may only be recorded in certain traces. We check suite-wide
+	// by reduced value hash here to avoid incorrectly matching by schema hash in later priorities.
+	// Note: This is duplicated in Priority 13 in FindBestMatchAcrossTraces for pre-app-start requests.
+	slog.Debug("Trying Priority 6: Reduced input value hash across suite", "traceId", traceID)
+	suiteReducedValueHashCandidates := mm.server.GetSuiteSpansByReducedValueHash(reducedRequestValueHash(req))
+	filteredSuiteReducedValueHashCandidates := mm.filterByPreAppStart(suiteReducedValueHashCandidates, req.OutboundSpan.IsPreAppStart)
+	if match := mm.findFirstUnused(filteredSuiteReducedValueHashCandidates); match != nil {
+		slog.Debug("Found suite unused span by reduced input value hash", "spanName", match.Name)
+		mm.markSpanAsUsed(match)
+		return match, &backend.MatchLevel{
+			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
+			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+			MatchDescription: "Suite unused span by reduced input value hash",
+		}, nil
+	}
+	if match := mm.findFirstUsed(filteredSuiteReducedValueHashCandidates); match != nil {
+		slog.Debug("Found suite used span by reduced input value hash", "spanName", match.Name)
+		mm.markSpanAsUsed(match)
+		return match, &backend.MatchLevel{
+			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
+			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+			MatchDescription: "Suite used span by reduced input value hash",
+		}, nil
+	}
+	slog.Debug("Priority 6 failed: No suite span by reduced input value hash", "traceId", traceID)
+
+	// Priority 7-10: Schema-based matching still uses sortedSpans (by package)
 	// These don't have pre-computed hashes, so we keep the existing logic
 
-	// Priority 6: Unused span by input schema hash
-	slog.Debug("Trying Priority 6: Unused span by input schema hash", "traceId", traceID)
+	// Priority 7: Unused span by input schema hash
+	slog.Debug("Trying Priority 7: Unused span by input schema hash", "traceId", traceID)
 	if result := mm.findUnusedSpanByInputSchemaHash(requestData, sortedSpans, traceID); result.span != nil {
 		slog.Debug("Found unused span by input schema hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
@@ -339,10 +365,10 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 			result,
 		), nil
 	}
-	slog.Debug("Priority 6 failed: No unused span by input schema hash", "traceId", traceID)
+	slog.Debug("Priority 7 failed: No unused span by input schema hash", "traceId", traceID)
 
-	// Priority 7: Used span by input schema hash
-	slog.Debug("Trying Priority 7: Used span by input schema hash", "traceId", traceID)
+	// Priority 8: Used span by input schema hash
+	slog.Debug("Trying Priority 8: Used span by input schema hash", "traceId", traceID)
 	if result := mm.findUsedSpanByInputSchemaHash(requestData, sortedSpans, traceID); result.span != nil {
 		slog.Debug("Found used span by input schema hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
@@ -353,10 +379,10 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 			result,
 		), nil
 	}
-	slog.Debug("Priority 7 failed: No used span by input schema hash", "traceId", traceID)
+	slog.Debug("Priority 8 failed: No used span by input schema hash", "traceId", traceID)
 
-	// Priority 8: Unused span by reduced input schema hash
-	slog.Debug("Trying Priority 8: Unused span by reduced input schema hash", "traceId", traceID)
+	// Priority 9: Unused span by reduced input schema hash
+	slog.Debug("Trying Priority 9: Unused span by reduced input schema hash", "traceId", traceID)
 	if result := mm.findUnusedSpanByReducedInputSchemaHash(req, sortedSpans, traceID); result.span != nil {
 		slog.Debug("Found unused span by reduced input value hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
@@ -367,10 +393,10 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 			result,
 		), nil
 	}
-	slog.Debug("Priority 8 failed: No unused span by reduced input schema hash", "traceId", traceID)
+	slog.Debug("Priority 9 failed: No unused span by reduced input schema hash", "traceId", traceID)
 
-	// Priority 9: Used span by reduced input schema hash
-	slog.Debug("Trying Priority 9: Used span by reduced input schema hash", "traceId", traceID)
+	// Priority 10: Used span by reduced input schema hash
+	slog.Debug("Trying Priority 10: Used span by reduced input schema hash", "traceId", traceID)
 	if result := mm.findUsedSpanByReducedInputSchemaHash(req, sortedSpans, traceID); result.span != nil {
 		slog.Debug("Found used span by reduced input schema hash", "spanName", result.span.Name)
 		mm.markSpanAsUsed(result.span)
@@ -381,7 +407,7 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 			result,
 		), nil
 	}
-	slog.Debug("Priority 9 failed: No used span by reduced input schema hash", "traceId", traceID)
+	slog.Debug("Priority 10 failed: No used span by reduced input schema hash", "traceId", traceID)
 
 	return nil, nil, fmt.Errorf("no matching span found")
 }

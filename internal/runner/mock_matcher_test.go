@@ -75,7 +75,7 @@ func makeMockRequest(t *testing.T, pkg string, inputValueMap map[string]any, inp
 	}
 }
 
-func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
+func TestFindBestMatchWithTracePriority_InputValueHash_PrefersUnusedOldest(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
 
 	req := makeMockRequest(t, pkg, inputValueMap, inputSchema)
 
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -107,7 +107,7 @@ func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
 	assert.False(t, server.spanUsage[traceID]["s2"])
 	server.mu.RUnlock()
 
-	match2, level2, err := mm.FindBestMatchInTrace(req, traceID)
+	match2, level2, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match2)
 	require.NotNil(t, level2)
@@ -116,7 +116,7 @@ func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
 	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level2.MatchScope)
 
 	// Both used now; should fall back to used (earliest)
-	match3, level3, err := mm.FindBestMatchInTrace(req, traceID)
+	match3, level3, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match3)
 	require.NotNil(t, level3)
@@ -125,7 +125,7 @@ func TestFindBestMatchInTrace_InputValueHash_PrefersUnusedOldest(t *testing.T) {
 	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level3.MatchScope)
 }
 
-func TestFindBestMatchInTrace_ReducedInputValueHash_MatchesWhenDirectHashDiffers(t *testing.T) {
+func TestFindBestMatchWithTracePriority_ReducedInputValueHash_MatchesWhenDirectHashDiffers(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestFindBestMatchInTrace_ReducedInputValueHash_MatchesWhenDirectHashDiffers
 	// Sanity: direct hashes differ
 	assert.NotEqual(t, utils.GenerateDeterministicHash(inputRequestMap), utils.GenerateDeterministicHash(inputValueMap))
 
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -164,7 +164,7 @@ func TestFindBestMatchInTrace_ReducedInputValueHash_MatchesWhenDirectHashDiffers
 	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope)
 }
 
-func TestFindBestMatchInTrace_InputSchemaHash_WithHTTPShape(t *testing.T) {
+func TestFindBestMatchWithTracePriority_InputSchemaHash_WithHTTPShape(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestFindBestMatchInTrace_InputSchemaHash_WithHTTPShape(t *testing.T) {
 	// Ensure schema hashes equal
 	assert.Equal(t, span.InputSchemaHash, req.OutboundSpan.InputSchemaHash)
 
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -522,9 +522,9 @@ func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
 	assert.Equal(t, "sRS", result.span.SpanId)
 }
 
-// TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch tests that when multiple spans
+// TestFindBestMatchWithTracePriority_SimilarityScoring_PicksClosestMatch tests that when multiple spans
 // match on schema, the matcher picks the one with the closest input value using Levenshtein similarity
-func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) {
+func TestFindBestMatchWithTracePriority_SimilarityScoring_PicksClosestMatch(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -580,7 +580,7 @@ func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) 
 	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
 	// Both spans have same schema but different values
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -595,9 +595,9 @@ func TestFindBestMatchInTrace_SimilarityScoring_PicksClosestMatch(t *testing.T) 
 	assert.Contains(t, level.MatchDescription, "similarity:")
 }
 
-// TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp tests that when similarity
+// TestFindBestMatchWithTracePriority_SimilarityScoring_TiebreakByTimestamp tests that when similarity
 // scores are identical, the oldest span is picked
-func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T) {
+func TestFindBestMatchWithTracePriority_SimilarityScoring_TiebreakByTimestamp(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -638,7 +638,7 @@ func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T
 
 	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -647,9 +647,9 @@ func TestFindBestMatchInTrace_SimilarityScoring_TiebreakByTimestamp(t *testing.T
 	assert.Equal(t, "span-older", match.SpanId, "Should pick oldest span when similarity scores are identical")
 }
 
-// TestFindBestMatchInTrace_SimilarityScoring_NestedStructures tests similarity scoring
+// TestFindBestMatchWithTracePriority_SimilarityScoring_NestedStructures tests similarity scoring
 // with nested maps and arrays
-func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
+func TestFindBestMatchWithTracePriority_SimilarityScoring_NestedStructures(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -703,7 +703,7 @@ func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
 
 	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -712,9 +712,9 @@ func TestFindBestMatchInTrace_SimilarityScoring_NestedStructures(t *testing.T) {
 	assert.Equal(t, "span-user", match.SpanId, "Should pick the span with more similar nested structure")
 }
 
-// TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates tests that when multiple
+// TestFindBestMatchWithTracePriority_SimilarityScoring_ReturnsTop5Candidates tests that when multiple
 // candidates exist, the top 5 alternatives are returned with their scores
-func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing.T) {
+func TestFindBestMatchWithTracePriority_SimilarityScoring_ReturnsTop5Candidates(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -773,7 +773,7 @@ func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing
 
 	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -804,9 +804,9 @@ func TestFindBestMatchInTrace_SimilarityScoring_ReturnsTop5Candidates(t *testing
 	}
 }
 
-// TestFindBestMatchInTrace_SimilarityScoring_DeepNesting tests that similarity scoring works
+// TestFindBestMatchWithTracePriority_SimilarityScoring_DeepNesting tests that similarity scoring works
 // correctly beyond depth 5 by stringifying deeply nested structures
-func TestFindBestMatchInTrace_SimilarityScoring_DeepNesting(t *testing.T) {
+func TestFindBestMatchWithTracePriority_SimilarityScoring_DeepNesting(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
@@ -898,7 +898,7 @@ func TestFindBestMatchInTrace_SimilarityScoring_DeepNesting(t *testing.T) {
 
 	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
 
-	match, level, err := mm.FindBestMatchInTrace(req, traceID)
+	match, level, err := mm.FindBestMatchWithTracePriority(req, traceID)
 	require.NoError(t, err)
 	require.NotNil(t, match)
 	require.NotNil(t, level)
@@ -912,4 +912,187 @@ func TestFindBestMatchInTrace_SimilarityScoring_DeepNesting(t *testing.T) {
 	if len(level.TopCandidates) > 0 {
 		t.Logf("Next best: %s (score: %.4f)", level.TopCandidates[0].SpanId, level.TopCandidates[0].Score)
 	}
+}
+
+// TestFindBestMatchWithTracePriority_SuiteValueHash_MatchesAcrossTraces tests that Priority 5
+// (suite-wide value hash) finds matches from other traces when the current trace has no match
+func TestFindBestMatchWithTracePriority_SuiteValueHash_MatchesAcrossTraces(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "postgres"
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query": {},
+		},
+	}
+
+	// Request value - this is what we're looking for
+	requestValueMap := map[string]any{"query": "SELECT * FROM auth_tokens"}
+
+	// Span in a different trace with exact matching value
+	suiteSpan := makeSpan(t, "trace-other", "suite-span", pkg, requestValueMap, inputSchema, 1000)
+
+	// Span in current trace with different value (won't match on value hash)
+	currentTraceSpan := makeSpan(t, "trace-current", "current-span", pkg,
+		map[string]any{"query": "SELECT * FROM users"}, inputSchema, 2000)
+
+	// Load current trace spans
+	server.LoadSpansForTrace("trace-current", []*core.Span{currentTraceSpan})
+
+	// Set suite spans (includes span from other trace)
+	server.SetSuiteSpans([]*core.Span{suiteSpan, currentTraceSpan})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+
+	match, level, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should match the suite span from another trace via Priority 5
+	assert.Equal(t, "suite-span", match.SpanId, "Should find match from suite via Priority 5")
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope, "Suite match should have GLOBAL scope")
+}
+
+// TestFindBestMatchWithTracePriority_SuiteReducedValueHash_MatchesAcrossTraces tests that Priority 6
+// (suite-wide reduced value hash) finds matches when matchImportance:0 fields differ
+func TestFindBestMatchWithTracePriority_SuiteReducedValueHash_MatchesAcrossTraces(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "postgres"
+	matchImportanceZero := 0.0
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query":     {},
+			"timestamp": {MatchImportance: &matchImportanceZero}, // This field is ignored in reduced hash
+		},
+	}
+
+	// Request value with one timestamp
+	requestValueMap := map[string]any{
+		"query":     "SELECT * FROM auth_tokens",
+		"timestamp": "2025-01-01T00:00:00Z",
+	}
+
+	// Suite span with same query but different timestamp (should match via reduced hash)
+	suiteSpanValueMap := map[string]any{
+		"query":     "SELECT * FROM auth_tokens",
+		"timestamp": "2025-06-15T12:00:00Z",
+	}
+	suiteSpan := makeSpan(t, "trace-other", "suite-span", pkg, suiteSpanValueMap, inputSchema, 1000)
+
+	// Span in current trace with completely different query
+	currentTraceSpan := makeSpan(t, "trace-current", "current-span", pkg,
+		map[string]any{"query": "SELECT * FROM users", "timestamp": "2025-01-01T00:00:00Z"}, inputSchema, 2000)
+
+	server.LoadSpansForTrace("trace-current", []*core.Span{currentTraceSpan})
+	server.SetSuiteSpans([]*core.Span{suiteSpan, currentTraceSpan})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+
+	// Sanity check: exact value hashes should differ
+	assert.NotEqual(t, suiteSpan.InputValueHash, req.OutboundSpan.InputValueHash,
+		"Exact value hashes should differ due to timestamp")
+
+	match, level, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should match via Priority 6 (reduced value hash)
+	assert.Equal(t, "suite-span", match.SpanId, "Should find match from suite via Priority 6")
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope, "Suite match should have GLOBAL scope")
+}
+
+// TestFindBestMatchWithTracePriority_PrefersTraceOverSuite tests that trace-level matches
+// (Priorities 1-4) are preferred over suite-level matches (Priorities 5-6)
+func TestFindBestMatchWithTracePriority_PrefersTraceOverSuite(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "http"
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"method": {},
+			"path":   {},
+		},
+	}
+
+	requestValueMap := map[string]any{"method": "GET", "path": "/api/auth"}
+
+	// Both trace and suite have spans with exact matching value
+	traceSpan := makeSpan(t, "trace-current", "trace-span", pkg, requestValueMap, inputSchema, 2000)
+	suiteSpan := makeSpan(t, "trace-other", "suite-span", pkg, requestValueMap, inputSchema, 1000) // older
+
+	server.LoadSpansForTrace("trace-current", []*core.Span{traceSpan})
+	server.SetSuiteSpans([]*core.Span{suiteSpan, traceSpan})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+
+	match, level, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should prefer trace-level match (Priority 1) over suite-level (Priority 5)
+	assert.Equal(t, "trace-span", match.SpanId, "Should prefer trace match over suite match")
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope, "Trace match should have TRACE scope")
+}
+
+// TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed tests that Priority 5
+// prefers unused spans over used spans when matching from suite
+func TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	pkg := "http"
+	requestValueMap := map[string]any{"method": "GET", "path": "/api/data"}
+
+	// Two suite spans with same value
+	suiteSpan1 := makeSpan(t, "trace-A", "suite-first", pkg, requestValueMap, nil, 1000)
+	suiteSpan2 := makeSpan(t, "trace-B", "suite-second", pkg, requestValueMap, nil, 2000)
+
+	// Current trace has a span with different value (so it won't match via Priorities 1-4)
+	currentSpan := makeSpan(t, "trace-current", "current-span", pkg,
+		map[string]any{"method": "POST", "path": "/api/other"}, nil, 3000)
+	server.LoadSpansForTrace("trace-current", []*core.Span{currentSpan})
+
+	// Suite spans are indexed in the order provided
+	server.SetSuiteSpans([]*core.Span{suiteSpan1, suiteSpan2})
+
+	req := makeMockRequest(t, pkg, requestValueMap, nil)
+
+	// First match should get first unused (in index order)
+	match1, level1, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match1)
+	assert.Equal(t, "suite-first", match1.SpanId, "First match should be first unused in index")
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level1.MatchScope)
+
+	// Second match should get next unused
+	match2, level2, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match2)
+	assert.Equal(t, "suite-second", match2.SpanId, "Second match should be next unused")
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level2.MatchScope)
+
+	// Third match should fall back to used (first in index)
+	match3, level3, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match3)
+	assert.Equal(t, "suite-first", match3.SpanId, "Third match should fall back to first used")
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level3.MatchScope)
 }
