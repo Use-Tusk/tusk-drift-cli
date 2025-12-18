@@ -26,8 +26,11 @@ func RunOnboardingWizard() error {
 	}
 
 	m := &Model{
-		stepIdx: 0, // stepValidateRepo
-		inputs:  inputs,
+		stepIdx:           0, // stepValidateRepo
+		inputs:            inputs,
+		SamplingRate:      "1.0",
+		ReadinessTimeout:  "30s",
+		ReadinessInterval: "1s",
 	}
 	m.flow = NewFlow(stepsList())
 

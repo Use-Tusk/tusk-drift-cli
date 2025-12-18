@@ -8,7 +8,7 @@ func stepsList() []Step {
 		IntroStep{},
 		SDKCompatibilityStep{},
 		RecordingIntroStep{},
-		RecordingSamplingRateStep{},
+		// RecordingSamplingRateStep{},
 		ReplayIntroStep{},
 		DockerSetupStep{},
 		DockerTypeStep{},
@@ -17,8 +17,8 @@ func stepsList() []Step {
 		StartCommandStep{},
 		StopCommandStep{},
 		ReadinessCommandStep{},
-		ReadinessTimeoutStep{},
-		ReadinessIntervalStep{},
+		// ReadinessTimeoutStep{},
+		// ReadinessIntervalStep{},
 		ConfirmStep{},
 		DoneStep{},
 	}
@@ -58,13 +58,16 @@ func (SDKCompatibilityStep) Question(*Model) string {
 }
 
 func (SDKCompatibilityStep) Description(*Model) string {
+	// NOTE: make sure to use 2 spaces for indentation, NO tabs
 	return `Tusk Drift Node SDK currently supports:
   • HTTP/HTTPS: All versions (Node.js built-in)
+  • GRPC: @grpc/grpc-js@1.x (Outbound requests only)
   • PG: pg@8.x, pg-pool@2.x-3.x
-	• Firestore: @google-cloud/firestore@7.x
+  • Firestore: @google-cloud/firestore@7.x
   • Postgres: postgres@3.x
-  • MySQL: mysql2@3.x
+  • MySQL: mysql2@3.x, mysql@2.x
   • IORedis: ioredis@4.x-5.x
+  • Upstash Redis: @upstash/redis@1.x
   • GraphQL: graphql@15.x-16.x
   • JSON Web Tokens: jsonwebtoken@5.x-9.x
   • JWKS RSA: jwks-rsa@1.x-3.x
