@@ -896,7 +896,6 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	var span *core.Span
 	var matchLevel *backend.MatchLevel
 	var err error
-	scope := scopeUnknown
 
 	// If we have a test ID, try to find mock in the trace first
 	if testID != "" {
@@ -916,16 +915,15 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 			}
 		}
 
-		span, matchLevel, err = matcher.FindBestMatchInTrace(req, testID)
-		if err == nil {
-			scope = scopeTrace
-		}
+		span, matchLevel, err = matcher.FindBestMatchWithTracePriority(req, testID)
 	}
 
-	// If no match found in trace (or no testID), try global fallback
-	if span == nil {
+	// If no match found, try global fallback for pre-app-start requests or when no testID
+	// Note: Priority 12-13 are duplicates of 5-6, so we only need to call FindBestMatchAcrossTraces
+	// for pre-app-start requests (to try Priority 14-15 schema matching) or when there's no testID
+	if span == nil && (testID == "" || req.OutboundSpan.IsPreAppStart) {
 		if testID != "" {
-			slog.Debug("No mock found in current trace; attempting global fallback",
+			slog.Debug("No mock found in current trace; attempting global fallback for pre-app-start",
 				"testID", testID, "package", req.OutboundSpan.PackageName, "operation", req.Operation, "error", err)
 		} else {
 			slog.Debug("No test ID provided; searching global mocks",
@@ -944,44 +942,43 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 				)
 				span = globalSpan
 				matchLevel = globalMatchLevel
-				scope = scopeGlobal
-			}
-		}
-
-		if span == nil {
-			slog.Debug("No mock found",
-				"testID", testID,
-				"packageName", req.OutboundSpan.PackageName,
-				"operation", req.Operation,
-				"error", err)
-
-			if testID != "" {
-				logging.LogToCurrentTest(testID, "🔴 No mock found for request\n")
-				// Record that a mock was not found for this test
-				ms.recordMockNotFoundEvent(testID, MockNotFoundEvent{
-					PackageName: req.OutboundSpan.PackageName,
-					SpanName:    req.OutboundSpan.Name,
-					Operation:   req.Operation,
-					StackTrace:  req.StackTrace,
-					Timestamp:   time.Now(),
-					Error:       fmt.Sprintf("no mock found for %s %s: %v", req.Operation, req.OutboundSpan.Name, err),
-					ReplaySpan:  req.OutboundSpan,
-				})
-			}
-
-			return &core.GetMockResponse{
-				Found: false,
-				Error: fmt.Sprintf("no mock found for %s %s: %v", req.Operation, req.OutboundSpan.Name, err),
 			}
 		}
 	}
 
-	switch scope {
-	case scopeTrace:
+	if span == nil {
+		slog.Debug("No mock found",
+			"testID", testID,
+			"packageName", req.OutboundSpan.PackageName,
+			"operation", req.Operation,
+			"error", err)
+
+		if testID != "" {
+			logging.LogToCurrentTest(testID, "🔴 No mock found for request\n")
+			// Record that a mock was not found for this test
+			ms.recordMockNotFoundEvent(testID, MockNotFoundEvent{
+				PackageName: req.OutboundSpan.PackageName,
+				SpanName:    req.OutboundSpan.Name,
+				Operation:   req.Operation,
+				StackTrace:  req.StackTrace,
+				Timestamp:   time.Now(),
+				Error:       fmt.Sprintf("no mock found for %s %s: %v", req.Operation, req.OutboundSpan.Name, err),
+				ReplaySpan:  req.OutboundSpan,
+			})
+		}
+
+		return &core.GetMockResponse{
+			Found: false,
+			Error: fmt.Sprintf("no mock found for %s %s: %v", req.Operation, req.OutboundSpan.Name, err),
+		}
+	}
+
+	// Log based on actual match scope from MatchLevel
+	if matchLevel.MatchScope == backend.MatchScope_MATCH_SCOPE_TRACE {
 		if testID != "" {
 			logging.LogToCurrentTest(testID, "🟢 Found best match for request in trace\n")
 		}
-	case scopeGlobal:
+	} else if matchLevel.MatchScope == backend.MatchScope_MATCH_SCOPE_GLOBAL {
 		if testID != "" {
 			msg := "🟢 Found best match for request across traces\n"
 			if span != nil && span.IsPreAppStart {
@@ -989,8 +986,6 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 			}
 			logging.LogToCurrentTest(testID, msg)
 		}
-	default:
-		slog.Debug("Unknown match scope", "scope", scope)
 	}
 
 	// Record match event metadata for results output
