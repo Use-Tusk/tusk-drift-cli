@@ -72,9 +72,6 @@ func NewMockMatcher(server *Server) *MockMatcher {
 func (mm *MockMatcher) FindBestMatchWithTracePriority(req *core.GetMockRequest, traceID string) (*core.Span, *backend.MatchLevel, error) {
 	filteredSpans := mm.server.GetSpansByPackageForTrace(traceID, req.OutboundSpan.PackageName)
 
-	if len(filteredSpans) == 0 {
-		return nil, nil, fmt.Errorf("no spans found for package name %s in trace %s", req.OutboundSpan.PackageName, traceID)
-	}
 	return mm.runPriorityMatchingWithTraceSpans(req, traceID, filteredSpans)
 }
 
