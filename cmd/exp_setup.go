@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	expAPIKey string
-	expModel  string
+	expAPIKey          string
+	expModel           string
+	expSkipPermissions bool
 )
 
 var expCmd = &cobra.Command{
@@ -43,6 +44,7 @@ func init() {
 
 	expSetupCmd.Flags().StringVar(&expAPIKey, "api-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY env var)")
 	expSetupCmd.Flags().StringVar(&expModel, "model", "claude-sonnet-4-20250514", "Claude model to use")
+	expSetupCmd.Flags().BoolVar(&expSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
 }
 
 func runExpSetup(cmd *cobra.Command, args []string) error {
@@ -60,9 +62,10 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := agent.Config{
-		APIKey:  apiKey,
-		Model:   expModel,
-		WorkDir: workDir,
+		APIKey:          apiKey,
+		Model:           expModel,
+		WorkDir:         workDir,
+		SkipPermissions: expSkipPermissions,
 	}
 
 	a, err := agent.New(cfg)

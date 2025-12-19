@@ -31,10 +31,11 @@ const (
 
 // ToolDefinition is the single source of truth for a tool's metadata and implementation
 type ToolDefinition struct {
-	Name        ToolName
-	Description string
-	InputSchema json.RawMessage
-	Executor    ToolExecutor // Set at runtime via RegisterTools
+	Name                 ToolName
+	Description          string
+	InputSchema          json.RawMessage
+	Executor             ToolExecutor // Set at runtime via RegisterTools
+	RequiresConfirmation bool         // Whether this tool requires user confirmation by default
 }
 
 // ToolRegistry holds all tool definitions, keyed by name
@@ -132,6 +133,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				},
 				"required": ["path", "content"]
 			}`),
+			RequiresConfirmation: true,
 		},
 		ToolListDirectory: {
 			Name:        ToolListDirectory,
@@ -189,6 +191,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				},
 				"required": ["path", "search", "replace"]
 			}`),
+			RequiresConfirmation: true,
 		},
 		ToolRunCommand: {
 			Name:        ToolRunCommand,
@@ -207,6 +210,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				},
 				"required": ["command"]
 			}`),
+			RequiresConfirmation: true,
 		},
 		ToolStartBackgroundProcess: {
 			Name:        ToolStartBackgroundProcess,
@@ -226,6 +230,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				},
 				"required": ["command"]
 			}`),
+			RequiresConfirmation: true,
 		},
 		ToolStopBackgroundProcess: {
 			Name:        ToolStopBackgroundProcess,
@@ -307,6 +312,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				},
 				"required": ["method", "url"]
 			}`),
+			RequiresConfirmation: true,
 		},
 		ToolAskUser: {
 			Name:        ToolAskUser,
@@ -346,6 +352,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 					}
 				}
 			}`),
+			RequiresConfirmation: true,
 		},
 		ToolTransitionPhase: {
 			Name:        ToolTransitionPhase,

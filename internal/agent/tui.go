@@ -95,6 +95,12 @@ type (
 		responseCh chan bool
 	}
 
+	permissionRequestMsg struct {
+		toolName   string
+		preview    string
+		responseCh chan string // "approve", "approve_all", "deny"
+	}
+
 	// For graceful shutdown
 	shutdownStartedMsg struct{}
 	autoQuitMsg        struct{}
@@ -135,15 +141,21 @@ type TUIModel struct {
 	todoMutex    sync.RWMutex
 
 	// User input
-	userInputMode    bool
-	userInputPrompt  string
-	userInputBuffer  string
-	userInputCh      chan string
-	portConflictMode bool
-	portConflictPort int
-	portConflictCh   chan bool
-	rerunConfirmMode bool
-	rerunConfirmCh   chan bool
+	userInputMode        bool
+	userInputPrompt      string
+	userInputBuffer      string
+	userInputCh          chan string
+	portConflictMode     bool
+	portConflictPort     int
+	portConflictCh       chan bool
+	rerunConfirmMode     bool
+	rerunConfirmCh       chan bool
+	permissionMode       bool
+	permissionTool       string
+	permissionPreview    string
+	permissionCh         chan string
+	permissionDenyMode   bool   // Text input mode for "deny with alternative"
+	permissionDenyBuffer string // Buffer for alternative text
 
 	// UI state
 	viewport      viewport.Model
@@ -425,7 +437,17 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.userInputBuffer = ""
 		m.userInputCh = msg.responseCh
 		m.addLog("spacing", "", "")
-		m.addLog("agent", "🤖 "+msg.question, "")
+		// Wrap the question text for readability
+		maxWidth := min(max(m.width-8, 40), 120)
+		wrapped := wrapText(msg.question, maxWidth)
+		lines := strings.Split(wrapped, "\n")
+		for i, line := range lines {
+			if i == 0 {
+				m.addLog("agent", "🤖 "+line, "")
+			} else {
+				m.addLog("agent", "   "+line, "")
+			}
+		}
 
 	case portConflictMsg:
 		m.portConflictMode = true
@@ -445,6 +467,23 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addLog("plain", "If you'd like to rerun the setup from scratch, press [y].", "")
 		m.addLog("plain", "Otherwise, press [q] or [Esc] to exit.", "")
 		cmds = append(cmds, m.progress.SetPercent(1.0))
+
+	case permissionRequestMsg:
+		m.permissionMode = true
+		m.permissionTool = msg.toolName
+		m.permissionPreview = msg.preview
+		m.permissionCh = msg.responseCh
+		m.addLog("spacing", "", "")
+		displayName := getToolDisplayName(msg.toolName)
+		m.addLog("dim", fmt.Sprintf("🔐 Permission required: %s", displayName), "")
+		// Show the preview on a separate line for clarity
+		if msg.preview != "" {
+			for _, line := range strings.Split(msg.preview, "\n") {
+				if strings.TrimSpace(line) != "" {
+					m.addLog("dim", "   "+line, "")
+				}
+			}
+		}
 
 	case errorMsg:
 		m.hasError = true
@@ -614,6 +653,86 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.rerunConfirmCh <- false
 			}
 			m.rerunConfirmMode = false
+			return m, m.initiateShutdown()
+		}
+		return m, nil
+	}
+
+	if m.permissionDenyMode {
+		switch msg.String() {
+		case "enter":
+			alternative := strings.TrimSpace(m.permissionDenyBuffer)
+			if alternative == "" {
+				// Don't allow empty - must provide alternative
+				return m, nil
+			}
+			if m.permissionCh != nil {
+				m.permissionCh <- "deny:" + alternative
+				m.addLog("dim", "   → "+alternative, "")
+			}
+			m.permissionDenyMode = false
+			m.permissionMode = false
+			m.permissionDenyBuffer = ""
+			return m, nil
+		case "backspace":
+			if len(m.permissionDenyBuffer) > 0 {
+				m.permissionDenyBuffer = m.permissionDenyBuffer[:len(m.permissionDenyBuffer)-1]
+			}
+			return m, nil
+		case "esc":
+			// Go back to permission prompt
+			m.permissionDenyMode = false
+			m.permissionDenyBuffer = ""
+			return m, nil
+		case "ctrl+c":
+			if m.permissionCh != nil {
+				m.permissionCh <- "deny"
+			}
+			m.permissionDenyMode = false
+			m.permissionMode = false
+			m.permissionDenyBuffer = ""
+			return m, m.initiateShutdown()
+		default:
+			if len(msg.String()) == 1 {
+				m.permissionDenyBuffer += msg.String()
+			}
+			return m, nil
+		}
+	}
+
+	if m.permissionMode {
+		switch msg.String() {
+		case "y", "Y":
+			if m.permissionCh != nil {
+				m.permissionCh <- "approve"
+			}
+			m.permissionMode = false
+			m.addLog("dim", "   ✓ Approved", "")
+			return m, nil
+		case "a", "A":
+			if m.permissionCh != nil {
+				m.permissionCh <- "approve_all"
+			}
+			m.permissionMode = false
+			m.addLog("dim", "   ✓ Approved (skipping future prompts)", "")
+			return m, nil
+		case "n", "N":
+			// Switch to deny mode with text input for alternative
+			m.permissionDenyMode = true
+			m.permissionDenyBuffer = ""
+			return m, nil
+		case "esc":
+			if m.permissionCh != nil {
+				m.permissionCh <- "deny"
+			}
+			m.permissionMode = false
+			m.addLog("dim", "   ✗ Denied", "")
+			return m, nil
+		case "ctrl+c":
+			if m.permissionCh != nil {
+				m.permissionCh <- "deny"
+			}
+			m.permissionMode = false
 			return m, m.initiateShutdown()
 		}
 		return m, nil
@@ -928,6 +1047,20 @@ func (m *TUIModel) renderFooter() string {
 	case m.rerunConfirmMode:
 		helpText = components.Footer(m.width, "y: rerun setup • q/Esc: exit")
 		return helpText
+	case m.permissionDenyMode:
+		inputStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("86")).
+			Bold(true)
+		prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render("Suggest alternative: ")
+		inputLine := prompt + inputStyle.Render(m.permissionDenyBuffer+"▌")
+		helpText = components.Footer(m.width, "Enter: submit • Esc: back")
+		return inputLine + "\n" + helpText
+	case m.permissionMode:
+		displayName := getToolDisplayName(m.permissionTool)
+		prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(
+			fmt.Sprintf("Allow %s?", displayName))
+		helpText = components.Footer(m.width, "y: approve • a: approve all • n: deny & suggest alternative • Ctrl+C: cancel")
+		return prompt + "\n" + helpText
 	case m.completed:
 		helpText = components.Footer(m.width, "q/Esc: quit")
 	case m.shutdownRequested:
@@ -1113,6 +1246,20 @@ func (m *TUIModel) RequestUserInput(program *tea.Program, question string) strin
 		return response
 	case <-m.ctx.Done():
 		return ""
+	}
+}
+
+// RequestPermission asks the user for permission to execute a tool.
+// Returns "approve", "approve_all", or "deny".
+func (m *TUIModel) RequestPermission(program *tea.Program, toolName string, preview string) string {
+	responseCh := make(chan string, 1)
+	program.Send(permissionRequestMsg{toolName: toolName, preview: preview, responseCh: responseCh})
+
+	select {
+	case response := <-responseCh:
+		return response
+	case <-m.ctx.Done():
+		return "deny"
 	}
 }
 

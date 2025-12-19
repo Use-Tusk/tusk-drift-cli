@@ -52,6 +52,8 @@ type Agent struct {
 	totalTokensIn  int
 	totalTokensOut int
 
+	skipPermissions bool
+
 	// TUI
 	tuiModel *TUIModel
 	program  *tea.Program
@@ -71,12 +73,13 @@ func New(cfg Config) (*Agent, error) {
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 
 	return &Agent{
-		client:         client,
-		allTools:       tools,
-		executors:      executors,
-		phaseManager:   phaseMgr,
-		processManager: pm,
-		workDir:        cfg.WorkDir,
+		client:          client,
+		allTools:        tools,
+		executors:       executors,
+		phaseManager:    phaseMgr,
+		processManager:  pm,
+		workDir:         cfg.WorkDir,
+		skipPermissions: cfg.SkipPermissions,
 	}, nil
 }
 
@@ -484,6 +487,41 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 			}
 		}
 
+		// Check if tool requires permission
+		if !a.skipPermissions {
+			if toolDef := GetRegistry().Get(ToolName(c.Name)); toolDef != nil && toolDef.RequiresConfirmation {
+				preview := formatToolPreview(c.Name, inputStr)
+				response := a.tuiModel.RequestPermission(a.program, c.Name, preview)
+
+				switch {
+				case response == "approve":
+					// Continue with execution
+				case response == "approve_all":
+					a.skipPermissions = true
+					// Continue with execution
+				case response == "deny":
+					a.tuiModel.SendToolComplete(a.program, c.Name, false, "User denied permission")
+					results = append(results, Content{
+						Type:      "tool_result",
+						ToolUseID: c.ID,
+						Content:   "Error: User denied permission for this action. Please try a different approach.",
+						IsError:   true,
+					})
+					continue
+				case strings.HasPrefix(response, "deny:"):
+					alternative := strings.TrimPrefix(response, "deny:")
+					a.tuiModel.SendToolComplete(a.program, c.Name, false, "User suggested alternative")
+					results = append(results, Content{
+						Type:      "tool_result",
+						ToolUseID: c.ID,
+						Content:   fmt.Sprintf("User denied this action and suggested: %s\n\nPlease follow the user's suggestion instead.", alternative),
+						IsError:   true,
+					})
+					continue
+				}
+			}
+		}
+
 		executor, ok := a.executors[c.Name]
 		if !ok {
 			a.tuiModel.SendToolComplete(a.program, c.Name, false, "unknown tool")
@@ -666,6 +704,45 @@ func isPortInUse(port int) bool {
 func killProcessOnPort(port int) error {
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("lsof -ti:%d | xargs kill -9 2>/dev/null || true", port)) //nolint:gosec // Port is an integer, safe to interpolate
 	return cmd.Run()
+}
+
+// formatToolPreview creates a human-readable preview of a tool's input for permission prompts
+func formatToolPreview(toolName, input string) string {
+	var params map[string]interface{}
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return input
+	}
+
+	switch toolName {
+	case "run_command", "start_background_process":
+		if cmd, ok := params["command"].(string); ok {
+			return fmt.Sprintf("> %s", cmd)
+		}
+	case "write_file":
+		if path, ok := params["path"].(string); ok {
+			if content, ok := params["content"].(string); ok {
+				lines := strings.Count(content, "\n") + 1
+				return fmt.Sprintf("Write to %s (%d lines)", path, lines)
+			}
+			return fmt.Sprintf("Write to %s", path)
+		}
+	case "patch_file":
+		if path, ok := params["path"].(string); ok {
+			return fmt.Sprintf("Edit %s", path)
+		}
+	case "http_request":
+		method := "GET"
+		if m, ok := params["method"].(string); ok {
+			method = m
+		}
+		if url, ok := params["url"].(string); ok {
+			return fmt.Sprintf("%s %s", method, url)
+		}
+	case "tusk_run":
+		return "Run trace tests"
+	}
+
+	return ""
 }
 
 // extractSidebarInfo parses tool inputs to extract useful info for the sidebar

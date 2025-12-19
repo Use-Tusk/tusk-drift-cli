@@ -90,9 +90,10 @@ type PhaseError struct {
 
 // Config holds agent configuration
 type Config struct {
-	APIKey       string
-	Model        string
-	SystemPrompt string
-	MaxTokens    int
-	WorkDir      string
+	APIKey          string
+	Model           string
+	SystemPrompt    string
+	MaxTokens       int
+	WorkDir         string
+	SkipPermissions bool
 }
