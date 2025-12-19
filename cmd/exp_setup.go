@@ -15,9 +15,10 @@ var (
 )
 
 var expCmd = &cobra.Command{
-	Use:   "exp",
-	Short: "Experimental commands",
-	Long:  "Experimental commands that are under development.",
+	Use:    "exp",
+	Short:  "Experimental commands",
+	Long:   "Experimental commands that are under development.",
+	Hidden: true,
 }
 
 var expSetupCmd = &cobra.Command{
