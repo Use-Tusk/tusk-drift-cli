@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -252,7 +251,7 @@ func (pt *ProcessTools) StartBackground(input json.RawMessage) (string, error) {
 	cmd.Env = env
 
 	// Start process in its own process group so we can kill all children
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setSysProcAttr(cmd)
 
 	// Capture output
 	stdout := NewRingBuffer(1000)
@@ -324,19 +323,7 @@ func (pt *ProcessTools) StopBackground(input json.RawMessage) (string, error) {
 	delete(pt.pm.processes, params.Handle)
 	pt.pm.mu.Unlock()
 
-	// Kill the entire process group (negative PID) to ensure all children are killed
-	if mp.cmd.Process != nil {
-		pgid := mp.cmd.Process.Pid
-		// Send SIGTERM to the process group
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-		select {
-		case <-mp.done:
-		case <-time.After(5 * time.Second):
-			// Force kill the process group
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
-			<-mp.done
-		}
-	}
+	killProcessGroup(mp)
 
 	return fmt.Sprintf("Stopped process %s", params.Handle), nil
 }
@@ -435,16 +422,7 @@ func (pm *ProcessManager) StopAll() {
 	defer pm.mu.Unlock()
 
 	for handle, mp := range pm.processes {
-		if mp.cmd.Process != nil {
-			pgid := mp.cmd.Process.Pid
-			// Kill the entire process group to ensure all children are killed
-			_ = syscall.Kill(-pgid, syscall.SIGTERM)
-			select {
-			case <-mp.done:
-			case <-time.After(2 * time.Second):
-				_ = syscall.Kill(-pgid, syscall.SIGKILL)
-			}
-		}
+		killProcessGroupImmediate(mp)
 		delete(pm.processes, handle)
 	}
 }
