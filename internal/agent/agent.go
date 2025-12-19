@@ -1,0 +1,1005 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+const progressFileName = "PROGRESS.md"
+
+// Timeouts
+const (
+	PhaseTimeout         = 15 * time.Minute // Max time per phase
+	APITimeout           = 5 * time.Minute  // Max time for a single API call
+	ToolTimeout          = 3 * time.Minute  // Max time for a single tool execution
+	DefaultMaxIterations = 50               // Default max iterations if phase doesn't specify
+	MaxTotalTokens       = 500000           // Max total tokens before warning
+	MaxAPIRetries        = 3                // Max retries for API errors
+)
+
+// Error messages
+const (
+	ErrMaxIterations = "exceeded maximum iterations without completing phase"
+	ErrMaxTokens     = "exceeded maximum token usage"
+)
+
+// RecoveryGuidance returns a message explaining how to resume after a failure
+func RecoveryGuidance() string {
+	return `Progress has been saved to .tusk/PROGRESS.md
+Run 'tusk exp init' again to continue where you left off.
+
+If issues persist, contact support@usetusk.ai`
+}
+
+// Agent orchestrates the AI-powered setup process
+type Agent struct {
+	client         *ClaudeClient
+	allTools       []Tool
+	executors      map[string]ToolExecutor
+	phaseManager   *PhaseManager
+	processManager *ProcessManager
+	workDir        string
+	totalTokensIn  int
+	totalTokensOut int
+
+	// TUI
+	tuiModel *TUIModel
+	program  *tea.Program
+	ctx      context.Context
+	cancel   context.CancelFunc
+}
+
+// New creates a new Agent
+func New(cfg Config) (*Agent, error) {
+	client, err := NewClaudeClient(cfg.APIKey, cfg.Model)
+	if err != nil {
+		return nil, err
+	}
+
+	pm := NewProcessManager(cfg.WorkDir)
+	phaseMgr := NewPhaseManager()
+	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
+
+	return &Agent{
+		client:         client,
+		allTools:       tools,
+		executors:      executors,
+		phaseManager:   phaseMgr,
+		processManager: pm,
+		workDir:        cfg.WorkDir,
+	}, nil
+}
+
+// Run executes the agent with TUI
+func (a *Agent) Run(parentCtx context.Context) error {
+	// Create cancellable context
+	a.ctx, a.cancel = context.WithCancel(parentCtx)
+	defer a.cancel()
+
+	a.tuiModel = NewTUIModel(a.ctx, a.cancel)
+	a.program = tea.NewProgram(a.tuiModel, tea.WithAltScreen())
+
+	// Run agent in background
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.runAgent()
+	}()
+
+	// Run TUI (blocks until quit)
+	finalModel, err := a.program.Run()
+	if err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	// Print final output so user can see what happened
+	if tm, ok := finalModel.(*TUIModel); ok {
+		fmt.Println(tm.GetFinalOutput())
+	}
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
+		return nil
+	}
+}
+
+func (a *Agent) runAgent() error {
+	defer a.cleanup()
+
+	// Track completed phases for progress file
+	var completedPhases []string
+
+	// Check for existing progress and skip to the appropriate phase
+	existingProgress := a.readProgress()
+	if existingProgress != "" {
+		a.phaseManager.SetPreviousProgress(existingProgress)
+
+		discoveredInfo := parseDiscoveredInfo(existingProgress)
+		if len(discoveredInfo) > 0 {
+			a.phaseManager.RestoreDiscoveredInfo(discoveredInfo)
+		}
+		setupProgress := parseSetupProgress(existingProgress)
+		if len(setupProgress) > 0 {
+			a.phaseManager.RestoreSetupProgress(setupProgress)
+		}
+
+		a.updateSidebarFromState()
+
+		// Parse completed phases and skip ahead
+		previouslyCompleted := parseCompletedPhases(existingProgress)
+		if len(previouslyCompleted) > 0 {
+			completedPhases = previouslyCompleted
+
+			// Check if setup is already complete (Summary phase completed)
+			allPhases := a.phaseManager.GetPhaseNames()
+			lastPhase := allPhases[len(allPhases)-1]
+			for _, p := range previouslyCompleted {
+				if p == lastPhase {
+					// Setup is already complete - ask user if they want to rerun
+					responseCh := make(chan bool)
+					a.tuiModel.SendRerunConfirm(a.program, responseCh)
+
+					select {
+					case rerun := <-responseCh:
+						if rerun {
+							// Start fresh - delete progress and report files
+							a.deleteProgress()
+							_ = os.Remove(filepath.Join(a.workDir, ".tusk", "SETUP_REPORT.md"))
+							completedPhases = nil
+							a.phaseManager = NewPhaseManager()
+							a.tuiModel.SendAgentText(a.program, "Starting fresh setup...\n", false)
+						} else {
+							return nil
+						}
+					case <-a.ctx.Done():
+						return fmt.Errorf("interrupted")
+					}
+					break
+				}
+			}
+
+			// If we haven't reset, check for next phase to resume
+			if len(completedPhases) > 0 {
+				nextPhase := a.findNextPhaseToRun(completedPhases)
+				if nextPhase != "" {
+					if a.phaseManager.SkipToPhase(nextPhase) {
+						a.tuiModel.SendAgentText(a.program, fmt.Sprintf("Resuming from phase: %s (skipping %d completed phases)\n", nextPhase, len(completedPhases)), false)
+					}
+				}
+			}
+		}
+	}
+
+	// Run through phases
+	for !a.phaseManager.IsComplete() {
+		select {
+		case <-a.ctx.Done():
+			// Save progress before exiting
+			phase := a.phaseManager.CurrentPhase()
+			phaseName := ""
+			if phase != nil {
+				phaseName = phase.Name
+			}
+			_ = a.saveProgress(completedPhases, phaseName, "Agent was interrupted.")
+			return fmt.Errorf("interrupted")
+		default:
+		}
+
+		phase := a.phaseManager.CurrentPhase()
+		if phase == nil {
+			break
+		}
+
+		// Notify TUI of phase change
+		phaseIdx := a.phaseManager.currentIdx + 1
+		a.tuiModel.SendPhaseChange(a.program, phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
+
+		// Run phase with timeout
+		phaseCtx, phaseCancel := context.WithTimeout(a.ctx, PhaseTimeout)
+		err := a.runPhase(phaseCtx, phase)
+		phaseCancel()
+
+		if err != nil {
+			if a.ctx.Err() != nil {
+				_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Agent was interrupted during %s phase.", phase.Name))
+				return fmt.Errorf("interrupted")
+			}
+
+			if phase.Required {
+				_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Phase failed with error: %v", err))
+
+				// Fatal error for required phases - will auto-quit
+				a.tuiModel.SendFatalError(a.program, err)
+				time.Sleep(100 * time.Millisecond)
+				return fmt.Errorf("required phase %s failed: %w", phase.Name, err)
+			}
+
+			// Non-fatal error for optional phases
+			a.tuiModel.SendError(a.program, err)
+
+			// Skip to next phase for optional phases
+			_, _ = a.phaseManager.AdvancePhase()
+		} else {
+			completedPhases = append(completedPhases, phase.Name)
+			nextPhase := a.phaseManager.CurrentPhase()
+			nextPhaseName := ""
+			if nextPhase != nil {
+				nextPhaseName = nextPhase.Name
+			}
+			_ = a.saveProgress(completedPhases, nextPhaseName, "")
+		}
+	}
+
+	_ = a.saveProgress(completedPhases, "", "Setup completed successfully.")
+
+	a.tuiModel.SendCompleted(a.program)
+	time.Sleep(500 * time.Millisecond)
+
+	return nil
+}
+
+func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
+	systemPrompt := a.buildSystemPrompt(phase)
+	tools := FilterToolsForPhase(a.allTools, phase)
+
+	messages := []Message{
+		{
+			Role: "user",
+			Content: []Content{{
+				Type: "text",
+				Text: fmt.Sprintf("Please proceed with the %s phase. The working directory is: %s\n\nCurrent state:\n%s",
+					phase.Name, a.workDir, a.phaseManager.StateAsContext()),
+			}},
+		},
+	}
+
+	a.phaseManager.ResetTransitionFlag()
+	apiErrorCount := 0
+
+	maxIterations := phase.MaxIterations
+	if maxIterations <= 0 {
+		maxIterations = DefaultMaxIterations
+	}
+
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		a.tuiModel.SendThinking(a.program, true)
+
+		var streamedText strings.Builder
+
+		apiCtx, apiCancel := context.WithTimeout(ctx, APITimeout)
+		resp, err := a.client.CreateMessageStreaming(apiCtx, systemPrompt, messages, tools, func(event StreamEvent) {
+			switch event.Type {
+			case "text":
+				streamedText.WriteString(event.Text)
+				a.tuiModel.SendAgentText(a.program, streamedText.String(), true)
+			case "tool_use_start":
+				// Don't show tool start here - wait for full input
+			}
+		})
+		apiCancel()
+
+		a.tuiModel.SendThinking(a.program, false)
+
+		if err != nil {
+			apiErrorCount++
+			errMsg := err.Error()
+
+			// If error is recoverable, retry with backoff
+			// Log the error and let the agent try again
+			if apiErrorCount < MaxAPIRetries && isRecoverableAPIError(errMsg) {
+				a.tuiModel.SendError(a.program, fmt.Errorf("API error (retrying): %s", errMsg))
+				messages = append(messages, Message{
+					Role: "user",
+					Content: []Content{{
+						Type: "text",
+						Text: fmt.Sprintf("There was an API error: %s. Please try again with a simpler approach.", errMsg),
+					}},
+				})
+
+				time.Sleep(time.Duration(apiErrorCount) * time.Second)
+				continue
+			}
+
+			return fmt.Errorf("API error: %w", err)
+		}
+
+		apiErrorCount = 0 // Reset on success
+		a.totalTokensIn += resp.Usage.InputTokens
+		a.totalTokensOut += resp.Usage.OutputTokens
+
+		// Clean up content - ensure all tool_use have valid Input
+		cleanedContent := cleanupContent(resp.Content)
+
+		messages = append(messages, Message{
+			Role:    "assistant",
+			Content: cleanedContent,
+		})
+
+		for _, content := range cleanedContent {
+			if content.Type == "text" && strings.TrimSpace(content.Text) != "" {
+				a.tuiModel.SendAgentText(a.program, content.Text, false)
+			}
+		}
+
+		if a.phaseManager.HasTransitioned() {
+			return nil
+		}
+
+		if resp.StopReason == "end_turn" {
+			messages = append(messages, Message{
+				Role: "user",
+				Content: []Content{{
+					Type: "text",
+					Text: "Please continue with the current phase, or if you've completed the objectives, call transition_phase to move to the next phase.",
+				}},
+			})
+			continue
+		}
+
+		if resp.StopReason == "tool_use" {
+			toolResults, err := a.executeToolCalls(ctx, cleanedContent)
+			if err != nil {
+				// Don't return error - let agent handle it
+				a.tuiModel.SendError(a.program, err)
+				messages = append(messages, Message{
+					Role: "user",
+					Content: []Content{{
+						Type: "text",
+						Text: fmt.Sprintf("Tool execution error: %s. Please try a different approach.", err.Error()),
+					}},
+				})
+				continue
+			}
+
+			if a.phaseManager.HasTransitioned() {
+				return nil
+			}
+
+			messages = append(messages, Message{
+				Role:    "user",
+				Content: toolResults,
+			})
+		}
+
+		if a.totalTokensIn+a.totalTokensOut > MaxTotalTokens {
+			return fmt.Errorf("%s (%d tokens)", ErrMaxTokens, MaxTotalTokens)
+		}
+	}
+
+	return fmt.Errorf("%s", ErrMaxIterations)
+}
+
+// cleanupContent ensures all content blocks are valid for the API
+func cleanupContent(content []Content) []Content {
+	var cleaned []Content
+	for _, c := range content {
+		if c.Type == "tool_use" {
+			// Ensure Input is never nil
+			if c.Input == nil {
+				c.Input = json.RawMessage("{}")
+			}
+		}
+		cleaned = append(cleaned, c)
+	}
+	return cleaned
+}
+
+// isRecoverableAPIError checks if an API error might be recoverable
+func isRecoverableAPIError(errMsg string) bool {
+	recoverablePatterns := []string{
+		"Field required",
+		"invalid_request_error",
+		"malformed",
+		"rate_limit",
+		"overloaded",
+	}
+	for _, pattern := range recoverablePatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Agent) buildSystemPrompt(phase *Phase) string {
+	return fmt.Sprintf(`%s
+
+## Current Phase: %s
+
+%s
+
+## Available Phases
+%s
+
+## Important Notes
+- Always call transition_phase when you complete a phase's objectives
+- Include all relevant results when transitioning
+- If you're stuck, use ask_user to get help from the user
+- Be thorough but efficient - don't repeat work unnecessarily
+- If a tool call fails, try a different approach rather than repeating the same call
+`,
+		SystemPrompt,
+		phase.Name,
+		phase.Instructions,
+		PhasesSummary(),
+	)
+}
+
+func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Content, error) {
+	var results []Content
+
+	for _, c := range content {
+		if c.Type != "tool_use" {
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		// Format input for display
+		inputStr := string(c.Input)
+		a.tuiModel.SendToolStart(a.program, c.Name, inputStr)
+
+		// Extract sidebar info from tool inputs
+		a.extractSidebarInfo(c.Name, inputStr)
+
+		// Special handling for ask_user
+		if c.Name == "ask_user" {
+			result := a.handleAskUser(c)
+			results = append(results, result)
+			continue
+		}
+
+		// Check for port conflicts
+		if c.Name == "start_background_process" || c.Name == "run_command" {
+			if err := a.checkPortConflicts(c.Input); err != nil {
+				a.tuiModel.SendToolComplete(a.program, c.Name, false, err.Error())
+				results = append(results, Content{
+					Type:      "tool_result",
+					ToolUseID: c.ID,
+					Content:   fmt.Sprintf("Error: %s", err.Error()),
+					IsError:   true,
+				})
+				continue
+			}
+		}
+
+		executor, ok := a.executors[c.Name]
+		if !ok {
+			a.tuiModel.SendToolComplete(a.program, c.Name, false, "unknown tool")
+			results = append(results, Content{
+				Type:      "tool_result",
+				ToolUseID: c.ID,
+				Content:   fmt.Sprintf("Unknown tool: %s", c.Name),
+				IsError:   true,
+			})
+			continue
+		}
+
+		// Execute with timeout
+		toolCtx, toolCancel := context.WithTimeout(ctx, ToolTimeout)
+		resultCh := make(chan struct {
+			result string
+			err    error
+		}, 1)
+
+		go func() {
+			result, err := executor(c.Input)
+			resultCh <- struct {
+				result string
+				err    error
+			}{result, err}
+		}()
+
+		select {
+		case <-toolCtx.Done():
+			toolCancel()
+			a.tuiModel.SendToolComplete(a.program, c.Name, false, "timeout")
+			results = append(results, Content{
+				Type:      "tool_result",
+				ToolUseID: c.ID,
+				Content:   fmt.Sprintf("Error: tool execution timed out after %v", ToolTimeout),
+				IsError:   true,
+			})
+		case res := <-resultCh:
+			toolCancel()
+			if res.err != nil {
+				a.tuiModel.SendToolComplete(a.program, c.Name, false, res.err.Error())
+				results = append(results, Content{
+					Type:      "tool_result",
+					ToolUseID: c.ID,
+					Content:   fmt.Sprintf("Error: %s", res.err.Error()),
+					IsError:   true,
+				})
+			} else {
+				a.tuiModel.SendToolComplete(a.program, c.Name, true, res.result)
+				results = append(results, Content{
+					Type:      "tool_result",
+					ToolUseID: c.ID,
+					Content:   res.result,
+				})
+
+				// After successful transition_phase, update sidebar from confirmed state
+				if c.Name == "transition_phase" {
+					a.updateSidebarFromState()
+				}
+			}
+		}
+	}
+
+	return results, nil
+}
+
+func (a *Agent) handleAskUser(c Content) Content {
+	var params struct {
+		Question string `json:"question"`
+	}
+	if err := json.Unmarshal(c.Input, &params); err != nil {
+		return Content{
+			Type:      "tool_result",
+			ToolUseID: c.ID,
+			Content:   fmt.Sprintf("Error: invalid input: %v", err),
+			IsError:   true,
+		}
+	}
+
+	response := a.tuiModel.RequestUserInput(a.program, params.Question)
+
+	if response == "" {
+		return Content{
+			Type:      "tool_result",
+			ToolUseID: c.ID,
+			Content:   "User cancelled input",
+			IsError:   true,
+		}
+	}
+
+	a.tuiModel.SendToolComplete(a.program, c.Name, true, response)
+	return Content{
+		Type:      "tool_result",
+		ToolUseID: c.ID,
+		Content:   response,
+	}
+}
+
+func (a *Agent) checkPortConflicts(input json.RawMessage) error {
+	var params struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return nil
+	}
+
+	ports := extractPortsFromCommand(params.Command)
+
+	for _, port := range ports {
+		if isPortInUse(port) {
+			if a.tuiModel.RequestPortConflict(a.program, port) {
+				if err := killProcessOnPort(port); err != nil {
+					return fmt.Errorf("failed to kill process on port %d: %w", port, err)
+				}
+			} else {
+				return fmt.Errorf("port %d is in use and user declined to kill process", port)
+			}
+		}
+	}
+
+	return nil
+}
+
+func extractPortsFromCommand(cmd string) []int {
+	var ports []int
+
+	patterns := []string{
+		"PORT=", "port=", "-p ", "--port ", ":3000", ":8000", ":8080", ":5000", ":4000",
+	}
+
+	for _, p := range patterns {
+		if strings.Contains(cmd, p) {
+			if strings.HasSuffix(p, "=") || strings.HasSuffix(p, " ") {
+				idx := strings.Index(cmd, p)
+				if idx >= 0 {
+					rest := cmd[idx+len(p):]
+					var portStr string
+					for _, c := range rest {
+						if c >= '0' && c <= '9' {
+							portStr += string(c)
+						} else {
+							break
+						}
+					}
+					if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+						ports = append(ports, port)
+					}
+				}
+			} else if strings.HasPrefix(p, ":") {
+				portStr := p[1:]
+				if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+					ports = append(ports, port)
+				}
+			}
+		}
+	}
+
+	seen := make(map[int]bool)
+	var unique []int
+	for _, p := range ports {
+		if !seen[p] {
+			seen[p] = true
+			unique = append(unique, p)
+		}
+	}
+
+	return unique
+}
+
+func isPortInUse(port int) bool {
+	addr := fmt.Sprintf(":%d", port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return true
+	}
+	_ = ln.Close()
+	return false
+}
+
+func killProcessOnPort(port int) error {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("lsof -ti:%d | xargs kill -9 2>/dev/null || true", port)) //nolint:gosec // Port is an integer, safe to interpolate
+	return cmd.Run()
+}
+
+// extractSidebarInfo parses tool inputs to extract useful info for the sidebar
+// Note: Most sidebar updates now happen via transition_phase results to ensure
+// only confirmed information is displayed. This function only handles basic
+// runtime detection during the Discovery phase.
+func (a *Agent) extractSidebarInfo(toolName, input string) {
+	// Extract info based on tool and input patterns
+	// Only detect runtime/language from file reads - these are safe to show early
+	switch toolName {
+	case "read_file":
+		// Check for common files to detect runtime
+		switch {
+		case strings.Contains(input, "package.json"):
+			a.tuiModel.SendSidebarUpdate(a.program, "Runtime", "Node.js")
+		case strings.Contains(input, "tsconfig.json"):
+			a.tuiModel.SendSidebarUpdate(a.program, "Language", "TypeScript")
+		case strings.Contains(input, "go.mod"):
+			a.tuiModel.SendSidebarUpdate(a.program, "Runtime", "Go")
+		case strings.Contains(input, "requirements.txt"), strings.Contains(input, "pyproject.toml"):
+			a.tuiModel.SendSidebarUpdate(a.program, "Runtime", "Python")
+		}
+	}
+	// Note: Port, Health, Start command, and Mode are now updated via transition_phase
+	// to avoid showing unconfirmed/stale values from incidental tool calls
+}
+
+// updateSidebarFromState updates the sidebar with confirmed state from PhaseManager
+func (a *Agent) updateSidebarFromState() {
+	state := a.phaseManager.GetState()
+	if state == nil {
+		return
+	}
+
+	if state.Port != "" {
+		a.tuiModel.SendSidebarUpdate(a.program, "Port", state.Port)
+	}
+	if state.HealthEndpoint != "" {
+		a.tuiModel.SendSidebarUpdate(a.program, "Health", state.HealthEndpoint)
+	}
+	if state.StartCommand != "" {
+		// Shorten start command for display
+		cmd := state.StartCommand
+		if len(cmd) > 20 {
+			cmd = cmd[:17] + "..."
+		}
+		a.tuiModel.SendSidebarUpdate(a.program, "Start", cmd)
+	}
+	if state.EntryPoint != "" {
+		// Shorten entry point for display
+		entry := state.EntryPoint
+		if len(entry) > 25 {
+			entry = "..." + entry[len(entry)-22:]
+		}
+		a.tuiModel.SendSidebarUpdate(a.program, "Entry", entry)
+	}
+	if state.ModuleSystem != "" {
+		a.tuiModel.SendSidebarUpdate(a.program, "Module", strings.ToUpper(state.ModuleSystem))
+	}
+}
+
+func (a *Agent) cleanup() {
+	a.processManager.StopAll()
+}
+
+// Progress file management
+
+func (a *Agent) progressFilePath() string {
+	return filepath.Join(a.workDir, ".tusk", progressFileName)
+}
+
+// readProgress reads the existing progress file if it exists
+func (a *Agent) readProgress() string {
+	content, err := os.ReadFile(a.progressFilePath())
+	if err != nil {
+		return ""
+	}
+	return string(content)
+}
+
+// parseCompletedPhases extracts completed phase names from the progress file content
+func parseCompletedPhases(progressContent string) []string {
+	var completed []string
+
+	// Find the "## Completed Phases" section
+	lines := strings.Split(progressContent, "\n")
+	inCompletedSection := false
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "## Completed Phases") {
+			inCompletedSection = true
+			continue
+		}
+
+		// Stop at the next section
+		if inCompletedSection && strings.HasPrefix(line, "## ") {
+			break
+		}
+
+		// Parse completed phase lines like "- ✓ Discovery"
+		if inCompletedSection && strings.HasPrefix(line, "- ✓ ") {
+			phaseName := strings.TrimPrefix(line, "- ✓ ")
+			if phaseName != "" {
+				completed = append(completed, phaseName)
+			}
+		}
+	}
+
+	return completed
+}
+
+// parseDiscoveredInfo extracts discovered information from the progress file content
+func parseDiscoveredInfo(progressContent string) map[string]string {
+	info := make(map[string]string)
+
+	lines := strings.Split(progressContent, "\n")
+	inDiscoveredSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "## Discovered Information") {
+			inDiscoveredSection = true
+			continue
+		}
+
+		// Stop at the next section
+		if inDiscoveredSection && strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+
+		// Parse lines like "- **Service Name**: backend" or "- **Start Command**: `npm run dev`"
+		if inDiscoveredSection && strings.HasPrefix(trimmed, "- **") {
+			// Find the closing **
+			rest := strings.TrimPrefix(trimmed, "- **")
+			idx := strings.Index(rest, "**:")
+			if idx > 0 {
+				key := rest[:idx]
+				value := strings.TrimSpace(rest[idx+3:])
+				// Remove backticks if present (for Start Command)
+				value = strings.Trim(value, "`")
+				info[key] = value
+			}
+		}
+	}
+
+	return info
+}
+
+// parseSetupProgress extracts setup progress flags from the progress file content
+func parseSetupProgress(progressContent string) map[string]bool {
+	progress := make(map[string]bool)
+
+	lines := strings.Split(progressContent, "\n")
+	inProgressSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "## Setup Progress") {
+			inProgressSection = true
+			continue
+		}
+
+		// Stop at the next section
+		if inProgressSection && strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+
+		// Parse lines like "- ✓ App starts without SDK"
+		if inProgressSection && strings.HasPrefix(trimmed, "- ✓ ") {
+			item := strings.TrimPrefix(trimmed, "- ✓ ")
+			switch {
+			case strings.Contains(item, "App starts without SDK"):
+				progress["app_starts_without_sdk"] = true
+			case strings.Contains(item, "SDK installed"):
+				progress["sdk_installed"] = true
+			case strings.Contains(item, "SDK instrumented"):
+				progress["sdk_instrumented"] = true
+			case strings.Contains(item, "Config file created"):
+				progress["config_created"] = true
+			case strings.Contains(item, "Simple test passed"):
+				progress["simple_test_passed"] = true
+			case strings.Contains(item, "Complex test passed"):
+				progress["complex_test_passed"] = true
+			}
+		}
+	}
+
+	return progress
+}
+
+// findNextPhaseToRun determines which phase to start from based on completed phases
+func (a *Agent) findNextPhaseToRun(completedPhases []string) string {
+	allPhases := a.phaseManager.GetPhaseNames()
+
+	// Create a set of completed phases for quick lookup
+	completedSet := make(map[string]bool)
+	for _, p := range completedPhases {
+		completedSet[p] = true
+	}
+
+	// Find the first non-completed phase
+	for _, phaseName := range allPhases {
+		if !completedSet[phaseName] {
+			return phaseName
+		}
+	}
+
+	// All phases completed
+	return ""
+}
+
+// saveProgress saves the current progress to the progress file
+func (a *Agent) saveProgress(completedPhases []string, currentPhase string, notes string) error {
+	tuskDir := filepath.Join(a.workDir, ".tusk")
+	if err := os.MkdirAll(tuskDir, 0o750); err != nil {
+		return err
+	}
+
+	state := a.phaseManager.GetState()
+
+	var sb strings.Builder
+	sb.WriteString("# Tusk Drift Setup Progress\n\n")
+	sb.WriteString("This file tracks the progress of the AI setup agent. If the agent was interrupted,\n")
+	sb.WriteString("it will read this file on the next run to continue where it left off.\n\n")
+	sb.WriteString("**Note**: This file is automatically deleted when setup completes successfully.\n\n")
+
+	sb.WriteString("## Discovered Information\n\n")
+	if state != nil && (state.ProjectType != "" || state.PackageManager != "" || state.EntryPoint != "") {
+		if state.ServiceName != "" {
+			sb.WriteString(fmt.Sprintf("- **Service Name**: %s\n", state.ServiceName))
+		}
+		if state.ProjectType != "" {
+			sb.WriteString(fmt.Sprintf("- **Project Type**: %s\n", state.ProjectType))
+		}
+		if state.PackageManager != "" {
+			sb.WriteString(fmt.Sprintf("- **Package Manager**: %s\n", state.PackageManager))
+		}
+		if state.ModuleSystem != "" {
+			sb.WriteString(fmt.Sprintf("- **Module System**: %s\n", state.ModuleSystem))
+		}
+		if state.EntryPoint != "" {
+			sb.WriteString(fmt.Sprintf("- **Entry Point**: %s\n", state.EntryPoint))
+		}
+		if state.StartCommand != "" {
+			sb.WriteString(fmt.Sprintf("- **Start Command**: `%s`\n", state.StartCommand))
+		}
+		if state.Port != "" {
+			sb.WriteString(fmt.Sprintf("- **Port**: %s\n", state.Port))
+		}
+		if state.HealthEndpoint != "" {
+			sb.WriteString(fmt.Sprintf("- **Health Endpoint**: %s\n", state.HealthEndpoint))
+		}
+		if state.DockerType != "" && state.DockerType != "none" {
+			sb.WriteString(fmt.Sprintf("- **Docker**: %s\n", state.DockerType))
+		}
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString("No information discovered yet.\n\n")
+	}
+
+	sb.WriteString("## Setup Progress\n\n")
+	if state != nil {
+		if state.AppStartsWithoutSDK {
+			sb.WriteString("- ✓ App starts without SDK\n")
+		}
+		if state.SDKInstalled {
+			sb.WriteString("- ✓ SDK installed\n")
+		}
+		if state.SDKInstrumented {
+			sb.WriteString("- ✓ SDK instrumented in entry point\n")
+		}
+		if state.ConfigCreated {
+			sb.WriteString("- ✓ Config file created (.tusk/config.yaml)\n")
+		}
+		if state.SimpleTestPassed {
+			sb.WriteString("- ✓ Simple test passed (health endpoint)\n")
+		}
+		if state.ComplexTestPassed {
+			sb.WriteString("- ✓ Complex test passed (endpoint with external calls)\n")
+		}
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("## Completed Phases\n\n")
+	if len(completedPhases) == 0 {
+		sb.WriteString("None yet.\n\n")
+	} else {
+		for _, phase := range completedPhases {
+			sb.WriteString(fmt.Sprintf("- ✓ %s\n", phase))
+		}
+		sb.WriteString("\n")
+	}
+
+	if currentPhase != "" {
+		sb.WriteString(fmt.Sprintf("## Current Phase\n\n%s (in progress)\n\n", currentPhase))
+	}
+
+	if state != nil && (len(state.Errors) > 0 || len(state.Warnings) > 0) {
+		if len(state.Errors) > 0 {
+			sb.WriteString("## Errors Encountered\n\n")
+			for _, err := range state.Errors {
+				if err.Fatal {
+					sb.WriteString(fmt.Sprintf("- ❌ [%s] %s (fatal)\n", err.Phase, err.Message))
+				} else {
+					sb.WriteString(fmt.Sprintf("- ⚠️ [%s] %s\n", err.Phase, err.Message))
+				}
+			}
+			sb.WriteString("\n")
+		}
+		if len(state.Warnings) > 0 {
+			sb.WriteString("## Warnings\n\n")
+			for _, w := range state.Warnings {
+				sb.WriteString(fmt.Sprintf("- %s\n", w))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	if notes != "" {
+		sb.WriteString("## Notes\n\n")
+		sb.WriteString(notes)
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("---\nLast updated: %s\n", time.Now().Format(time.RFC3339)))
+
+	return os.WriteFile(a.progressFilePath(), []byte(sb.String()), 0o600)
+}
+
+// deleteProgress removes the progress file (called on successful completion)
+func (a *Agent) deleteProgress() {
+	_ = os.Remove(a.progressFilePath())
+}
