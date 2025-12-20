@@ -95,5 +95,6 @@ type Config struct {
 	SystemPrompt    string
 	MaxTokens       int
 	WorkDir         string
-	SkipPermissions bool
+	SkipPermissions bool // Skip permission prompts for consequential actions
+	DisableSandbox  bool // Disable fence sandboxing for commands
 }

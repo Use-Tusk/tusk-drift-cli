@@ -13,6 +13,7 @@ var (
 	expAPIKey          string
 	expModel           string
 	expSkipPermissions bool
+	expDisableSandbox  bool
 )
 
 var expCmd = &cobra.Command{
@@ -45,6 +46,7 @@ func init() {
 	expSetupCmd.Flags().StringVar(&expAPIKey, "api-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY env var)")
 	expSetupCmd.Flags().StringVar(&expModel, "model", "claude-sonnet-4-20250514", "Claude model to use")
 	expSetupCmd.Flags().BoolVar(&expSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
+	expSetupCmd.Flags().BoolVar(&expDisableSandbox, "disable-sandbox", false, "Disable command sandboxing (for debugging)")
 }
 
 func runExpSetup(cmd *cobra.Command, args []string) error {
@@ -66,6 +68,7 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		Model:           expModel,
 		WorkDir:         workDir,
 		SkipPermissions: expSkipPermissions,
+		DisableSandbox:  expDisableSandbox,
 	}
 
 	a, err := agent.New(cfg)

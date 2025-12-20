@@ -468,3 +468,8 @@ type ProcessManager = tools.ProcessManager
 func NewProcessManager(workDir string) *ProcessManager {
 	return tools.NewProcessManager(workDir)
 }
+
+// NewProcessManagerWithOptions creates a new ProcessManager with options
+func NewProcessManagerWithOptions(workDir string, disableSandbox bool) *ProcessManager {
+	return tools.NewProcessManagerWithOptions(workDir, disableSandbox)
+}
