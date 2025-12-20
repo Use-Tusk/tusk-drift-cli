@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	agenttools "github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
 )
 
 const progressFileName = "PROGRESS.md"
@@ -219,6 +222,14 @@ func (a *Agent) runAgent() error {
 				return fmt.Errorf("interrupted")
 			}
 
+			// Special handling for abort_setup - graceful exit (not an error)
+			if errors.Is(err, agenttools.ErrSetupAborted) {
+				a.tuiModel.SendAgentText(a.program, "\n\n🟠 Setup aborted. See message above for details.\n", false)
+				a.tuiModel.SendAborted(a.program, "")
+				time.Sleep(500 * time.Millisecond)
+				return nil // Not an error - graceful exit
+			}
+
 			if phase.Required {
 				_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Phase failed with error: %v", err))
 
@@ -359,6 +370,11 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		if resp.StopReason == "tool_use" {
 			toolResults, err := a.executeToolCalls(ctx, cleanedContent)
 			if err != nil {
+				// Special handling for abort_setup - graceful exit
+				if errors.Is(err, agenttools.ErrSetupAborted) {
+					return err
+				}
+
 				// Don't return error - let agent handle it
 				a.tuiModel.SendError(a.program, err)
 				messages = append(messages, Message{
@@ -562,6 +578,12 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 		case res := <-resultCh:
 			toolCancel()
 			if res.err != nil {
+				// Special handling for abort_setup - return the error to stop the agent
+				if errors.Is(res.err, agenttools.ErrSetupAborted) {
+					a.tuiModel.SendToolComplete(a.program, c.Name, true, res.result)
+					return nil, res.err
+				}
+
 				a.tuiModel.SendToolComplete(a.program, c.Name, false, res.err.Error())
 				results = append(results, Content{
 					Type:      "tool_result",

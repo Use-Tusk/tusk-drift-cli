@@ -27,6 +27,8 @@ const (
 	ToolTuskList               ToolName = "tusk_list"
 	ToolTuskRun                ToolName = "tusk_run"
 	ToolTransitionPhase        ToolName = "transition_phase"
+	ToolAbortSetup             ToolName = "abort_setup"
+	ToolFetchSDKManifest       ToolName = "fetch_sdk_manifest"
 )
 
 // ToolDefinition is the single source of truth for a tool's metadata and implementation
@@ -371,6 +373,34 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				}
 			}`),
 		},
+		ToolAbortSetup: {
+			Name:        ToolAbortSetup,
+			Description: "Abort the setup process gracefully. Use when you detect an unsupported project type (e.g., not Node.js) or when setup cannot proceed for a valid reason. Provide a clear reason for the user.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"reason": {
+						"type": "string",
+						"description": "Clear explanation of why setup cannot proceed (e.g., 'Tusk Drift currently only supports Node.js projects. Detected: Python project (found requirements.txt)')"
+					}
+				},
+				"required": ["reason"]
+			}`),
+		},
+		ToolFetchSDKManifest: {
+			Name:        ToolFetchSDKManifest,
+			Description: "Fetch an SDK instrumentation manifest from a trusted CDN (unpkg.com, jsdelivr.net, npmjs.org). Use this to discover what packages are instrumented by a Tusk Drift SDK. Returns JSON with sdkVersion, language, and instrumentations array.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {
+						"type": "string",
+						"description": "URL of the SDK manifest (must be from unpkg.com, cdn.jsdelivr.net, or registry.npmjs.org)"
+					}
+				},
+				"required": ["url"]
+			}`),
+		},
 	}
 }
 
@@ -400,6 +430,8 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolTuskList:               tusk.List,
 		ToolTuskRun:                tusk.Run,
 		ToolTransitionPhase:        phaseMgr.PhaseTransitionTool(),
+		ToolAbortSetup:             tools.AbortSetup,
+		ToolFetchSDKManifest:       tools.FetchSDKManifest,
 	}
 
 	// Build registry with definitions + executors

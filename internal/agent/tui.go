@@ -79,6 +79,10 @@ type (
 
 	completedMsg struct{}
 
+	abortedMsg struct {
+		reason string
+	}
+
 	tickMsg time.Time
 
 	userInputRequestMsg struct {
@@ -510,6 +514,12 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.todoItems[i].done = true
 			m.todoItems[i].active = false
 		}
+
+	case abortedMsg:
+		m.completed = true
+		m.thinking = false
+		m.currentTool = ""
+		// No "Setup complete!" or cleanup instructions for aborted setup
 
 	case fatalErrorMsg:
 		// Fatal error - auto-quit after a short delay to let user see the error
@@ -1227,6 +1237,10 @@ func (m *TUIModel) SendFatalError(program *tea.Program, err error) {
 
 func (m *TUIModel) SendCompleted(program *tea.Program) {
 	program.Send(completedMsg{})
+}
+
+func (m *TUIModel) SendAborted(program *tea.Program, reason string) {
+	program.Send(abortedMsg{reason: reason})
 }
 
 func (m *TUIModel) SendSidebarUpdate(program *tea.Program, key, value string) {

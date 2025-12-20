@@ -272,6 +272,8 @@ func discoveryPhase() *Phase {
 			ToolGrep,
 			ToolAskUser,
 			ToolTransitionPhase,
+			ToolAbortSetup,
+			ToolFetchSDKManifest,
 		),
 		Required:      true,
 		MaxIterations: 30,
