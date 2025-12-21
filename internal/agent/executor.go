@@ -28,7 +28,6 @@ const (
 	ToolTuskRun                ToolName = "tusk_run"
 	ToolTransitionPhase        ToolName = "transition_phase"
 	ToolAbortSetup             ToolName = "abort_setup"
-	ToolFetchSDKManifest       ToolName = "fetch_sdk_manifest"
 )
 
 // ToolDefinition is the single source of truth for a tool's metadata and implementation
@@ -387,20 +386,6 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				"required": ["reason"]
 			}`),
 		},
-		ToolFetchSDKManifest: {
-			Name:        ToolFetchSDKManifest,
-			Description: "Fetch an SDK instrumentation manifest from a trusted CDN (unpkg.com, jsdelivr.net, npmjs.org). Use this to discover what packages are instrumented by a Tusk Drift SDK. Returns JSON with sdkVersion, language, and instrumentations array.",
-			InputSchema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"url": {
-						"type": "string",
-						"description": "URL of the SDK manifest (must be from unpkg.com, cdn.jsdelivr.net, or registry.npmjs.org)"
-					}
-				},
-				"required": ["url"]
-			}`),
-		},
 	}
 }
 
@@ -431,7 +416,6 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolTuskRun:                tusk.Run,
 		ToolTransitionPhase:        phaseMgr.PhaseTransitionTool(),
 		ToolAbortSetup:             tools.AbortSetup,
-		ToolFetchSDKManifest:       tools.FetchSDKManifest,
 	}
 
 	// Build registry with definitions + executors

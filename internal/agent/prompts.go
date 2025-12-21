@@ -9,8 +9,14 @@ import (
 //go:embed prompts/system.md
 var SystemPrompt string
 
-//go:embed prompts/phase_discovery.md
-var PhaseDiscoveryPrompt string
+//go:embed prompts/phase_detect_language.md
+var PhaseDetectLanguagePrompt string
+
+//go:embed prompts/phase_check_compatibility.md
+var PhaseCheckCompatibilityPrompt string
+
+//go:embed prompts/phase_gather_info_nodejs.md
+var PhaseGatherInfoNodejsPrompt string
 
 //go:embed prompts/phase_confirm_app_starts.md
 var PhaseConfirmAppStartsPrompt string

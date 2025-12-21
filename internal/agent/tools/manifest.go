@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+// SDK manifest URLs
+const (
+	NodeSDKManifestURL = "https://unpkg.com/@use-tusk/drift-node-sdk@latest/dist/instrumentation-manifest.json"
+	// PythonSDKManifestURL = "..." // Coming soon
+)
+
 // Trusted CDN hosts for SDK manifests
 var trustedManifestHosts = []string{
 	"unpkg.com",
@@ -16,24 +22,12 @@ var trustedManifestHosts = []string{
 	"registry.npmjs.org",
 }
 
-// FetchSDKManifest fetches an SDK instrumentation manifest from a trusted CDN
-// This is a non-confirmable tool since it only fetches from whitelisted URLs
-func FetchSDKManifest(input json.RawMessage) (string, error) {
-	var params struct {
-		URL string `json:"url"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
-	}
-
-	if params.URL == "" {
-		return "", fmt.Errorf("url is required")
-	}
-
-	// Validate URL is from a trusted host
+// FetchManifestFromURL fetches an SDK manifest from a URL
+// Returns the raw JSON string
+func FetchManifestFromURL(url string) (string, error) {
 	isTrusted := false
 	for _, host := range trustedManifestHosts {
-		if strings.Contains(params.URL, host) {
+		if strings.Contains(url, host) {
 			isTrusted = true
 			break
 		}
@@ -46,7 +40,7 @@ func FetchSDKManifest(input json.RawMessage) (string, error) {
 		Timeout: 15 * time.Second,
 	}
 
-	resp, err := client.Get(params.URL)
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch manifest: %w", err)
 	}
@@ -61,8 +55,7 @@ func FetchSDKManifest(input json.RawMessage) (string, error) {
 		return "", fmt.Errorf("failed to read manifest: %w", err)
 	}
 
-	// Validate it's valid JSON
-	var manifest map[string]interface{}
+	var manifest map[string]any
 	if err := json.Unmarshal(body, &manifest); err != nil {
 		return "", fmt.Errorf("invalid manifest JSON: %w", err)
 	}

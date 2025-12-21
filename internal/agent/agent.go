@@ -56,6 +56,7 @@ type Agent struct {
 	totalTokensOut int
 
 	skipPermissions bool
+	disableProgress bool
 
 	// TUI
 	tuiModel *TUIModel
@@ -83,6 +84,7 @@ func New(cfg Config) (*Agent, error) {
 		processManager:  pm,
 		workDir:         cfg.WorkDir,
 		skipPermissions: cfg.SkipPermissions,
+		disableProgress: cfg.DisableProgress,
 	}, nil
 }
 
@@ -126,8 +128,11 @@ func (a *Agent) runAgent() error {
 	// Track completed phases for progress file
 	var completedPhases []string
 
-	// Check for existing progress and skip to the appropriate phase
-	existingProgress := a.readProgress()
+	// Check for existing progress and skip to the appropriate phase (unless disabled)
+	existingProgress := ""
+	if !a.disableProgress {
+		existingProgress = a.readProgress()
+	}
 	if existingProgress != "" {
 		a.phaseManager.SetPreviousProgress(existingProgress)
 
@@ -438,6 +443,14 @@ func isRecoverableAPIError(errMsg string) bool {
 }
 
 func (a *Agent) buildSystemPrompt(phase *Phase) string {
+	// Build instructions, including any dynamic content from OnEnter
+	instructions := phase.Instructions
+	if phase.OnEnter != nil {
+		if extra := phase.OnEnter(a.phaseManager.GetState()); extra != "" {
+			instructions = instructions + "\n\n" + extra
+		}
+	}
+
 	return fmt.Sprintf(`%s
 
 ## Current Phase: %s
@@ -456,7 +469,7 @@ func (a *Agent) buildSystemPrompt(phase *Phase) string {
 `,
 		SystemPrompt,
 		phase.Name,
-		phase.Instructions,
+		instructions,
 		PhasesSummary(),
 	)
 }
@@ -982,6 +995,10 @@ func (a *Agent) findNextPhaseToRun(completedPhases []string) string {
 
 // saveProgress saves the current progress to the progress file
 func (a *Agent) saveProgress(completedPhases []string, currentPhase string, notes string) error {
+	if a.disableProgress {
+		return nil
+	}
+
 	tuskDir := filepath.Join(a.workDir, ".tusk")
 	if err := os.MkdirAll(tuskDir, 0o750); err != nil {
 		return err
@@ -1027,6 +1044,16 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 		sb.WriteString("\n")
 	} else {
 		sb.WriteString("No information discovered yet.\n\n")
+	}
+
+	if state != nil && len(state.CompatibilityWarnings) > 0 {
+		sb.WriteString("## Compatibility Warnings\n\n")
+		sb.WriteString("The following packages are used but not instrumented by the SDK.\n")
+		sb.WriteString("Recording/replay may not capture these calls:\n\n")
+		for _, warning := range state.CompatibilityWarnings {
+			sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", warning))
+		}
+		sb.WriteString("\n")
 	}
 
 	sb.WriteString("## Setup Progress\n\n")
@@ -1100,5 +1127,8 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 
 // deleteProgress removes the progress file (called on successful completion)
 func (a *Agent) deleteProgress() {
+	if a.disableProgress {
+		return
+	}
 	_ = os.Remove(a.progressFilePath())
 }

@@ -215,7 +215,7 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
 		progress:     p,
 		maxLogs:      5000,
 		logs:         make([]logEntry, 0),
-		totalPhases:  7,
+		totalPhases:  9,
 		ctx:          ctx,
 		cancel:       cancel,
 		autoScroll:   true,
@@ -223,13 +223,15 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
 		sidebarInfo:  make(map[string]string),
 		sidebarOrder: []string{},
 		todoItems: []todoItem{
-			{text: "Discovery", done: false, active: true},
-			{text: "Verify app starts", done: false, active: false},
+			{text: "Detect Language", done: false, active: true},
+			{text: "Check Compatibility", done: false, active: false},
+			{text: "Gather Project Info", done: false, active: false},
+			{text: "Confirm App Starts", done: false, active: false},
 			{text: "Instrument SDK", done: false, active: false},
-			{text: "Create config", done: false, active: false},
-			{text: "Simple test", done: false, active: false},
-			{text: "Complex test", done: false, active: false},
-			{text: "Generate report", done: false, active: false},
+			{text: "Create Config", done: false, active: false},
+			{text: "Simple Test", done: false, active: false},
+			{text: "Complex Test", done: false, active: false},
+			{text: "Summary", done: false, active: false},
 		},
 	}
 }
@@ -306,8 +308,9 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.phaseDesc = msg.phaseDesc
 		m.phaseNumber = msg.phaseNumber
 		m.totalPhases = msg.totalPhases
-		// Don't add phase heading to log - it's shown in the header
-		m.addLog("spacing", "", "")
+		// Add visual phase banner
+		phaseBanner := fmt.Sprintf("Phase %d: %s", msg.phaseNumber, msg.phaseName)
+		m.addLog("phase-banner", phaseBanner, "")
 		// Update progress bar
 		if m.totalPhases > 0 {
 			percent := float64(m.phaseNumber-1) / float64(m.totalPhases)
@@ -911,6 +914,13 @@ func (m *TUIModel) styleLogEntry(entry logEntry) string {
 	switch entry.level {
 	case "spacing":
 		return ""
+	case "phase-banner":
+		style := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color(styles.SecondaryColor)).
+			Padding(0, 1)
+		return "\n" + style.Render(entry.message)
 	case "phase":
 		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(styles.PrimaryColor)).Render(entry.message)
 	case "tool-start":

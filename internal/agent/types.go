@@ -57,16 +57,19 @@ type APIError struct {
 // State tracks what the agent has learned and done
 type State struct {
 	// Discovery results
-	ProjectType      string `json:"project_type"`       // "nodejs", "unknown"
-	PackageManager   string `json:"package_manager"`    // "npm", "yarn", "pnpm"
-	ModuleSystem     string `json:"module_system"`      // "esm", "cjs"
-	EntryPoint       string `json:"entry_point"`        // e.g., "src/server.ts"
+	ProjectType      string `json:"project_type"`       // "nodejs", "python", "go", etc.
+	PackageManager   string `json:"package_manager"`    // "npm", "yarn", "pnpm", "pip", etc.
+	ModuleSystem     string `json:"module_system"`      // "esm", "cjs" (Node.js specific)
+	EntryPoint       string `json:"entry_point"`        // e.g., "src/server.ts", "main.py"
 	StartCommand     string `json:"start_command"`      // e.g., "npm run start"
 	Port             string `json:"port"`               // e.g., "3000"
 	HealthEndpoint   string `json:"health_endpoint"`    // e.g., "/health"
 	DockerType       string `json:"docker_type"`        // "none", "dockerfile", "compose"
 	ServiceName      string `json:"service_name"`       // e.g., "my-service"
 	HasExternalCalls bool   `json:"has_external_calls"` // Does it make outbound HTTP/DB calls?
+
+	// Compatibility check results
+	CompatibilityWarnings []string `json:"compatibility_warnings"` // e.g., ["mongodb@6.3.0 not instrumented"]
 
 	// Progress tracking
 	AppStartsWithoutSDK bool `json:"app_starts_without_sdk"`
@@ -97,4 +100,5 @@ type Config struct {
 	WorkDir         string
 	SkipPermissions bool // Skip permission prompts for consequential actions
 	DisableSandbox  bool // Disable fence sandboxing for commands
+	DisableProgress bool // Don't save or resume from PROGRESS.md
 }

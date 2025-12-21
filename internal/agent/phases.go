@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
 )
 
 // Phase represents a distinct phase in the agent's workflow
@@ -15,6 +17,8 @@ type Phase struct {
 	Tools         []PhaseTool // Which tools are available in this phase
 	Required      bool        // Must complete, or can skip?
 	MaxIterations int         // Max iterations for this phase (0 = use default)
+	// OnEnter is called when entering this phase, returns additional context to append to instructions
+	OnEnter func(state *State) string
 }
 
 // PhaseManager manages the agent's progress through phases
@@ -100,6 +104,16 @@ func (pm *PhaseManager) UpdateState(results map[string]interface{}) {
 	}
 	if v, ok := results["has_external_calls"].(bool); ok {
 		pm.state.HasExternalCalls = v
+	}
+	// Handle compatibility_warnings as []interface{} from JSON
+	if v, ok := results["compatibility_warnings"].([]interface{}); ok {
+		warnings := make([]string, 0, len(v))
+		for _, w := range v {
+			if s, ok := w.(string); ok {
+				warnings = append(warnings, s)
+			}
+		}
+		pm.state.CompatibilityWarnings = warnings
 	}
 	if v, ok := results["app_starts_without_sdk"].(bool); ok {
 		pm.state.AppStartsWithoutSDK = v
@@ -243,14 +257,24 @@ func (pm *PhaseManager) PhaseTransitionTool() ToolExecutor {
 			return "All phases complete! Generate the final summary report.", nil
 		}
 
+		// Build instructions, including any dynamic content from OnEnter
+		instructions := next.Instructions
+		if next.OnEnter != nil {
+			if extra := next.OnEnter(pm.state); extra != "" {
+				instructions = instructions + "\n\n" + extra
+			}
+		}
+
 		return fmt.Sprintf("✅ Transitioned to phase: %s\n\n%s\n\nCurrent state:\n%s",
-			next.Name, next.Instructions, pm.StateAsContext()), nil
+			next.Name, instructions, pm.StateAsContext()), nil
 	}
 }
 
 func defaultPhases() []*Phase {
 	return []*Phase{
-		discoveryPhase(),
+		detectLanguagePhase(),
+		checkCompatibilityPhase(),
+		gatherInfoPhase(),
 		confirmAppStartsPhase(),
 		instrumentSDKPhase(),
 		createConfigPhase(),
@@ -260,23 +284,73 @@ func defaultPhases() []*Phase {
 	}
 }
 
-func discoveryPhase() *Phase {
+func detectLanguagePhase() *Phase {
 	return &Phase{
-		ID:           "discovery",
-		Name:         "Discovery",
-		Description:  "Analyze the project structure and dependencies",
-		Instructions: PhaseDiscoveryPrompt,
+		ID:           "detect_language",
+		Name:         "Detect Language",
+		Description:  "Identify the project's language/runtime",
+		Instructions: PhaseDetectLanguagePrompt,
+		Tools: Tools(
+			ToolListDirectory,
+			ToolReadFile,
+			ToolAskUser,
+			ToolTransitionPhase,
+			ToolAbortSetup,
+		),
+		Required:      true,
+		MaxIterations: 10,
+	}
+}
+
+func checkCompatibilityPhase() *Phase {
+	return &Phase{
+		ID:           "check_compatibility",
+		Name:         "Check Compatibility",
+		Description:  "Verify project dependencies are compatible with the SDK",
+		Instructions: PhaseCheckCompatibilityPrompt,
+		Tools: Tools(
+			ToolReadFile,
+			ToolGrep,
+			ToolAskUser,
+			ToolTransitionPhase,
+			ToolAbortSetup,
+		),
+		Required:      true,
+		MaxIterations: 15,
+		OnEnter: func(state *State) string {
+			// Fetch SDK manifest based on detected language
+			if state.ProjectType == "nodejs" {
+				manifest, err := tools.FetchManifestFromURL(tools.NodeSDKManifestURL)
+				if err != nil {
+					return fmt.Sprintf("❌ Failed to fetch SDK manifest: %s\n\nProceed with manual compatibility check.", err)
+				}
+				return fmt.Sprintf("### SDK Manifest (fetched automatically)\n\n```json\n%s\n```", manifest)
+			}
+			return ""
+		},
+	}
+}
+
+func gatherInfoPhase() *Phase {
+	return &Phase{
+		ID:           "gather_info",
+		Name:         "Gather Project Info",
+		Description:  "Collect project details for SDK setup",
+		Instructions: PhaseGatherInfoNodejsPrompt, // TODO: Select based on project_type
 		Tools: Tools(
 			ToolReadFile,
 			ToolListDirectory,
 			ToolGrep,
 			ToolAskUser,
 			ToolTransitionPhase,
-			ToolAbortSetup,
-			ToolFetchSDKManifest,
 		),
 		Required:      true,
-		MaxIterations: 30,
+		MaxIterations: 20,
+		OnEnter: func(state *State) string {
+			// Could return language-specific guidance here
+			// For now, the prompt is already Node.js specific
+			return ""
+		},
 	}
 }
 
