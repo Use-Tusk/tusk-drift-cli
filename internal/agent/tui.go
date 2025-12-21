@@ -210,29 +210,29 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
 	}
 	p := progress.New(opts...)
 
+	phases := defaultPhases()
+	todoItems := make([]todoItem, len(phases))
+	for i, phase := range phases {
+		todoItems[i] = todoItem{
+			text:   phase.Name,
+			done:   false,
+			active: i == 0, // First phase active
+		}
+	}
+
 	return &TUIModel{
 		spinner:      s,
 		progress:     p,
 		maxLogs:      5000,
 		logs:         make([]logEntry, 0),
-		totalPhases:  9,
+		totalPhases:  len(phases),
 		ctx:          ctx,
 		cancel:       cancel,
 		autoScroll:   true,
 		lastTickTime: time.Now(),
 		sidebarInfo:  make(map[string]string),
 		sidebarOrder: []string{},
-		todoItems: []todoItem{
-			{text: "Detect Language", done: false, active: true},
-			{text: "Check Compatibility", done: false, active: false},
-			{text: "Gather Project Info", done: false, active: false},
-			{text: "Confirm App Starts", done: false, active: false},
-			{text: "Instrument SDK", done: false, active: false},
-			{text: "Create Config", done: false, active: false},
-			{text: "Simple Test", done: false, active: false},
-			{text: "Complex Test", done: false, active: false},
-			{text: "Summary", done: false, active: false},
-		},
+		todoItems:    todoItems,
 	}
 }
 
