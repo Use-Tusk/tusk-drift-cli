@@ -381,6 +381,10 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 					"reason": {
 						"type": "string",
 						"description": "Clear explanation of why setup cannot proceed (e.g., 'Tusk Drift currently only supports Node.js projects. Detected: Python project (found requirements.txt)')"
+					},
+					"project_type": {
+						"type": "string",
+						"description": "The detected project type if aborting due to unsupported language (e.g., 'python', 'go', 'java', 'ruby', 'rust')"
 					}
 				},
 				"required": ["reason"]

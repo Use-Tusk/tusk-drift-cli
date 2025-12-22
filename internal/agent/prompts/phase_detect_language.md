@@ -33,11 +33,12 @@ Call `transition_phase` with:
 ```
 
 **If unsupported language detected:**
-You must call `abort_setup` with a clear explanation:
+You must call `abort_setup` with a clear explanation and the detected project type:
 
 ```json
 {
-  "reason": "Detected Python project (found requirements.txt). Tusk Drift currently only supports Node.js services. Support for Python is coming soon."
+  "reason": "Detected Python project (found requirements.txt). Tusk Drift currently only supports Node.js services. Support for Python is coming soon.",
+  "project_type": "python"
 }
 ```
 

@@ -106,6 +106,19 @@ func (a *Agent) trackEvent(event string, props map[string]any) {
 	a.tracker.Track(event, props)
 }
 
+// trackInterrupted tracks an interruption event with standard context
+func (a *Agent) trackInterrupted(phaseName string, phasesCompleted int) {
+	a.trackEvent("drift_cli:setup_agent:interrupted", map[string]any{
+		"phase":                  phaseName,
+		"phases_completed":       phasesCompleted,
+		"duration_ms":            time.Since(a.startTime).Milliseconds(),
+		"project_type":           a.phaseManager.state.ProjectType,
+		"package_manager":        a.phaseManager.state.PackageManager,
+		"has_docker":             a.phaseManager.state.DockerType != "" && a.phaseManager.state.DockerType != "none",
+		"compatibility_warnings": a.phaseManager.state.CompatibilityWarnings,
+	})
+}
+
 // Run executes the agent with TUI
 func (a *Agent) Run(parentCtx context.Context) error {
 	// Create cancellable context
@@ -143,7 +156,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 func (a *Agent) runAgent() error {
 	defer a.cleanup()
 	a.startTime = time.Now()
-	a.trackEvent("setup_agent:started", nil)
+	a.trackEvent("drift_cli:setup_agent:started", nil)
 
 	// Track completed phases for progress file
 	var completedPhases []string
@@ -223,6 +236,7 @@ func (a *Agent) runAgent() error {
 				phaseName = phase.Name
 			}
 			_ = a.saveProgress(completedPhases, phaseName, "Agent was interrupted.")
+			a.trackInterrupted(phaseName, len(completedPhases))
 			return fmt.Errorf("interrupted")
 		default:
 		}
@@ -244,17 +258,30 @@ func (a *Agent) runAgent() error {
 		if err != nil {
 			if a.ctx.Err() != nil {
 				_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Agent was interrupted during %s phase.", phase.Name))
+				a.trackInterrupted(phase.Name, len(completedPhases))
 				return fmt.Errorf("interrupted")
 			}
 
 			// Special handling for abort_setup - graceful exit (not an error)
 			if errors.Is(err, agenttools.ErrSetupAborted) {
-				a.trackEvent("setup_agent:aborted", map[string]any{
-					"phase":            phase.Name,
-					"phases_completed": len(completedPhases),
-					"duration_ms":      time.Since(a.startTime).Milliseconds(),
-					// Structured context from state
-					"project_type":           a.phaseManager.state.ProjectType,
+				// Extract abort reason and project type from error
+				abortReason := "unknown"
+				projectType := a.phaseManager.state.ProjectType
+				var abortErr *agenttools.AbortError
+				if errors.As(err, &abortErr) {
+					abortReason = abortErr.Reason
+					// Use project type from abort if state doesn't have one
+					if projectType == "" && abortErr.ProjectType != "" {
+						projectType = abortErr.ProjectType
+					}
+				}
+
+				a.trackEvent("drift_cli:setup_agent:aborted", map[string]any{
+					"phase":                  phase.Name,
+					"reason":                 abortReason,
+					"phases_completed":       len(completedPhases),
+					"duration_ms":            time.Since(a.startTime).Milliseconds(),
+					"project_type":           projectType,
 					"package_manager":        a.phaseManager.state.PackageManager,
 					"has_docker":             a.phaseManager.state.DockerType != "" && a.phaseManager.state.DockerType != "none",
 					"compatibility_warnings": a.phaseManager.state.CompatibilityWarnings,
@@ -268,12 +295,11 @@ func (a *Agent) runAgent() error {
 			if phase.Required {
 				_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Phase failed with error: %v", err))
 
-				a.trackEvent("setup_agent:phase_failed", map[string]any{
-					"phase":            phase.Name,
-					"error":            err.Error(),
-					"phases_completed": len(completedPhases),
-					"duration_ms":      time.Since(a.startTime).Milliseconds(),
-					// Structured context from state
+				a.trackEvent("drift_cli:setup_agent:phase_failed", map[string]any{
+					"phase":                  phase.Name,
+					"error":                  err.Error(),
+					"phases_completed":       len(completedPhases),
+					"duration_ms":            time.Since(a.startTime).Milliseconds(),
 					"project_type":           a.phaseManager.state.ProjectType,
 					"package_manager":        a.phaseManager.state.PackageManager,
 					"has_docker":             a.phaseManager.state.DockerType != "" && a.phaseManager.state.DockerType != "none",
@@ -292,7 +318,7 @@ func (a *Agent) runAgent() error {
 			// Skip to next phase for optional phases
 			_, _ = a.phaseManager.AdvancePhase()
 		} else {
-			a.trackEvent("setup_agent:phase_completed", map[string]any{
+			a.trackEvent("drift_cli:setup_agent:phase_completed", map[string]any{
 				"phase": phase.Name,
 			})
 
@@ -308,10 +334,9 @@ func (a *Agent) runAgent() error {
 
 	_ = a.saveProgress(completedPhases, "", "Setup completed successfully.")
 
-	a.trackEvent("setup_agent:completed", map[string]any{
-		"phases_completed": len(completedPhases),
-		"duration_ms":      time.Since(a.startTime).Milliseconds(),
-		// Structured context from state
+	a.trackEvent("drift_cli:setup_agent:completed", map[string]any{
+		"phases_completed":       len(completedPhases),
+		"duration_ms":            time.Since(a.startTime).Milliseconds(),
 		"project_type":           a.phaseManager.state.ProjectType,
 		"package_manager":        a.phaseManager.state.PackageManager,
 		"has_docker":             a.phaseManager.state.DockerType != "" && a.phaseManager.state.DockerType != "none",
