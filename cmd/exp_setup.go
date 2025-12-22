@@ -79,6 +79,8 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create agent: %w", err)
 	}
 
+	a.SetTracker(tracker)
+
 	ctx := context.Background()
 	if err := a.Run(ctx); err != nil {
 		cmd.SilenceUsage = true

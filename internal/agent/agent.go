@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	agenttools "github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 )
 
 const progressFileName = "PROGRESS.md"
@@ -63,6 +64,10 @@ type Agent struct {
 	program  *tea.Program
 	ctx      context.Context
 	cancel   context.CancelFunc
+
+	// Analytics
+	tracker   *analytics.Tracker
+	startTime time.Time
 }
 
 // New creates a new Agent
@@ -86,6 +91,19 @@ func New(cfg Config) (*Agent, error) {
 		skipPermissions: cfg.SkipPermissions,
 		disableProgress: cfg.DisableProgress,
 	}, nil
+}
+
+// SetTracker sets the analytics tracker for the agent
+func (a *Agent) SetTracker(tracker *analytics.Tracker) {
+	a.tracker = tracker
+}
+
+// trackEvent sends an analytics event if tracking is enabled
+func (a *Agent) trackEvent(event string, props map[string]any) {
+	if a.tracker == nil {
+		return
+	}
+	a.tracker.Track(event, props)
 }
 
 // Run executes the agent with TUI
@@ -124,6 +142,8 @@ func (a *Agent) Run(parentCtx context.Context) error {
 
 func (a *Agent) runAgent() error {
 	defer a.cleanup()
+	a.startTime = time.Now()
+	a.trackEvent("setup_agent:started", nil)
 
 	// Track completed phases for progress file
 	var completedPhases []string
@@ -229,6 +249,16 @@ func (a *Agent) runAgent() error {
 
 			// Special handling for abort_setup - graceful exit (not an error)
 			if errors.Is(err, agenttools.ErrSetupAborted) {
+				a.trackEvent("setup_agent:aborted", map[string]any{
+					"phase":            phase.Name,
+					"phases_completed": len(completedPhases),
+					"duration_ms":      time.Since(a.startTime).Milliseconds(),
+					// Structured context from state
+					"project_type":           a.phaseManager.state.ProjectType,
+					"package_manager":        a.phaseManager.state.PackageManager,
+					"has_docker":             a.phaseManager.state.DockerType != "" && a.phaseManager.state.DockerType != "none",
+					"compatibility_warnings": a.phaseManager.state.CompatibilityWarnings,
+				})
 				a.tuiModel.SendAgentText(a.program, "\n\n🟠 Setup aborted. See message above for details.\n", false)
 				a.tuiModel.SendAborted(a.program, "")
 				time.Sleep(500 * time.Millisecond)
@@ -237,6 +267,18 @@ func (a *Agent) runAgent() error {
 
 			if phase.Required {
 				_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Phase failed with error: %v", err))
+
+				a.trackEvent("setup_agent:phase_failed", map[string]any{
+					"phase":            phase.Name,
+					"error":            err.Error(),
+					"phases_completed": len(completedPhases),
+					"duration_ms":      time.Since(a.startTime).Milliseconds(),
+					// Structured context from state
+					"project_type":           a.phaseManager.state.ProjectType,
+					"package_manager":        a.phaseManager.state.PackageManager,
+					"has_docker":             a.phaseManager.state.DockerType != "" && a.phaseManager.state.DockerType != "none",
+					"compatibility_warnings": a.phaseManager.state.CompatibilityWarnings,
+				})
 
 				// Fatal error for required phases - will auto-quit
 				a.tuiModel.SendFatalError(a.program, err)
@@ -250,6 +292,10 @@ func (a *Agent) runAgent() error {
 			// Skip to next phase for optional phases
 			_, _ = a.phaseManager.AdvancePhase()
 		} else {
+			a.trackEvent("setup_agent:phase_completed", map[string]any{
+				"phase": phase.Name,
+			})
+
 			completedPhases = append(completedPhases, phase.Name)
 			nextPhase := a.phaseManager.CurrentPhase()
 			nextPhaseName := ""
@@ -261,6 +307,16 @@ func (a *Agent) runAgent() error {
 	}
 
 	_ = a.saveProgress(completedPhases, "", "Setup completed successfully.")
+
+	a.trackEvent("setup_agent:completed", map[string]any{
+		"phases_completed": len(completedPhases),
+		"duration_ms":      time.Since(a.startTime).Milliseconds(),
+		// Structured context from state
+		"project_type":           a.phaseManager.state.ProjectType,
+		"package_manager":        a.phaseManager.state.PackageManager,
+		"has_docker":             a.phaseManager.state.DockerType != "" && a.phaseManager.state.DockerType != "none",
+		"compatibility_warnings": a.phaseManager.state.CompatibilityWarnings,
+	})
 
 	a.tuiModel.SendCompleted(a.program)
 	time.Sleep(500 * time.Millisecond)
