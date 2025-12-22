@@ -127,20 +127,26 @@ Releases are automated using [GoReleaser](https://goreleaser.com/) via GitHub Ac
 
 #### Creating a release
 
-1. Tag the commit with a semantic version:
+Use the release script to create and push a new version tag:
 
-   ```bash
-   git tag v1.2.3
-   git push origin v1.2.3
-   ```
+```bash
+# Patch release (v1.0.0 → v1.0.1)
+./scripts/release.sh patch
 
-2. GitHub Actions will automatically:
-   - Build binaries for all supported platforms
-   - Create archives with README and LICENSE
-   - Generate checksums
-   - Create a GitHub release with changelog
-   - Upload all artifacts
-   - Update the latest version manifest on [GitHub Pages](https://use-tusk.github.io/tusk-drift-cli/).
+# Minor release (v1.0.0 → v1.1.0)
+./scripts/release.sh minor
+```
+
+The script runs preflight checks, calculates the next version, and prompts for confirmation before tagging.
+
+Once the tag is pushed, GitHub Actions will automatically:
+
+- Build binaries for all supported platforms
+- Create archives with README and LICENSE
+- Generate checksums
+- Create a GitHub release with changelog
+- Upload all artifacts
+- Update the latest version manifest on [GitHub Pages](https://use-tusk.github.io/tusk-drift-cli/).
 
 #### Supported platforms
 
