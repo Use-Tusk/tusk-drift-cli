@@ -14,6 +14,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 
 	agenttools "github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
@@ -68,6 +69,7 @@ type Agent struct {
 	// Analytics
 	tracker   *analytics.Tracker
 	startTime time.Time
+	sessionID string
 }
 
 // New creates a new Agent
@@ -103,6 +105,10 @@ func (a *Agent) trackEvent(event string, props map[string]any) {
 	if a.tracker == nil {
 		return
 	}
+	if props == nil {
+		props = make(map[string]any)
+	}
+	props["session_id"] = a.sessionID
 	a.tracker.Track(event, props)
 }
 
@@ -156,6 +162,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 func (a *Agent) runAgent() error {
 	defer a.cleanup()
 	a.startTime = time.Now()
+	a.sessionID = generateSessionID()
 	a.trackEvent("drift_cli:setup_agent:started", nil)
 
 	// Track completed phases for progress file
@@ -922,6 +929,11 @@ func (a *Agent) updateSidebarFromState() {
 
 func (a *Agent) cleanup() {
 	a.processManager.StopAll()
+}
+
+// generateSessionID creates a unique short session ID for this agent run
+func generateSessionID() string {
+	return uuid.New().String()[:8]
 }
 
 // Progress file management
