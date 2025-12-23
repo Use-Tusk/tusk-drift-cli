@@ -916,10 +916,12 @@ func TestFindBestMatchWithTracePriority_SimilarityScoring_DeepNesting(t *testing
 
 // TestFindBestMatchWithTracePriority_SuiteValueHash_MatchesAcrossTraces tests that Priority 5
 // (suite-wide value hash) finds matches from other traces when the current trace has no match
+// This test uses validation mode where all suite spans are searchable
 func TestFindBestMatchWithTracePriority_SuiteValueHash_MatchesAcrossTraces(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
+	server.SetValidationMode(true) // Enable validation mode to search all suite spans
 	mm := NewMockMatcher(server)
 
 	pkg := "postgres"
@@ -960,10 +962,12 @@ func TestFindBestMatchWithTracePriority_SuiteValueHash_MatchesAcrossTraces(t *te
 
 // TestFindBestMatchWithTracePriority_SuiteReducedValueHash_MatchesAcrossTraces tests that Priority 6
 // (suite-wide reduced value hash) finds matches when matchImportance:0 fields differ
+// This test uses validation mode where all suite spans are searchable
 func TestFindBestMatchWithTracePriority_SuiteReducedValueHash_MatchesAcrossTraces(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
+	server.SetValidationMode(true) // Enable validation mode to search all suite spans
 	mm := NewMockMatcher(server)
 
 	pkg := "postgres"
@@ -1052,10 +1056,12 @@ func TestFindBestMatchWithTracePriority_PrefersTraceOverSuite(t *testing.T) {
 
 // TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed tests that Priority 5
 // prefers unused spans over used spans when matching from suite
+// This test uses validation mode where all suite spans are searchable
 func TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed(t *testing.T) {
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
+	server.SetValidationMode(true) // Enable validation mode to search all suite spans
 	mm := NewMockMatcher(server)
 
 	pkg := "http"
@@ -1095,4 +1101,171 @@ func TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed(t *
 	require.NotNil(t, match3)
 	assert.Equal(t, "suite-first", match3.SpanId, "Third match should fall back to first used")
 	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level3.MatchScope)
+}
+
+// TestFindBestMatchWithTracePriority_RegularReplayMode_OnlySearchesGlobalSpans tests that in regular
+// replay mode (validation mode = false), only explicitly marked global spans are searched for cross-trace
+// matching, not all suite spans
+func TestFindBestMatchWithTracePriority_RegularReplayMode_OnlySearchesGlobalSpans(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	// Explicitly NOT setting validation mode (default is false)
+	mm := NewMockMatcher(server)
+
+	pkg := "postgres"
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query": {},
+		},
+	}
+
+	// Request value - this is what we're looking for
+	requestValueMap := map[string]any{"query": "SELECT * FROM auth_tokens"}
+
+	// Span in suite (from another trace) with exact matching value - but NOT marked as global
+	suiteSpan := makeSpan(t, "trace-other", "suite-span", pkg, requestValueMap, inputSchema, 1000)
+
+	// Span marked as global with exact matching value
+	// (global spans are those passed to SetGlobalSpans, fetched from GetGlobalSpans API)
+	globalSpan := makeSpan(t, "trace-global", "global-span", pkg, requestValueMap, inputSchema, 2000)
+
+	// Span in current trace with different value (won't match on value hash)
+	currentTraceSpan := makeSpan(t, "trace-current", "current-span", pkg,
+		map[string]any{"query": "SELECT * FROM users"}, inputSchema, 3000)
+
+	// Load current trace spans
+	server.LoadSpansForTrace("trace-current", []*core.Span{currentTraceSpan})
+
+	// Set suite spans (includes non-global span from other trace)
+	server.SetSuiteSpans([]*core.Span{suiteSpan, currentTraceSpan})
+
+	// Set global spans (only the explicitly marked global span)
+	server.SetGlobalSpans([]*core.Span{globalSpan})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+
+	match, level, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should match the global span, NOT the suite span (because we're in regular replay mode)
+	assert.Equal(t, "global-span", match.SpanId, "Should find match from global spans, not suite spans")
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+}
+
+// TestFindBestMatchWithTracePriority_RegularReplayMode_NoMatchWhenNotGlobal tests that in regular
+// replay mode, a span from another trace that is NOT marked as global will not be found
+func TestFindBestMatchWithTracePriority_RegularReplayMode_NoMatchWhenNotGlobal(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	// Explicitly NOT setting validation mode (default is false)
+	mm := NewMockMatcher(server)
+
+	pkg := "postgres"
+	// Use different schemas to prevent schema-based matching (Priority 7+)
+	requestSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query":  {},
+			"params": {},
+		},
+	}
+	suiteSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query": {},
+		},
+	}
+	currentSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"sql": {},
+		},
+	}
+
+	// Request value
+	requestValueMap := map[string]any{"query": "SELECT * FROM auth_tokens", "params": []any{}}
+
+	// Span in suite (from another trace) with exact matching value - but NOT marked as global
+	// Different schema to prevent schema-based matching
+	suiteSpan := makeSpan(t, "trace-other", "suite-span", pkg, map[string]any{"query": "SELECT * FROM auth_tokens"}, suiteSchema, 1000)
+
+	// Span in current trace with different value AND different schema (won't match)
+	currentTraceSpan := makeSpan(t, "trace-current", "current-span", pkg,
+		map[string]any{"sql": "SELECT * FROM users"}, currentSchema, 3000)
+
+	// Load current trace spans
+	server.LoadSpansForTrace("trace-current", []*core.Span{currentTraceSpan})
+
+	// Set suite spans (includes non-global span from other trace)
+	server.SetSuiteSpans([]*core.Span{suiteSpan, currentTraceSpan})
+
+	// No global spans set - the suite span is not marked as global
+
+	req := makeMockRequest(t, pkg, requestValueMap, requestSchema)
+
+	// Should NOT find a match because:
+	// - Current trace span has different value and schema
+	// - Suite span is not in global spans index (and has different schema)
+	// - Regular replay mode doesn't search suite spans
+	match, _, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.Error(t, err, "Should not find match when span is not in global index")
+	require.Nil(t, match)
+}
+
+// TestFindBestMatchWithTracePriority_RegularReplayMode_GlobalReducedValueHash tests that in regular
+// replay mode, reduced value hash matching works for global spans
+func TestFindBestMatchWithTracePriority_RegularReplayMode_GlobalReducedValueHash(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	// Explicitly NOT setting validation mode (default is false)
+	mm := NewMockMatcher(server)
+
+	pkg := "postgres"
+	matchImportanceZero := 0.0
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query":     {},
+			"timestamp": {MatchImportance: &matchImportanceZero}, // Ignored in reduced hash
+		},
+	}
+
+	// Request value with one timestamp
+	requestValueMap := map[string]any{
+		"query":     "SELECT * FROM auth_tokens",
+		"timestamp": "2025-01-01T00:00:00Z",
+	}
+
+	// Global span with same query but different timestamp (should match via reduced hash)
+	// (global spans are those passed to SetGlobalSpans, fetched from GetGlobalSpans API)
+	globalSpanValueMap := map[string]any{
+		"query":     "SELECT * FROM auth_tokens",
+		"timestamp": "2025-06-15T12:00:00Z",
+	}
+	globalSpan := makeSpan(t, "trace-global", "global-span", pkg, globalSpanValueMap, inputSchema, 1000)
+
+	// Span in current trace with completely different query
+	currentTraceSpan := makeSpan(t, "trace-current", "current-span", pkg,
+		map[string]any{"query": "SELECT * FROM users", "timestamp": "2025-01-01T00:00:00Z"}, inputSchema, 2000)
+
+	server.LoadSpansForTrace("trace-current", []*core.Span{currentTraceSpan})
+	server.SetGlobalSpans([]*core.Span{globalSpan})
+
+	req := makeMockRequest(t, pkg, requestValueMap, inputSchema)
+
+	// Sanity check: exact value hashes should differ
+	assert.NotEqual(t, globalSpan.InputValueHash, req.OutboundSpan.InputValueHash,
+		"Exact value hashes should differ due to timestamp")
+
+	match, level, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
+	require.NoError(t, err)
+	require.NotNil(t, match)
+	require.NotNil(t, level)
+
+	// Should match via Priority 6 (reduced value hash in global spans)
+	assert.Equal(t, "global-span", match.SpanId, "Should find match from global spans via reduced hash")
+	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
+	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }

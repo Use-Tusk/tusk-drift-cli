@@ -175,7 +175,6 @@ func listTests(cmd *cobra.Command, args []string) error {
 		IsCloudMode: cloud,
 		Client:      client,
 		AuthOptions: authOptions,
-		AllTests:    tests,
 		Interactive: true,
 	}
 	if cfg != nil {

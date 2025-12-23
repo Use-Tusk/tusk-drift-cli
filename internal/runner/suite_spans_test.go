@@ -148,21 +148,17 @@ func TestBuildSuiteSpansForRun_LocalMode(t *testing.T) {
 			expectedTraceCount:  2,
 		},
 		{
-			name: "prefers_all_tests_over_current",
+			name: "uses_current_tests_only",
 			opts: SuiteSpanOptions{
 				IsCloudMode: false,
 				Interactive: false,
-				AllTests: []Test{
-					{TraceID: "trace1", Spans: []*core.Span{span1, span2}},
-					{TraceID: "trace2", Spans: []*core.Span{span3}},
-				},
 			},
 			currentTests: []Test{
 				{TraceID: "trace1", Spans: []*core.Span{span1}}, // Only one span
 			},
-			expectedMinSpans:    3, // Should use AllTests, not currentTests
-			expectedPreAppCount: 1,
-			expectedTraceCount:  2,
+			expectedMinSpans:    1, // Should only use currentTests
+			expectedPreAppCount: 0,
+			expectedTraceCount:  1,
 		},
 		{
 			name: "handles_empty_tests",
@@ -193,18 +189,18 @@ func TestBuildSuiteSpansForRun_LocalMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spans, _, traceCount, err := BuildSuiteSpansForRun(
+			result, err := BuildSuiteSpansForRun(
 				context.Background(),
 				tt.opts,
 				tt.currentTests,
 			)
 
 			require.NoError(t, err)
-			assert.GreaterOrEqual(t, len(spans), tt.expectedMinSpans)
+			assert.GreaterOrEqual(t, len(result.SuiteSpans), tt.expectedMinSpans)
 
 			// Count pre-app-start spans in result
 			actualPreAppCount := 0
-			for _, s := range spans {
+			for _, s := range result.SuiteSpans {
 				if s.IsPreAppStart {
 					actualPreAppCount++
 				}
@@ -213,7 +209,7 @@ func TestBuildSuiteSpansForRun_LocalMode(t *testing.T) {
 
 			// Note: traceCount might be higher if local pre-app-start spans are found
 			if tt.expectedTraceCount > 0 {
-				assert.GreaterOrEqual(t, traceCount, tt.expectedTraceCount)
+				assert.GreaterOrEqual(t, result.UniqueTraceCount, tt.expectedTraceCount)
 			}
 		})
 	}
@@ -276,7 +272,7 @@ func TestBuildSuiteSpansForRun_PreAppStartSpans(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spans, preAppCount, _, err := BuildSuiteSpansForRun(
+			result, err := BuildSuiteSpansForRun(
 				context.Background(),
 				SuiteSpanOptions{
 					IsCloudMode: false,
@@ -286,15 +282,15 @@ func TestBuildSuiteSpansForRun_PreAppStartSpans(t *testing.T) {
 			)
 
 			require.NoError(t, err)
-			assert.GreaterOrEqual(t, len(spans), tt.wantMinSpans)
+			assert.GreaterOrEqual(t, len(result.SuiteSpans), tt.wantMinSpans)
 
 			if tt.wantPreApp {
-				assert.Greater(t, preAppCount, 0, "expected pre-app-start spans")
+				assert.Greater(t, result.PreAppStartCount, 0, "expected pre-app-start spans")
 
 				// Verify our test pre-app-start spans are in the result
 				foundPreApp1 := false
 				foundPreApp2 := false
-				for _, s := range spans {
+				for _, s := range result.SuiteSpans {
 					if s.SpanId == "span2" && s.Name == "preapp1" {
 						foundPreApp1 = true
 					}
@@ -343,7 +339,7 @@ func TestBuildSuiteSpansForRun_UniqueTraceCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, traceCount, err := BuildSuiteSpansForRun(
+			result, err := BuildSuiteSpansForRun(
 				context.Background(),
 				SuiteSpanOptions{
 					IsCloudMode: false,
@@ -354,7 +350,7 @@ func TestBuildSuiteSpansForRun_UniqueTraceCount(t *testing.T) {
 
 			require.NoError(t, err)
 			// Note: might be higher due to local pre-app-start spans from other traces
-			assert.GreaterOrEqual(t, traceCount, tt.expectedTraceCount)
+			assert.GreaterOrEqual(t, result.UniqueTraceCount, tt.expectedTraceCount)
 		})
 	}
 }

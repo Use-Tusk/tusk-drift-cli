@@ -33,6 +33,7 @@ type Executor struct {
 	ResultsFile       string // Will be set by the run command if --save-results is true
 	OnTestCompleted   func(TestResult, Test)
 	suiteSpans        []*core.Span
+	globalSpans       []*core.Span // Explicitly marked global spans for cross-trace matching
 	cancelTests       context.CancelFunc
 }
 
@@ -348,6 +349,13 @@ func (e *Executor) SetSuiteSpans(spans []*core.Span) {
 	e.suiteSpans = spans
 	if e.server != nil && len(spans) > 0 {
 		e.server.SetSuiteSpans(spans)
+	}
+}
+
+func (e *Executor) SetGlobalSpans(spans []*core.Span) {
+	e.globalSpans = spans
+	if e.server != nil && len(spans) > 0 {
+		e.server.SetGlobalSpans(spans)
 	}
 }
 

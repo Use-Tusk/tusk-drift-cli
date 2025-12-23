@@ -409,7 +409,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 				AuthOptions: authOptions,
 				ServiceID:   cfg.Service.ID,
 				TraceTestID: traceTestID,
-				AllTests:    tests,
 				Interactive: false,
 				Quiet:       quiet,
 			},
@@ -478,7 +477,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 						AuthOptions: authOptions,
 						ServiceID:   cfg.Service.ID,
 						TraceTestID: traceTestID,
-						AllTests:    tests,
 						Interactive: true,
 					},
 					tests,
@@ -948,7 +946,6 @@ func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions a
 			Client:         client,
 			AuthOptions:    authOptions,
 			ServiceID:      cfg.Service.ID,
-			AllTests:       group.Tests,
 			Interactive:    false,
 			Quiet:          quiet,
 			ValidationMode: true, // Load ALL suite spans for validation
@@ -974,6 +971,11 @@ func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions a
 				}
 			}
 			continue
+		}
+
+		// Enable validation mode on the server to allow cross-trace matching
+		if executor.GetServer() != nil {
+			executor.GetServer().SetValidationMode(true)
 		}
 
 		validator := runner.NewValidateExecutor(executor)

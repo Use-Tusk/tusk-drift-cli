@@ -24,32 +24,40 @@ type SuiteSpanOptions struct {
 	TraceTestID string // If set, fetch all suite spans for cross-suite matching
 
 	// Local options
-	AllTests    []Test // All tests loaded (for extracting spans)
-	Interactive bool   // Whether to log errors interactively
-	Quiet       bool   // Whether to suppress progress messages (only works with --print)
+	Interactive bool // Whether to log errors interactively
+	Quiet       bool // Whether to suppress progress messages (only works with --print)
 
 	// ValidationMode allows matching against all suite spans (for main branch validation)
 	// When false (normal replay), only global spans are loaded for cross-trace matching
 	ValidationMode bool
 }
 
+// BuildSuiteSpansResult contains the result of building suite spans
+type BuildSuiteSpansResult struct {
+	SuiteSpans       []*core.Span
+	GlobalSpans      []*core.Span // Only populated in non-validation mode
+	PreAppStartCount int
+	UniqueTraceCount int
+}
+
 // BuildSuiteSpansForRun builds the suite spans for the run.
 // In ValidationMode, all suite spans are loaded for cross-trace matching.
 // In normal replay mode, only global spans (is_global=true) are loaded for cross-trace matching.
-// Returns the suite spans, the number of pre-app-start spans, and the number of unique traces.
+// Returns the suite spans, global spans (for non-validation mode), pre-app-start count, and unique trace count.
 func BuildSuiteSpansForRun(
 	ctx context.Context,
 	opts SuiteSpanOptions,
 	currentTests []Test,
-) ([]*core.Span, int, int, error) {
+) (*BuildSuiteSpansResult, error) {
 	var suiteSpans []*core.Span
+	var globalSpans []*core.Span
 
 	if opts.ValidationMode {
 		// Validation mode: load ALL suite spans for cross-trace matching
 		if opts.IsCloudMode && opts.Client != nil {
 			all, err := fetchAllSuiteSpans(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 			if err != nil {
-				return nil, 0, 0, fmt.Errorf("fetch all suite spans: %w", err)
+				return nil, fmt.Errorf("fetch all suite spans: %w", err)
 			}
 			suiteSpans = append(suiteSpans, all...)
 		}
@@ -58,23 +66,17 @@ func BuildSuiteSpansForRun(
 			suiteSpans = append(suiteSpans, t.Spans...)
 		}
 	} else {
-		// Normal replay mode: only load global spans for cross-trace matching
+		// Normal replay mode: fetch global spans separately for dedicated index
 		if opts.IsCloudMode && opts.Client != nil {
-			globalSpans, err := FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
+			var err error
+			globalSpans, err = FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 			if err != nil {
 				slog.Warn("Failed to fetch global spans", "error", err)
-			} else {
-				suiteSpans = append(suiteSpans, globalSpans...)
 			}
 		}
 
-		// Always include spans from the current tests being replayed
-		testsToUse := currentTests
-		if len(opts.AllTests) > 0 {
-			testsToUse = opts.AllTests
-		}
-
-		for _, t := range testsToUse {
+		// Only include spans from the current test's own trace (not other tests being replayed together)
+		for _, t := range currentTests {
 			if len(t.Spans) > 0 {
 				suiteSpans = append(suiteSpans, t.Spans...)
 			}
@@ -110,7 +112,12 @@ func BuildSuiteSpansForRun(
 		}
 	}
 
-	return suiteSpans, preAppCount, len(uniq), nil
+	return &BuildSuiteSpansResult{
+		SuiteSpans:       suiteSpans,
+		GlobalSpans:      globalSpans,
+		PreAppStartCount: preAppCount,
+		UniqueTraceCount: len(uniq),
+	}, nil
 }
 
 // PrepareAndSetSuiteSpans is a convenience function that builds suite spans and sets them on the executor
@@ -120,24 +127,32 @@ func PrepareAndSetSuiteSpans(
 	opts SuiteSpanOptions,
 	currentTests []Test,
 ) error {
-	suiteSpans, preAppCount, uniqueTraceCount, err := BuildSuiteSpansForRun(ctx, opts, currentTests)
+	result, err := BuildSuiteSpansForRun(ctx, opts, currentTests)
+	if err != nil {
+		return err
+	}
 	if opts.Interactive {
 		logging.LogToService(fmt.Sprintf(
 			"Loading %d suite spans for matching (%d unique traces, %d pre-app-start)",
-			len(suiteSpans), uniqueTraceCount, preAppCount,
+			len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount,
 		))
 	} else if !opts.Quiet {
-		fmt.Fprintf(os.Stderr, "  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start)\n", len(suiteSpans), uniqueTraceCount, preAppCount)
+		fmt.Fprintf(os.Stderr, "  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start)\n", len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount)
 	}
 	slog.Debug("Prepared suite spans for matching",
-		"count", len(suiteSpans),
-		"uniqueTraces", uniqueTraceCount,
-		"preAppSpans", preAppCount,
+		"count", len(result.SuiteSpans),
+		"uniqueTraces", result.UniqueTraceCount,
+		"preAppSpans", result.PreAppStartCount,
+		"globalSpans", len(result.GlobalSpans),
 		"interactive", opts.Interactive,
 		"traceTestID", opts.TraceTestID,
 	)
-	exec.SetSuiteSpans(suiteSpans)
-	return err
+	exec.SetSuiteSpans(result.SuiteSpans)
+	// Set global spans separately for dedicated index (used in regular replay mode)
+	if len(result.GlobalSpans) > 0 {
+		exec.SetGlobalSpans(result.GlobalSpans)
+	}
+	return nil
 }
 
 // FetchPreAppStartSpansFromCloud fetches pre-app-start spans from the cloud backend

@@ -56,6 +56,11 @@ type Server struct {
 	suiteSpansBySchemaHash        map[string][]*core.Span
 	suiteSpansByReducedSchemaHash map[string][]*core.Span
 
+	// Global spans (explicitly marked is_global=true) - used in regular replay mode
+	globalSpans                   []*core.Span
+	globalSpansByValueHash        map[string][]*core.Span
+	globalSpansByReducedValueHash map[string][]*core.Span
+
 	currentTestID      atomic.Value
 	ctx                context.Context
 	cancel             context.CancelFunc
@@ -69,6 +74,7 @@ type Server struct {
 	matchEvents        map[string][]MatchEvent
 	replayInbound      map[string]*core.Span
 	mockNotFoundEvents map[string][]MockNotFoundEvent
+	validationMode     bool // When true, allows cross-trace matching from any suite span
 
 	// For TCP communication (docker environments)
 	communicationType CommunicationType
@@ -152,6 +158,8 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		suiteSpansByValueHash:         make(map[string][]*core.Span),
 		suiteSpansBySchemaHash:        make(map[string][]*core.Span),
 		suiteSpansByReducedSchemaHash: make(map[string][]*core.Span),
+		globalSpansByValueHash:        make(map[string][]*core.Span),
+		globalSpansByReducedValueHash: make(map[string][]*core.Span),
 
 		ctx:                ctx,
 		cancel:             cancel,
@@ -413,6 +421,56 @@ func (ms *Server) GetSuiteSpans() []*core.Span {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 	return ms.suiteSpans
+}
+
+func (ms *Server) SetValidationMode(enabled bool) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	ms.validationMode = enabled
+}
+
+func (ms *Server) IsValidationMode() bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.validationMode
+}
+
+// SetGlobalSpans sets the global spans (explicitly marked is_global=true) and builds indexes
+func (ms *Server) SetGlobalSpans(spans []*core.Span) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	ms.globalSpans = spans
+
+	// Build indexes for global spans
+	ms.globalSpansByValueHash = make(map[string][]*core.Span)
+	ms.globalSpansByReducedValueHash = make(map[string][]*core.Span)
+
+	for _, span := range spans {
+		// Value hash index
+		if span.InputValueHash != "" {
+			ms.globalSpansByValueHash[span.InputValueHash] = append(ms.globalSpansByValueHash[span.InputValueHash], span)
+		}
+
+		// Reduced value hash index
+		reducedHash := reducedInputValueHash(span)
+		if reducedHash != "" {
+			ms.globalSpansByReducedValueHash[reducedHash] = append(ms.globalSpansByReducedValueHash[reducedHash], span)
+		}
+	}
+
+	slog.Info("Global spans", "count", len(spans))
+}
+
+func (ms *Server) GetGlobalSpansByValueHash(valueHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.globalSpansByValueHash[valueHash]
+}
+
+func (ms *Server) GetGlobalSpansByReducedValueHash(reducedHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.globalSpansByReducedValueHash[reducedHash]
 }
 
 func (ms *Server) GetSpansByPackageForTrace(traceID string, packageName string) []*core.Span {
@@ -979,6 +1037,13 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 			logging.LogToCurrentTest(testID, "🟢 Found best match for request in trace\n")
 		}
 	} else if matchLevel.MatchScope == backend.MatchScope_MATCH_SCOPE_GLOBAL {
+		slog.Info("Global span match during validation",
+			"currentTraceID", testID,
+			"matchedSpanID", span.SpanId,
+			"matchedFromTraceID", span.TraceId,
+			"spanName", span.Name,
+			"isPreAppStart", span.IsPreAppStart,
+		)
 		if testID != "" {
 			msg := "🟢 Found best match for request across traces\n"
 			if span != nil && span.IsPreAppStart {
