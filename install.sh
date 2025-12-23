@@ -4,11 +4,11 @@ set -e
 # Tusk Drift CLI Installer (Linux/macOS only)
 # For Windows, see: https://github.com/Use-Tusk/tusk-drift-cli#install
 # Usage (latest):
-#   curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+#   curl -fsSL https://cli.usetusk.ai/install.sh | sh
 # Usage (specific version):
-#   curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh -s -- v0.10.0
+#   curl -fsSL https://cli.usetusk.ai/install.sh | sh -s -- v0.10.0
 # Or via env var:
-#   curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | TUSK_VERSION=0.10.0 sh
+#   curl -fsSL https://cli.usetusk.ai/install.sh | TUSK_VERSION=0.10.0 sh
 
 REPO="Use-Tusk/tusk-drift-cli"
 BINARY_NAME="tusk"
@@ -48,7 +48,7 @@ if [ -n "$REQUESTED_VERSION" ]; then
   esac
 else
   # Try manifest first (fast, no rate limits)
-  VERSION_TAG=$(curl -s "https://use-tusk.github.io/tusk-drift-cli/latest.txt" 2>/dev/null || echo "")
+  VERSION_TAG=$(curl -sL "https://cli.usetusk.ai/latest.txt" 2>/dev/null || echo "")
   
   # Fallback to GitHub API if manifest fails
   if [ -z "$VERSION_TAG" ]; then

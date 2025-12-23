@@ -43,13 +43,13 @@ SDKs:
 Install the latest version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+curl -fsSL https://cli.usetusk.ai/install.sh | sh
 ```
 
 To install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh -s -- v1.2.3
+curl -fsSL https://cli.usetusk.ai/install.sh | sh -s -- v1.2.3
 ```
 
 **Homebrew:**
