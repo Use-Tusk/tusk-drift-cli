@@ -27,10 +27,15 @@ type SuiteSpanOptions struct {
 	AllTests    []Test // All tests loaded (for extracting spans)
 	Interactive bool   // Whether to log errors interactively
 	Quiet       bool   // Whether to suppress progress messages (only works with --print)
+
+	// ValidationMode allows matching against all suite spans (for main branch validation)
+	// When false (normal replay), only global spans are loaded for cross-trace matching
+	ValidationMode bool
 }
 
 // BuildSuiteSpansForRun builds the suite spans for the run.
-// If running a single cloud trace test, eager-fetch all suite spans to enable cross-suite matching.
+// In ValidationMode, all suite spans are loaded for cross-trace matching.
+// In normal replay mode, only global spans (is_global=true) are loaded for cross-trace matching.
 // Returns the suite spans, the number of pre-app-start spans, and the number of unique traces.
 func BuildSuiteSpansForRun(
 	ctx context.Context,
@@ -39,20 +44,31 @@ func BuildSuiteSpansForRun(
 ) ([]*core.Span, int, int, error) {
 	var suiteSpans []*core.Span
 
-	// If running a single cloud trace test, fetch all suite spans
-	if opts.IsCloudMode && opts.Client != nil && opts.TraceTestID != "" {
-		all, err := fetchAllSuiteSpans(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
-		if err != nil {
-			return nil, 0, 0, fmt.Errorf("fetch all suite spans: %w", err)
-		}
-		if len(all) > 0 {
+	if opts.ValidationMode {
+		// Validation mode: load ALL suite spans for cross-trace matching
+		if opts.IsCloudMode && opts.Client != nil {
+			all, err := fetchAllSuiteSpans(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
+			if err != nil {
+				return nil, 0, 0, fmt.Errorf("fetch all suite spans: %w", err)
+			}
 			suiteSpans = append(suiteSpans, all...)
 		}
-	}
+		// Also include spans from tests being validated
+		for _, t := range currentTests {
+			suiteSpans = append(suiteSpans, t.Spans...)
+		}
+	} else {
+		// Normal replay mode: only load global spans for cross-trace matching
+		if opts.IsCloudMode && opts.Client != nil {
+			globalSpans, err := FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
+			if err != nil {
+				slog.Warn("Failed to fetch global spans", "error", err)
+			} else {
+				suiteSpans = append(suiteSpans, globalSpans...)
+			}
+		}
 
-	// Fallback: use spans from the loaded tests
-	if len(suiteSpans) == 0 {
-		// Prefer all tests if available (for list view with all tests loaded)
+		// Always include spans from the current tests being replayed
 		testsToUse := currentTests
 		if len(opts.AllTests) > 0 {
 			testsToUse = opts.AllTests
@@ -65,7 +81,7 @@ func BuildSuiteSpansForRun(
 		}
 	}
 
-	// Layer on pre-app-start spans if available
+	// Pre-app-start spans are always included (both modes)
 	// Prepend these spans so they get considered first
 	if opts.IsCloudMode && opts.Client != nil {
 		preAppStartSpans, err := FetchPreAppStartSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
@@ -168,6 +184,55 @@ func FetchPreAppStartSpansFromCloud(
 
 	if len(all) > 0 {
 		tracker.Finish(fmt.Sprintf("✓ Loaded %d pre-app-start spans", len(all)))
+	}
+
+	return all, nil
+}
+
+// FetchGlobalSpansFromCloud fetches only spans marked as global (is_global=true) from cloud
+func FetchGlobalSpansFromCloud(
+	ctx context.Context,
+	client *api.TuskClient,
+	auth api.AuthOptions,
+	serviceID string,
+	interactive bool,
+	quiet bool,
+) ([]*core.Span, error) {
+	tracker := utils.NewProgressTracker("Fetching global spans", interactive, quiet)
+	defer tracker.Stop()
+
+	var all []*core.Span
+	cur := ""
+	for {
+		req := &backend.GetGlobalSpansRequest{
+			ObservableServiceId: serviceID,
+			PageSize:            50,
+		}
+		if cur != "" {
+			req.PaginationCursor = &cur
+		}
+
+		resp, err := client.GetGlobalSpans(ctx, req, auth)
+		if err != nil {
+			return nil, fmt.Errorf("get global spans: %w", err)
+		}
+
+		if cur == "" && resp.TotalCount > 0 {
+			tracker.SetTotal(int(resp.TotalCount))
+		}
+
+		all = append(all, resp.Spans...)
+		tracker.Update(len(all))
+
+		if next := resp.GetNextCursor(); next != "" {
+			cur = next
+			continue
+		}
+		break
+	}
+
+	if len(all) > 0 {
+		tracker.Finish(fmt.Sprintf("✓ Loaded %d global spans", len(all)))
 	}
 
 	return all, nil

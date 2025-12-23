@@ -1,0 +1,97 @@
+package runner
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+)
+
+// ValidationResult represents the result of validating a trace on main
+type ValidationResult struct {
+	TraceID       string
+	TraceTestID   string
+	Passed        bool
+	FailureReason string
+	Duration      time.Duration
+	GlobalSpanIDs []string // Span IDs that matched with MATCH_SCOPE_GLOBAL (excluding pre-app-start)
+}
+
+// ValidateExecutor wraps Executor with validation-specific behavior
+type ValidateExecutor struct {
+	*Executor
+}
+
+// NewValidateExecutor creates a new ValidateExecutor wrapping the given Executor
+func NewValidateExecutor(base *Executor) *ValidateExecutor {
+	return &ValidateExecutor{Executor: base}
+}
+
+// ValidateDraftTraces runs validation for all draft traces
+// Returns partial results if context is cancelled (workflow timeout)
+func (ve *ValidateExecutor) ValidateDraftTraces(ctx context.Context, tests []Test) ([]ValidationResult, error) {
+	var results []ValidationResult
+
+	for i, test := range tests {
+		select {
+		case <-ctx.Done():
+			// Workflow timeout - return partial results
+			fmt.Printf("Context cancelled after %d/%d traces, saving progress\n", i, len(tests))
+			return results, nil
+		default:
+		}
+
+		result := ve.validateSingleTrace(ctx, &test)
+		results = append(results, result)
+
+		status := "PASSED"
+		if !result.Passed {
+			status = "FAILED"
+		}
+		fmt.Printf("[%d/%d] %s: %s (%s)\n", i+1, len(tests), test.TraceID, status, result.Duration.Truncate(time.Millisecond))
+	}
+
+	return results, nil
+}
+
+func (ve *ValidateExecutor) validateSingleTrace(ctx context.Context, test *Test) ValidationResult {
+	start := time.Now()
+
+	// Run the test using existing executor logic
+	testResult, runErr := ve.Executor.RunSingleTest(*test)
+
+	result := ValidationResult{
+		TraceID:     test.TraceID,
+		TraceTestID: test.TraceTestID,
+		Passed:      testResult.Passed && !testResult.CrashedServer && runErr == nil,
+		Duration:    time.Since(start),
+	}
+
+	if !result.Passed {
+		if runErr != nil {
+			result.FailureReason = fmt.Sprintf("run_error: %v", runErr)
+		} else if testResult.CrashedServer {
+			result.FailureReason = "server_crashed"
+		} else if len(testResult.Deviations) > 0 {
+			result.FailureReason = fmt.Sprintf("deviations: %d", len(testResult.Deviations))
+		} else if testResult.Error != "" {
+			result.FailureReason = testResult.Error
+		}
+	}
+
+	// Collect global span IDs from match events
+	// Only include spans that matched with MATCH_SCOPE_GLOBAL and are NOT pre-app-start
+	if ve.GetServer() != nil {
+		for _, event := range ve.GetServer().GetMatchEvents(test.TraceID) {
+			if event.MatchLevel != nil &&
+				event.MatchLevel.MatchScope == backend.MatchScope_MATCH_SCOPE_GLOBAL &&
+				event.ReplaySpan != nil &&
+				!event.ReplaySpan.IsPreAppStart {
+				result.GlobalSpanIDs = append(result.GlobalSpanIDs, event.SpanID)
+			}
+		}
+	}
+
+	return result
+}
