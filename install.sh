@@ -48,7 +48,7 @@ if [ -n "$REQUESTED_VERSION" ]; then
   esac
 else
   # Try manifest first (fast, no rate limits)
-  VERSION_TAG=$(curl -sL "https://use-tusk.github.io/tusk-drift-cli/latest.txt" 2>/dev/null || echo "")
+  VERSION_TAG=$(curl -sL "https://cli.usetusk.ai/latest.txt" 2>/dev/null || echo "")
   
   # Fallback to GitHub API if manifest fails
   if [ -z "$VERSION_TAG" ]; then
