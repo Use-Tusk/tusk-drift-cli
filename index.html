@@ -1,14 +1,59 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Tusk CLI Version Info</title>
+    <title>Tusk CLI</title>
+    <style>
+        body { 
+            font-family: system-ui, -apple-system, sans-serif; 
+            max-width: 720px; 
+            margin: 3rem auto; 
+            padding: 0 1.5rem;
+            line-height: 1.6;
+            color: #1a1a1a;
+        }
+        h1 { margin-bottom: 0.5rem; }
+        .subtitle { color: #666; margin-top: 0; }
+        pre { 
+            background: #0d1117; 
+            color: #c9d1d9; 
+            padding: 1rem; 
+            border-radius: 6px; 
+            overflow-x: auto; 
+        }
+        code { font-family: 'SF Mono', Consolas, 'Liberation Mono', monospace; }
+        .install-cmd { font-size: 0.95rem; }
+        .script-view { font-size: 0.8rem; max-height: 400px; overflow-y: auto; }
+        a { color: #0969da; }
+        ul { padding-left: 1.5rem; }
+        details { margin-top: 1.5rem; }
+        summary { cursor: pointer; font-weight: 500; }
+    </style>
 </head>
 <body>
-    <h1>Tusk CLI Latest Version</h1>
-    <p>This page provides the latest version information for automated installations.</p>
+    <h1>Tusk CLI</h1>
+    <p class="subtitle">API drift detection for your test suite</p>
+    
+    <h2>Install</h2>
+    <pre class="install-cmd"><code>curl -fsSL https://cli.usetusk.ai/install.sh | sh</code></pre>
+    
+    <details>
+        <summary>View install script</summary>
+        <pre class="script-view"><code id="script">Loading...</code></pre>
+    </details>
+
+    <h2>Resources</h2>
     <ul>
-        <li><a href="latest.txt">latest.txt</a> - Plain text version</li>
-        <li><a href="latest.json">latest.json</a> - JSON format</li>
+        <li><a href="https://github.com/Use-Tusk/tusk-drift-cli">GitHub Repository</a></li>
+        <li><a href="latest.txt">Latest version (txt)</a></li>
+        <li><a href="latest.json">Latest version (json)</a></li>
+        <li><a href="install.sh" download>Download install.sh</a></li>
     </ul>
+
+    <script>
+        fetch('install.sh')
+            .then(r => r.text())
+            .then(t => document.getElementById('script').textContent = t)
+            .catch(() => document.getElementById('script').textContent = 'Failed to load script');
+    </script>
 </body>
 </html>
