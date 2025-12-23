@@ -37,6 +37,7 @@ var (
 	enableServiceLogs bool
 	saveResults       bool
 	resultsDir        string
+	disableSandbox    bool
 
 	// Cloud mode
 	cloud              bool
@@ -75,6 +76,7 @@ func init() {
 	runCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
 	runCmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
 	runCmd.Flags().StringVar(&resultsDir, "results-dir", "", "Path to directory to save results (only works with --save-results). Default is '.tusk/results'")
+	runCmd.Flags().BoolVar(&disableSandbox, "disable-sandbox", false, "Disable replaying service in a sandbox (allows real connections)")
 
 	// Cloud mode
 	runCmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "[Cloud] Use Tusk Drift Cloud backend for orchestration/reporting")
@@ -106,6 +108,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		"enable-service-logs", enableServiceLogs,
 		"save-results", saveResults,
 		"results-dir", resultsDir,
+		"disable-sandbox", disableSandbox,
 		"cloud", cloud,
 		"ci", ci,
 		"commitSha", commitSha,
@@ -116,6 +119,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	)
 
 	executor := runner.NewExecutor()
+	executor.SetDisableSandbox(disableSandbox)
 
 	_ = config.Load(cfgFile)
 	cfg, getConfigErr := config.Get()

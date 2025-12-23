@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
@@ -30,10 +31,12 @@ type Executor struct {
 	enableServiceLogs bool
 	servicePort       int
 	resultsDir        string
-	ResultsFile       string // Will be set by the run command if --save-results is true
+	ResultsFile       string
 	OnTestCompleted   func(TestResult, Test)
 	suiteSpans        []*core.Span
 	cancelTests       context.CancelFunc
+	disableSandbox    bool
+	fenceManager      *fence.Manager
 }
 
 func NewExecutor() *Executor {
@@ -42,6 +45,16 @@ func NewExecutor() *Executor {
 		parallel:    5,
 		testTimeout: 30 * time.Second,
 	}
+}
+
+// SetDisableSandbox sets whether to disable fence sandboxing for the service process
+func (e *Executor) SetDisableSandbox(disable bool) {
+	e.disableSandbox = disable
+}
+
+// IsSandboxDisabled returns true if fence sandboxing is disabled
+func (e *Executor) IsSandboxDisabled() bool {
+	return e.disableSandbox
 }
 
 func (e *Executor) SetResultsOutput(dir string) {

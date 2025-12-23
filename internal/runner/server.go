@@ -974,14 +974,15 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	}
 
 	// Log based on actual match scope from MatchLevel
-	if matchLevel.MatchScope == backend.MatchScope_MATCH_SCOPE_TRACE {
+	switch matchLevel.MatchScope {
+	case backend.MatchScope_MATCH_SCOPE_TRACE:
 		if testID != "" {
 			logging.LogToCurrentTest(testID, "🟢 Found best match for request in trace\n")
 		}
-	} else if matchLevel.MatchScope == backend.MatchScope_MATCH_SCOPE_GLOBAL {
+	case backend.MatchScope_MATCH_SCOPE_GLOBAL:
 		if testID != "" {
 			msg := "🟢 Found best match for request across traces\n"
-			if span != nil && span.IsPreAppStart {
+			if span.IsPreAppStart {
 				msg = "🟢 Found best match for request across traces (pre-app-start)\n"
 			}
 			logging.LogToCurrentTest(testID, msg)

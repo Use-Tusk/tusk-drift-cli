@@ -28,14 +28,13 @@ type ProcessManager struct {
 
 // ManagedProcess represents a background process
 type ManagedProcess struct {
-	handle       string
-	cmd          *exec.Cmd
-	stdout       *RingBuffer
-	stderr       *RingBuffer
-	startTime    time.Time
-	done         chan struct{}
-	err          error
-	fenceManager *fence.Manager // Per-process fence manager
+	handle    string
+	cmd       *exec.Cmd
+	stdout    *RingBuffer
+	stderr    *RingBuffer
+	startTime time.Time
+	done      chan struct{}
+	err       error
 }
 
 // RingBuffer keeps the last N lines
@@ -101,12 +100,12 @@ func NewProcessManagerWithOptions(workDir string, disableSandbox bool) *ProcessM
 		return pm
 	}
 
-	// Initialize fence for sandboxing
+	// Initialize fence for sandboxing RunCommand (security protection)
 	cfg := createFenceConfig(workDir)
 	pm.fenceManager = fence.NewManager(cfg, false, false)
 	if err := pm.fenceManager.Initialize(); err != nil {
 		// Fence initialization failed - continue without sandboxing
-		// This can happen on unsupported platforms or missing dependencies
+		// (esp when running on unsupported platforms or missing dependencies)
 		pm.fenceEnabled = false
 	} else {
 		pm.fenceEnabled = true
@@ -120,7 +119,9 @@ func (pm *ProcessManager) IsSandboxEnabled() bool {
 	return pm.fenceEnabled
 }
 
-// createFenceConfig creates the fence configuration for the agent
+// createFenceConfig creates the fence configuration for the agent.
+// This is used for RunCommand sandboxing (security protection for shell commands).
+// StartBackground is NOT sandboxed since it runs the user's service for confirm/record phases.
 func createFenceConfig(workDir string) *fence.Config {
 	return &fence.Config{
 		Network: fence.NetworkConfig{
@@ -148,11 +149,14 @@ func createFenceConfig(workDir string) *fence.Config {
 				// Node.js
 				"nodejs.org",
 
-				// For health checks during setup (localhost)
+				// SDK manifest CDNs
+				"unpkg.com",
+				"cdn.jsdelivr.net",
+
+				// Localhost for local services
 				"localhost",
 				"127.0.0.1",
 			},
-			// Allow localhost binding for servers started during setup
 			AllowLocalBinding: true,
 		},
 		Filesystem: fence.FilesystemConfig{
@@ -324,7 +328,11 @@ func (pt *ProcessTools) RunCommand(input json.RawMessage) (string, error) {
 	return fmt.Sprintf("Exit code: %d\n\nOutput:\n%s", exitCode, result), nil
 }
 
-// StartBackground starts a process in the background
+// StartBackground starts a process in the background.
+// Note: This is NOT sandboxed because it's used for:
+// - "Confirm App Starts" phase (needs real DB connections)
+// - "Record" mode (needs real outbound calls to capture behavior)
+// Replay mode sandboxing is handled by the runner package, not here.
 func (pt *ProcessTools) StartBackground(input json.RawMessage) (string, error) {
 	var params struct {
 		Command string            `json:"command"`
@@ -339,35 +347,9 @@ func (pt *ProcessTools) StartBackground(input json.RawMessage) (string, error) {
 		return "", err
 	}
 
-	// Create per-process fence manager for sandboxing (if enabled globally)
-	var processFenceManager *fence.Manager
-	wrappedCmd := params.Command
-
-	if pt.pm.fenceEnabled {
-		cfg := createFenceConfig(pt.workDir)
-		processFenceManager = fence.NewManager(cfg, false, false)
-
-		// Expose server port for inbound connections
-		if params.Port > 0 {
-			processFenceManager.SetExposedPorts([]int{params.Port})
-		}
-
-		if err := processFenceManager.Initialize(); err != nil {
-			// Initialization failed - continue without sandboxing
-			processFenceManager = nil
-		} else {
-			var err error
-			wrappedCmd, err = processFenceManager.WrapCommand(params.Command)
-			if err != nil {
-				processFenceManager.Cleanup()
-				return "", fmt.Errorf("failed to sandbox command: %w", err)
-			}
-		}
-	}
-
 	handle := "proc_" + uuid.New().String()[:8]
 
-	cmd := exec.Command("sh", "-c", wrappedCmd) //nolint:gosec // Command is validated by validateCommandSafety + sandboxed
+	cmd := exec.Command("sh", "-c", params.Command) //nolint:gosec // Command is validated by validateCommandSafety
 	cmd.Dir = pt.workDir
 
 	env := os.Environ()
@@ -385,33 +367,23 @@ func (pt *ProcessTools) StartBackground(input json.RawMessage) (string, error) {
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		if processFenceManager != nil {
-			processFenceManager.Cleanup()
-		}
 		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		if processFenceManager != nil {
-			processFenceManager.Cleanup()
-		}
 		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	mp := &ManagedProcess{
-		handle:       handle,
-		cmd:          cmd,
-		stdout:       stdout,
-		stderr:       stderr,
-		startTime:    time.Now(),
-		done:         make(chan struct{}),
-		fenceManager: processFenceManager,
+		handle:    handle,
+		cmd:       cmd,
+		stdout:    stdout,
+		stderr:    stderr,
+		startTime: time.Now(),
+		done:      make(chan struct{}),
 	}
 
 	if err := cmd.Start(); err != nil {
-		if processFenceManager != nil {
-			processFenceManager.Cleanup()
-		}
 		return "", fmt.Errorf("failed to start process: %w", err)
 	}
 
@@ -432,19 +404,12 @@ func (pt *ProcessTools) StartBackground(input json.RawMessage) (string, error) {
 	// Wait a moment to check for immediate failure
 	select {
 	case <-mp.done:
-		if processFenceManager != nil {
-			processFenceManager.Cleanup()
-		}
 		logs := strings.Join(stderr.All(), "\n")
 		stdoutLogs := strings.Join(stdout.All(), "\n")
 		return "", fmt.Errorf("process exited immediately: %v\nStderr:\n%s\nStdout:\n%s", mp.err, logs, stdoutLogs)
 	case <-time.After(1 * time.Second):
-		sandboxed := ""
-		if processFenceManager != nil {
-			sandboxed = " (sandboxed)"
-		}
-		return fmt.Sprintf("Started background process%s with handle: %s (PID: %d)\nCommand: %s",
-			sandboxed, handle, cmd.Process.Pid, params.Command), nil
+		return fmt.Sprintf("Started background process with handle: %s (PID: %d)\nCommand: %s",
+			handle, cmd.Process.Pid, params.Command), nil
 	}
 }
 
@@ -467,10 +432,6 @@ func (pt *ProcessTools) StopBackground(input json.RawMessage) (string, error) {
 	pt.pm.mu.Unlock()
 
 	killProcessGroup(mp)
-
-	if mp.fenceManager != nil {
-		mp.fenceManager.Cleanup()
-	}
 
 	return fmt.Sprintf("Stopped process %s", params.Handle), nil
 }
@@ -570,12 +531,10 @@ func (pm *ProcessManager) StopAll() {
 
 	for handle, mp := range pm.processes {
 		killProcessGroupImmediate(mp)
-		if mp.fenceManager != nil {
-			mp.fenceManager.Cleanup()
-		}
 		delete(pm.processes, handle)
 	}
 
+	// Clean up global fence manager (used for RunCommand sandboxing)
 	if pm.fenceManager != nil {
 		pm.fenceManager.Cleanup()
 	}
