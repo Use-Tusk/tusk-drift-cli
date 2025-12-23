@@ -44,8 +44,8 @@ TuskDrift.initialize({
 Run tusk_run to replay the trace.
 If it fails:
 
-- Run with debug: true
-- Check for errors in the output or in the logs (in .tusk/logs/)
+- Run with `debug: true` (keep running it in debug mode until it passes)
+- Check for errors in the output or in the logs (in .tusk/logs/). Logs only appear if `debug: true` is set.
 - Try to fix issues and retry (max 3 attempts)
 - If still failing, ask the user for help
 
