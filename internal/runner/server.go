@@ -1003,7 +1003,7 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 		StackTrace: req.StackTrace,
 		InputData:  inputMap,
 		Timestamp:  timestamp,
-		ReplaySpan: req.OutboundSpan,
+		ReplaySpan: span, // The matched span from the suite (not the request's outbound span)
 	})
 
 	// Convert span to mock response

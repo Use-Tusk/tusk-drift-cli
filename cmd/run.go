@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,10 @@ var (
 	externalCheckRunID string
 	traceTestID        string
 	clientID           string
+
+	// Validation mode
+	validateSuiteOnMain bool
+	mainBranch          string
 )
 
 //go:embed short_docs/run.md
@@ -86,6 +91,10 @@ func init() {
 	runCmd.Flags().StringVar(&externalCheckRunID, "external-check-run-id", "", "[Cloud] External check run ID (only works with --ci)")
 	runCmd.Flags().StringVar(&traceTestID, "trace-test-id", "", "[Cloud] Run against a single trace test")
 	runCmd.Flags().StringVar(&clientID, "client-id", "", "[Cloud] Client ID for JWT auth (optional; ignored when using API key)") // Tusk client ID. Not used right now, but could be useful for auth
+
+	// Validation mode flags
+	runCmd.Flags().BoolVar(&validateSuiteOnMain, "validate-suite-on-main", false, "[Cloud] Validate draft traces on main branch before adding to suite")
+	runCmd.Flags().StringVar(&mainBranch, "main-branch", "main", "[Cloud] Name of the main branch (e.g., 'main', 'master', 'dev')")
 
 	_ = runCmd.Flags().MarkHidden("client-id")
 	runCmd.Flags().SortFlags = false
@@ -196,6 +205,16 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
 				slog.Warn("Failed to update CI status to RUNNING", "error", err)
 			}
+		}
+
+		// Check for validation mode on main branch
+		if validateSuiteOnMain {
+			currentBranch := getCurrentBranch()
+			if currentBranch == mainBranch {
+				return runValidationMode(cmd, client, authOptions, cfg)
+			}
+			// Not on main branch - fall through to normal replay flow
+			slog.Info("Not on main branch, continuing with normal replay", "currentBranch", currentBranch, "mainBranch", mainBranch)
 		}
 	}
 
@@ -855,4 +874,227 @@ func validateCIMetadata(metadata CIMetadata) (CIMetadata, error) {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+// getCurrentBranch returns the current git branch name
+func getCurrentBranch() string {
+	// Check GitHub Actions env vars first
+	if ref := os.Getenv("GITHUB_REF_NAME"); ref != "" {
+		return ref
+	}
+	// Check GitLab CI
+	if branch := os.Getenv("CI_COMMIT_BRANCH"); branch != "" {
+		return branch
+	}
+	if branch := os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"); branch != "" {
+		return branch
+	}
+	// Fallback: git rev-parse
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// runValidationMode runs the validation flow for draft traces on main branch
+func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions api.AuthOptions, cfg *config.Config) error {
+	ctx := context.Background()
+
+	fmt.Println("Running suite validation on main branch")
+
+	// 1. Fetch draft traces
+	draftTests, err := fetchDraftTraces(ctx, client, authOptions, cfg.Service.ID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch draft traces: %w", err)
+	}
+
+	if len(draftTests) == 0 {
+		fmt.Println("No draft traces to validate")
+		return nil
+	}
+
+	fmt.Printf("Found %d draft traces to validate\n", len(draftTests))
+
+	// 2. Fetch pre-app-start spans for environment grouping
+	preAppStartSpans, err := runner.FetchPreAppStartSpansFromCloud(ctx, client, authOptions, cfg.Service.ID, false, quiet)
+	if err != nil {
+		slog.Warn("Failed to fetch pre-app-start spans", "error", err)
+	}
+
+	// 3. Group by environment
+	groupResult, err := runner.GroupTestsByEnvironment(draftTests, preAppStartSpans)
+	if err != nil {
+		return fmt.Errorf("failed to group tests by environment: %w", err)
+	}
+
+	// 4. Create executor and run validation
+	executor := runner.NewExecutor()
+	if concurrency > 0 {
+		executor.SetConcurrency(concurrency)
+	}
+	executor.SetEnableServiceLogs(enableServiceLogs || debug)
+
+	var allResults []runner.ValidationResult
+	var allGlobalSpanIDs []string
+
+	for _, group := range groupResult.Groups {
+		fmt.Printf("Validating %d traces in environment: %s\n", len(group.Tests), group.Name)
+
+		// Prepare suite spans for this environment (ValidationMode = true to load all suite spans)
+		if err := runner.PrepareAndSetSuiteSpans(ctx, executor, runner.SuiteSpanOptions{
+			IsCloudMode:    true,
+			Client:         client,
+			AuthOptions:    authOptions,
+			ServiceID:      cfg.Service.ID,
+			AllTests:       group.Tests,
+			Interactive:    false,
+			Quiet:          quiet,
+			ValidationMode: true, // Load ALL suite spans for validation
+		}, group.Tests); err != nil {
+			slog.Warn("Failed to prepare suite spans", "error", err)
+		}
+
+		// Set environment variables from the group
+		oldEnvVars := make(map[string]string)
+		for k, v := range group.EnvVars {
+			oldEnvVars[k] = os.Getenv(k)
+			os.Setenv(k, v)
+		}
+
+		if err := executor.StartEnvironment(); err != nil {
+			slog.Warn("Failed to start environment", "env", group.Name, "error", err)
+			// Restore env vars
+			for k, v := range oldEnvVars {
+				if v == "" {
+					os.Unsetenv(k)
+				} else {
+					os.Setenv(k, v)
+				}
+			}
+			continue
+		}
+
+		validator := runner.NewValidateExecutor(executor)
+		results, err := validator.ValidateDraftTraces(ctx, group.Tests)
+		if err != nil {
+			slog.Warn("Validation error", "env", group.Name, "error", err)
+		}
+		allResults = append(allResults, results...)
+
+		// Collect global span IDs
+		for _, r := range results {
+			allGlobalSpanIDs = append(allGlobalSpanIDs, r.GlobalSpanIDs...)
+		}
+
+		_ = executor.StopEnvironment()
+
+		// Restore env vars
+		for k, v := range oldEnvVars {
+			if v == "" {
+				os.Unsetenv(k)
+			} else {
+				os.Setenv(k, v)
+			}
+		}
+	}
+
+	// 5. Categorize results
+	var passed, failed []runner.ValidationResult
+	for _, r := range allResults {
+		if r.Passed {
+			passed = append(passed, r)
+		} else {
+			failed = append(failed, r)
+		}
+	}
+
+	fmt.Printf("\nValidation complete: %d passed, %d failed\n", len(passed), len(failed))
+
+	// 6. Mark global spans in backend (deduplicated)
+	if len(allGlobalSpanIDs) > 0 {
+		seen := make(map[string]bool)
+		var unique []string
+		for _, id := range allGlobalSpanIDs {
+			if !seen[id] {
+				seen[id] = true
+				unique = append(unique, id)
+			}
+		}
+
+		fmt.Printf("Marking %d spans as global\n", len(unique))
+		req := &backend.MarkSpansAsGlobalRequest{
+			ObservableServiceId: cfg.Service.ID,
+			SpanIds:             unique,
+		}
+		if _, err := client.MarkSpansAsGlobal(ctx, req, authOptions); err != nil {
+			slog.Warn("Failed to mark global spans", "error", err)
+		}
+	}
+
+	// 7. Delete failed traces
+	if len(failed) > 0 {
+		failedIDs := make([]string, len(failed))
+		for i, f := range failed {
+			failedIDs[i] = f.TraceTestID
+		}
+		fmt.Printf("Removing %d failed traces\n", len(failedIDs))
+		req := &backend.DeleteFailedDraftTracesRequest{
+			ObservableServiceId: cfg.Service.ID,
+			TraceTestIds:        failedIDs,
+		}
+		if _, err := client.DeleteFailedDraftTraces(ctx, req, authOptions); err != nil {
+			slog.Warn("Failed to delete failed traces", "error", err)
+		}
+	}
+
+	// 8. Add passed traces to suite
+	if len(passed) > 0 {
+		passedIDs := make([]string, len(passed))
+		for i, p := range passed {
+			passedIDs[i] = p.TraceTestID
+		}
+		fmt.Printf("Adding %d validated traces to test suite\n", len(passedIDs))
+		req := &backend.AddTracesToSuiteRequest{
+			ObservableServiceId: cfg.Service.ID,
+			TraceTestIds:        passedIDs,
+		}
+		if _, err := client.AddTracesToSuite(ctx, req, authOptions); err != nil {
+			return fmt.Errorf("failed to add traces to suite: %w", err)
+		}
+	}
+
+	fmt.Println("Suite validation completed successfully")
+	return nil // Always exit success
+}
+
+// fetchDraftTraces fetches all draft traces from the cloud
+func fetchDraftTraces(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID string) ([]runner.Test, error) {
+	var allTests []*backend.TraceTest
+	var cursor string
+
+	for {
+		req := &backend.GetDraftTraceTestsRequest{
+			ObservableServiceId: serviceID,
+			PageSize:            50,
+		}
+		if cursor != "" {
+			req.PaginationCursor = &cursor
+		}
+
+		resp, err := client.GetDraftTraceTests(ctx, req, auth)
+		if err != nil {
+			return nil, err
+		}
+
+		allTests = append(allTests, resp.TraceTests...)
+
+		if resp.GetNextCursor() == "" {
+			break
+		}
+		cursor = resp.GetNextCursor()
+	}
+
+	return runner.ConvertTraceTestsToRunnerTests(allTests), nil
 }
