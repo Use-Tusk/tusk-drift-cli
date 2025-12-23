@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
@@ -163,6 +164,17 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 				tr.TestFailureReason = &reason
 				msg := "Mock not found during replay"
 				tr.TestFailureMessage = &msg
+
+				// Build deviation message with details about which calls failed
+				mockEvents := e.server.GetMockNotFoundEvents(r.TestID)
+				var failedCalls []string
+				for _, ev := range mockEvents {
+					failedCalls = append(failedCalls, fmt.Sprintf("%s %s", ev.PackageName, ev.SpanName))
+				}
+				r.Deviations = append(r.Deviations, Deviation{
+					Field:       "response",
+					Description: fmt.Sprintf("Test failed: mock not found for outbound call(s): %s", strings.Join(failedCalls, ", ")),
+				})
 			case r.Error != "":
 				// HTTP request failed (network error, timeout, etc.)
 				reason := backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_NO_RESPONSE
