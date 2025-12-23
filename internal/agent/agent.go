@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -133,6 +135,12 @@ func (a *Agent) Run(parentCtx context.Context) error {
 
 	a.tuiModel = NewTUIModel(a.ctx, a.cancel)
 	a.program = tea.NewProgram(a.tuiModel, tea.WithAltScreen())
+
+	// Suppress slog output during TUI mode to prevent corrupting the display
+	// The runner package uses slog for logging, which would bypass the TUI
+	originalHandler := slog.Default().Handler()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer slog.SetDefault(slog.New(originalHandler))
 
 	// Run agent in background
 	errCh := make(chan error, 1)

@@ -345,7 +345,7 @@ func gatherInfoPhase() *Phase {
 			ToolTransitionPhase,
 		),
 		Required:      true,
-		MaxIterations: 20,
+		MaxIterations: 50,
 		OnEnter: func(state *State) string {
 			// Could return language-specific guidance here
 			// For now, the prompt is already Node.js specific

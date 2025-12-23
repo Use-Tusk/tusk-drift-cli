@@ -12,6 +12,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -147,7 +148,7 @@ type TUIModel struct {
 	// User input
 	userInputMode        bool
 	userInputPrompt      string
-	userInputBuffer      string
+	userInputTextarea    textarea.Model
 	userInputCh          chan string
 	portConflictMode     bool
 	portConflictPort     int
@@ -210,6 +211,16 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
 	}
 	p := progress.New(opts...)
 
+	// Initialize textarea for user input (supports paste and multiline)
+	ta := textarea.New()
+	ta.Placeholder = "Type your response..."
+	ta.ShowLineNumbers = false
+	ta.SetWidth(80)
+	ta.SetHeight(1)                                  // Start with single line, grows as needed
+	ta.CharLimit = 0                                 // No limit
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle() // No highlight on cursor line
+	ta.FocusedStyle.Base = lipgloss.NewStyle()       // Clean base style
+
 	phases := defaultPhases()
 	todoItems := make([]todoItem, len(phases))
 	for i, phase := range phases {
@@ -221,18 +232,19 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
 	}
 
 	return &TUIModel{
-		spinner:      s,
-		progress:     p,
-		maxLogs:      5000,
-		logs:         make([]logEntry, 0),
-		totalPhases:  len(phases),
-		ctx:          ctx,
-		cancel:       cancel,
-		autoScroll:   true,
-		lastTickTime: time.Now(),
-		sidebarInfo:  make(map[string]string),
-		sidebarOrder: []string{},
-		todoItems:    todoItems,
+		spinner:           s,
+		progress:          p,
+		maxLogs:           5000,
+		logs:              make([]logEntry, 0),
+		totalPhases:       len(phases),
+		ctx:               ctx,
+		cancel:            cancel,
+		autoScroll:        true,
+		lastTickTime:      time.Now(),
+		sidebarInfo:       make(map[string]string),
+		sidebarOrder:      []string{},
+		todoItems:         todoItems,
+		userInputTextarea: ta,
 	}
 }
 
@@ -441,8 +453,11 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case userInputRequestMsg:
 		m.userInputMode = true
 		m.userInputPrompt = msg.question
-		m.userInputBuffer = ""
+		m.userInputTextarea.Reset()
+		m.userInputTextarea.SetHeight(1) // Reset to single line
+		m.userInputTextarea.Focus()
 		m.userInputCh = msg.responseCh
+		m.updateViewportSize() // Shrink content area to make room for textarea
 		m.addLog("spacing", "", "")
 		// Wrap the question text for readability
 		maxWidth := min(max(m.width-8, 40), 120)
@@ -460,6 +475,7 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.portConflictMode = true
 		m.portConflictPort = msg.port
 		m.portConflictCh = msg.responseCh
+		m.updateViewportSize() // Shrink content area for port conflict prompt
 		m.addLog("spacing", "", "")
 		m.addLog("error", fmt.Sprintf("⚠️  Port %d is already in use", msg.port), "")
 
@@ -480,6 +496,7 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.permissionTool = msg.toolName
 		m.permissionPreview = msg.preview
 		m.permissionCh = msg.responseCh
+		m.updateViewportSize() // Shrink content area for permission prompt
 		m.addLog("spacing", "", "")
 		displayName := getToolDisplayName(msg.toolName)
 		m.addLog("dim", fmt.Sprintf("🔐 Permission required: %s", displayName), "")
@@ -595,28 +612,60 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.userInputMode {
 		switch msg.String() {
 		case "enter":
+			// Enter always submits
+			value := m.userInputTextarea.Value()
 			if m.userInputCh != nil {
-				m.userInputCh <- m.userInputBuffer
+				m.userInputCh <- value
 			}
 			m.userInputMode = false
-			m.addLog("dim", "   > "+m.userInputBuffer, "")
-			return m, nil
-		case "backspace":
-			if len(m.userInputBuffer) > 0 {
-				m.userInputBuffer = m.userInputBuffer[:len(m.userInputBuffer)-1]
+			m.userInputTextarea.Blur()
+			m.updateViewportSize() // Reclaim space from textarea
+			// Log the response (truncate if multiline for display)
+			displayValue := value
+			if strings.Contains(value, "\n") {
+				lines := strings.Split(value, "\n")
+				displayValue = fmt.Sprintf("%s... (%d lines)", lines[0], len(lines))
 			}
+			m.addLog("dim", "   > "+displayValue, "")
+			return m, nil
+		case "alt+enter", "ctrl+j":
+			// Alt+Enter or Ctrl+J adds a newline
+			m.userInputTextarea.InsertString("\n")
+			// Grow textarea height to show multiline content (max 5 lines)
+			lineCount := strings.Count(m.userInputTextarea.Value(), "\n") + 1
+			m.userInputTextarea.SetHeight(min(lineCount, 5))
+			// Update viewport size to account for taller footer
+			m.updateViewportSize()
 			return m, nil
 		case "ctrl+c":
 			if m.userInputCh != nil {
 				close(m.userInputCh)
 			}
 			m.userInputMode = false
+			m.userInputTextarea.Blur()
 			return m, m.initiateShutdown()
-		default:
-			if len(msg.String()) == 1 {
-				m.userInputBuffer += msg.String()
+		case "esc":
+			// Cancel input without submitting
+			if m.userInputCh != nil {
+				m.userInputCh <- ""
 			}
+			m.userInputMode = false
+			m.userInputTextarea.Blur()
+			m.updateViewportSize() // Reclaim space from textarea
+			m.addLog("dim", "   (cancelled)", "")
 			return m, nil
+		default:
+			// Forward all other keys to textarea (handles paste, typing, backspace, etc.)
+			var cmd tea.Cmd
+			m.userInputTextarea, cmd = m.userInputTextarea.Update(msg)
+			// Auto-grow height based on content (max 5 lines)
+			lineCount := strings.Count(m.userInputTextarea.Value(), "\n") + 1
+			newHeight := min(lineCount, 5)
+			if newHeight != m.userInputTextarea.Height() {
+				m.userInputTextarea.SetHeight(newHeight)
+				m.updateViewportSize()
+			}
+			return m, cmd
 		}
 	}
 
@@ -627,6 +676,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.portConflictCh <- true
 			}
 			m.portConflictMode = false
+			m.updateViewportSize() // Reclaim space
 			m.addLog("dim", "   Killing process on port...", "")
 			return m, nil
 		case "n", "N", "esc":
@@ -634,12 +684,14 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.portConflictCh <- false
 			}
 			m.portConflictMode = false
+			m.updateViewportSize() // Reclaim space
 			return m, m.initiateShutdown()
 		case "ctrl+c":
 			if m.portConflictCh != nil {
 				m.portConflictCh <- false
 			}
 			m.portConflictMode = false
+			m.updateViewportSize() // Reclaim space
 			return m, m.initiateShutdown()
 		}
 		return m, nil
@@ -686,6 +738,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.permissionDenyMode = false
 			m.permissionMode = false
 			m.permissionDenyBuffer = ""
+			m.updateViewportSize() // Reclaim space
 			return m, nil
 		case "backspace":
 			if len(m.permissionDenyBuffer) > 0 {
@@ -693,7 +746,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "esc":
-			// Go back to permission prompt
+			// Go back to permission prompt (still has 2-line footer)
 			m.permissionDenyMode = false
 			m.permissionDenyBuffer = ""
 			return m, nil
@@ -704,6 +757,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.permissionDenyMode = false
 			m.permissionMode = false
 			m.permissionDenyBuffer = ""
+			m.updateViewportSize() // Reclaim space
 			return m, m.initiateShutdown()
 		default:
 			if len(msg.String()) == 1 {
@@ -720,6 +774,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.permissionCh <- "approve"
 			}
 			m.permissionMode = false
+			m.updateViewportSize() // Reclaim space
 			m.addLog("dim", "   ✓ Approved", "")
 			return m, nil
 		case "a", "A":
@@ -727,6 +782,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.permissionCh <- "approve_all"
 			}
 			m.permissionMode = false
+			m.updateViewportSize() // Reclaim space
 			m.addLog("dim", "   ✓ Approved (skipping future prompts)", "")
 			return m, nil
 		case "n", "N":
@@ -739,6 +795,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.permissionCh <- "deny"
 			}
 			m.permissionMode = false
+			m.updateViewportSize() // Reclaim space
 			m.addLog("dim", "   ✗ Denied", "")
 			return m, nil
 		case "ctrl+c":
@@ -746,6 +803,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.permissionCh <- "deny"
 			}
 			m.permissionMode = false
+			m.updateViewportSize() // Reclaim space
 			return m, m.initiateShutdown()
 		}
 		return m, nil
@@ -826,6 +884,20 @@ func (m *TUIModel) updateViewportSize() {
 	infoPanelHeight := 3 // Info panel with border (1 content line + 2 border lines)
 	spacerHeight := 5    // 5 lines of spacing between content and footer
 	footerHeight := 1    // Help text line
+
+	// Account for multi-line footers in special modes
+	switch {
+	case m.userInputMode:
+		textareaHeight := m.userInputTextarea.Height()
+		footerHeight = textareaHeight + 1 // textarea + help text
+	case m.permissionMode:
+		footerHeight = 2 // prompt + help text
+	case m.permissionDenyMode:
+		footerHeight = 2 // input line + help text
+	case m.portConflictMode:
+		footerHeight = 2 // prompt + help text
+	}
+
 	contentHeight := m.height - headerHeight - infoPanelHeight - spacerHeight - footerHeight
 
 	contentHeight = max(contentHeight, 5)
@@ -1054,12 +1126,10 @@ func (m *TUIModel) renderFooter() string {
 
 	switch {
 	case m.userInputMode:
-		inputStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			Bold(true)
-		inputLine := inputStyle.Render("> " + m.userInputBuffer + "▌")
-		helpText = components.Footer(m.width, "Enter: submit • Ctrl+C: cancel")
-		return inputLine + "\n" + helpText
+		m.userInputTextarea.SetWidth(min(m.width-4, 120))
+		textareaView := m.userInputTextarea.View()
+		helpText = components.Footer(m.width, "Enter: submit • Shift+Enter/Ctrl+J: newline • Esc: cancel")
+		return textareaView + "\n" + helpText
 	case m.portConflictMode:
 		prompt := styles.WarningStyle.Render(fmt.Sprintf("Kill process on port %d? (y/n)", m.portConflictPort))
 		helpText = components.Footer(m.width, "y: yes • n: no • Ctrl+C: cancel")
