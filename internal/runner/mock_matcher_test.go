@@ -921,7 +921,7 @@ func TestFindBestMatchWithTracePriority_SuiteValueHash_MatchesAcrossTraces(t *te
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
-	server.SetValidationMode(true) // Enable validation mode to search all suite spans
+	server.SetAllowSuiteWideMatching(true) // Enable suite-wide matching to search all suite spans
 	mm := NewMockMatcher(server)
 
 	pkg := "postgres"
@@ -967,7 +967,7 @@ func TestFindBestMatchWithTracePriority_SuiteReducedValueHash_MatchesAcrossTrace
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
-	server.SetValidationMode(true) // Enable validation mode to search all suite spans
+	server.SetAllowSuiteWideMatching(true) // Enable suite-wide matching to search all suite spans
 	mm := NewMockMatcher(server)
 
 	pkg := "postgres"
@@ -1061,7 +1061,7 @@ func TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed(t *
 	cfg, _ := config.Get()
 	server, err := NewServer("svc", &cfg.Service)
 	require.NoError(t, err)
-	server.SetValidationMode(true) // Enable validation mode to search all suite spans
+	server.SetAllowSuiteWideMatching(true) // Enable suite-wide matching to search all suite spans
 	mm := NewMockMatcher(server)
 
 	pkg := "http"

@@ -21,15 +21,15 @@ type SuiteSpanOptions struct {
 	Client      *api.TuskClient
 	AuthOptions api.AuthOptions
 	ServiceID   string
-	TraceTestID string // If set, fetch all suite spans for cross-suite matching
+	TraceTestID string
 
 	// Local options
 	Interactive bool // Whether to log errors interactively
 	Quiet       bool // Whether to suppress progress messages (only works with --print)
 
-	// ValidationMode allows matching against all suite spans (for main branch validation)
-	// When false (normal replay), only global spans are loaded for cross-trace matching
-	ValidationMode bool
+	// AllowSuiteWideMatching allows matching against all suite spans (for main branch validation or local runs)
+	// When false (normal cloud replay), only global spans are loaded for cross-trace matching
+	AllowSuiteWideMatching bool
 }
 
 // BuildSuiteSpansResult contains the result of building suite spans
@@ -41,9 +41,9 @@ type BuildSuiteSpansResult struct {
 }
 
 // BuildSuiteSpansForRun builds the suite spans for the run.
-// In ValidationMode, all suite spans are loaded for cross-trace matching.
-// In normal replay mode, only global spans (is_global=true) are loaded for cross-trace matching.
-// Returns the suite spans, global spans (for non-validation mode), pre-app-start count, and unique trace count.
+// When AllowSuiteWideMatching is true, all suite spans are loaded for cross-trace matching.
+// When false, only global spans (is_global=true) are loaded for cross-trace matching.
+// Returns the suite spans, global spans (when not suite-wide matching), pre-app-start count, and unique trace count.
 func BuildSuiteSpansForRun(
 	ctx context.Context,
 	opts SuiteSpanOptions,
@@ -52,7 +52,7 @@ func BuildSuiteSpansForRun(
 	var suiteSpans []*core.Span
 	var globalSpans []*core.Span
 
-	if opts.ValidationMode {
+	if opts.AllowSuiteWideMatching {
 		// Validation mode: load ALL suite spans for cross-trace matching
 		if opts.IsCloudMode && opts.Client != nil {
 			all, err := fetchAllSuiteSpans(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
@@ -151,6 +151,13 @@ func PrepareAndSetSuiteSpans(
 	// Set global spans separately for dedicated index (used in regular replay mode)
 	if len(result.GlobalSpans) > 0 {
 		exec.SetGlobalSpans(result.GlobalSpans)
+	}
+
+	// Enable suite-wide matching when:
+	// - Explicitly requested (validation mode or other use cases)
+	// - Local (non-cloud) runs since there are no explicit global spans
+	if opts.AllowSuiteWideMatching || !opts.IsCloudMode {
+		exec.SetAllowSuiteWideMatching(true)
 	}
 	return nil
 }

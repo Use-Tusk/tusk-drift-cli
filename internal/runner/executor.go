@@ -21,20 +21,21 @@ import (
 )
 
 type Executor struct {
-	serviceURL        string
-	parallel          int
-	testTimeout       time.Duration
-	serviceCmd        *exec.Cmd
-	server            *Server
-	serviceLogFile    *os.File
-	enableServiceLogs bool
-	servicePort       int
-	resultsDir        string
-	ResultsFile       string // Will be set by the run command if --save-results is true
-	OnTestCompleted   func(TestResult, Test)
-	suiteSpans        []*core.Span
-	globalSpans       []*core.Span // Explicitly marked global spans for cross-trace matching
-	cancelTests       context.CancelFunc
+	serviceURL             string
+	parallel               int
+	testTimeout            time.Duration
+	serviceCmd             *exec.Cmd
+	server                 *Server
+	serviceLogFile         *os.File
+	enableServiceLogs      bool
+	servicePort            int
+	resultsDir             string
+	ResultsFile            string // Will be set by the run command if --save-results is true
+	OnTestCompleted        func(TestResult, Test)
+	suiteSpans             []*core.Span
+	globalSpans            []*core.Span // Explicitly marked global spans for cross-trace matching
+	allowSuiteWideMatching bool         // When true, allows cross-trace matching from any suite span
+	cancelTests            context.CancelFunc
 }
 
 func NewExecutor() *Executor {
@@ -356,6 +357,13 @@ func (e *Executor) SetGlobalSpans(spans []*core.Span) {
 	e.globalSpans = spans
 	if e.server != nil && len(spans) > 0 {
 		e.server.SetGlobalSpans(spans)
+	}
+}
+
+func (e *Executor) SetAllowSuiteWideMatching(enabled bool) {
+	e.allowSuiteWideMatching = enabled
+	if e.server != nil {
+		e.server.SetAllowSuiteWideMatching(enabled)
 	}
 }
 

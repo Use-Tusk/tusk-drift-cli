@@ -299,7 +299,7 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	// Priority 5-6: Cross-trace matching
 	// In validation mode: search all suite spans to discover new global dependencies
 	// In regular replay mode: only search explicitly marked global spans
-	if mm.server.IsValidationMode() {
+	if mm.server.AllowSuiteWideMatching() {
 		// Validation mode: search all suite spans
 		slog.Debug("Trying Priority 5: Input value hash across suite (validation mode)", "traceId", traceID)
 		suiteValueHashCandidates := mm.server.GetSuiteSpansByValueHash(req.OutboundSpan.GetInputValueHash())

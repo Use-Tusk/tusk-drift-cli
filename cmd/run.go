@@ -159,6 +159,17 @@ func runTests(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		// Check for validation mode on main branch BEFORE creating drift run
+		// Validation mode has its own flow and doesn't need a drift run
+		if validateSuiteOnMain {
+			currentBranch := getCurrentBranch()
+			if currentBranch == mainBranch {
+				return runValidationMode(cmd, client, authOptions, cfg)
+			}
+			// Not on main branch - fall through to normal replay flow
+			slog.Info("Not on main branch, continuing with normal replay", "currentBranch", currentBranch, "mainBranch", mainBranch)
+		}
+
 		if ci {
 			ciMetadata := CIMetadata{
 				CommitSha:          commitSha,
@@ -205,16 +216,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
 				slog.Warn("Failed to update CI status to RUNNING", "error", err)
 			}
-		}
-
-		// Check for validation mode on main branch
-		if validateSuiteOnMain {
-			currentBranch := getCurrentBranch()
-			if currentBranch == mainBranch {
-				return runValidationMode(cmd, client, authOptions, cfg)
-			}
-			// Not on main branch - fall through to normal replay flow
-			slog.Info("Not on main branch, continuing with normal replay", "currentBranch", currentBranch, "mainBranch", mainBranch)
 		}
 	}
 
@@ -940,15 +941,15 @@ func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions a
 	for _, group := range groupResult.Groups {
 		fmt.Printf("Validating %d traces in environment: %s\n", len(group.Tests), group.Name)
 
-		// Prepare suite spans for this environment (ValidationMode = true to load all suite spans)
+		// Prepare suite spans for this environment (AllowSuiteWideMatching = true to load all suite spans)
 		if err := runner.PrepareAndSetSuiteSpans(ctx, executor, runner.SuiteSpanOptions{
-			IsCloudMode:    true,
-			Client:         client,
-			AuthOptions:    authOptions,
-			ServiceID:      cfg.Service.ID,
-			Interactive:    false,
-			Quiet:          quiet,
-			ValidationMode: true, // Load ALL suite spans for validation
+			IsCloudMode:            true,
+			Client:                 client,
+			AuthOptions:            authOptions,
+			ServiceID:              cfg.Service.ID,
+			Interactive:            false,
+			Quiet:                  quiet,
+			AllowSuiteWideMatching: true, // Load ALL suite spans for validation
 		}, group.Tests); err != nil {
 			slog.Warn("Failed to prepare suite spans", "error", err)
 		}
@@ -971,11 +972,6 @@ func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions a
 				}
 			}
 			continue
-		}
-
-		// Enable validation mode on the server to allow cross-trace matching
-		if executor.GetServer() != nil {
-			executor.GetServer().SetValidationMode(true)
 		}
 
 		validator := runner.NewValidateExecutor(executor)
