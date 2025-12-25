@@ -1,0 +1,44 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest] # fence (sandbox) supported platforms
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build CLI
+        run: make build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+
+      - name: Clone drift-node-demo
+        run: git clone https://github.com/Use-Tusk/drift-node-demo.git ../drift-node-demo
+
+      - name: Install demo dependencies
+        working-directory: ../drift-node-demo
+        run: npm ci
+
+      - name: Run E2E tests
+        working-directory: ../drift-node-demo
+        run: |
+          $GITHUB_WORKSPACE/tusk run --print
+          # Exits non-zero if any test has deviations
