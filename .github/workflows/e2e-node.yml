@@ -1,4 +1,4 @@
-name: E2E Tests
+name: E2E Tests (Node.js)
 
 on:
   push:
@@ -40,7 +40,7 @@ jobs:
         working-directory: ../drift-node-demo
         run: npm ci
 
-      - name: Run E2E tests
+      - name: Run Node.js E2E tests
         working-directory: ../drift-node-demo
         run: |
           $GITHUB_WORKSPACE/tusk run --print
