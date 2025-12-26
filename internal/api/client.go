@@ -348,10 +348,10 @@ func (c *TuskClient) CreateApiKey(ctx context.Context, in *backend.CreateApiKeyR
 	return &out, nil
 }
 
-// GetDraftTraceTests fetches traces not yet in the test suite (status = DRAFT)
-func (c *TuskClient) GetDraftTraceTests(ctx context.Context, in *backend.GetDraftTraceTestsRequest, auth AuthOptions) (*backend.GetDraftTraceTestsResponseSuccess, error) {
-	var out backend.GetDraftTraceTestsResponse
-	if err := c.makeTestRunServiceRequest(ctx, "get_draft_trace_tests", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+// GetObservableServiceInfo fetches observable service info including default branch
+func (c *TuskClient) GetObservableServiceInfo(ctx context.Context, in *backend.GetObservableServiceInfoRequest, auth AuthOptions) (*backend.GetObservableServiceInfoResponseSuccess, error) {
+	var out backend.GetObservableServiceInfoResponse
+	if err := c.makeClientServiceRequest(ctx, "get_observable_service_info", in, &out, auth); err != nil {
 		return nil, err
 	}
 
@@ -364,10 +364,10 @@ func (c *TuskClient) GetDraftTraceTests(ctx context.Context, in *backend.GetDraf
 	return nil, fmt.Errorf("invalid response")
 }
 
-// MarkSpansAsGlobal marks specific spans as global in the backend
-func (c *TuskClient) MarkSpansAsGlobal(ctx context.Context, in *backend.MarkSpansAsGlobalRequest, auth AuthOptions) (*backend.MarkSpansAsGlobalResponseSuccess, error) {
-	var out backend.MarkSpansAsGlobalResponse
-	if err := c.makeTestRunServiceRequest(ctx, "mark_spans_as_global", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+// GetValidationTraceTests fetches traces for validation (both DRAFT and IN_SUITE)
+func (c *TuskClient) GetValidationTraceTests(ctx context.Context, in *backend.GetValidationTraceTestsRequest, auth AuthOptions) (*backend.GetValidationTraceTestsResponseSuccess, error) {
+	var out backend.GetValidationTraceTestsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_validation_trace_tests", in, &out, auth, DefaultRetryConfig(3)); err != nil {
 		return nil, err
 	}
 
@@ -380,34 +380,3 @@ func (c *TuskClient) MarkSpansAsGlobal(ctx context.Context, in *backend.MarkSpan
 	return nil, fmt.Errorf("invalid response")
 }
 
-// DeleteFailedDraftTraces removes traces that failed validation
-func (c *TuskClient) DeleteFailedDraftTraces(ctx context.Context, in *backend.DeleteFailedDraftTracesRequest, auth AuthOptions) (*backend.DeleteFailedDraftTracesResponseSuccess, error) {
-	var out backend.DeleteFailedDraftTracesResponse
-	if err := c.makeTestRunServiceRequest(ctx, "delete_failed_draft_traces", in, &out, auth, DefaultRetryConfig(3)); err != nil {
-		return nil, err
-	}
-
-	if s := out.GetSuccess(); s != nil {
-		return s, nil
-	}
-	if e := out.GetError(); e != nil {
-		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
-	}
-	return nil, fmt.Errorf("invalid response")
-}
-
-// AddTracesToSuite promotes validated traces to the test suite
-func (c *TuskClient) AddTracesToSuite(ctx context.Context, in *backend.AddTracesToSuiteRequest, auth AuthOptions) (*backend.AddTracesToSuiteResponseSuccess, error) {
-	var out backend.AddTracesToSuiteResponse
-	if err := c.makeTestRunServiceRequest(ctx, "add_traces_to_suite", in, &out, auth, DefaultRetryConfig(3)); err != nil {
-		return nil, err
-	}
-
-	if s := out.GetSuccess(); s != nil {
-		return s, nil
-	}
-	if e := out.GetError(); e != nil {
-		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
-	}
-	return nil, fmt.Errorf("invalid response")
-}

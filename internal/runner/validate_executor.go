@@ -4,21 +4,22 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
 // ValidationResult represents the result of validating a trace on main
+// Note: GlobalSpanIDs is no longer tracked here - backend handles global span detection
+// via TraceTestSpanResult.matchedDbSpanRecordingId
 type ValidationResult struct {
 	TraceID       string
 	TraceTestID   string
 	Passed        bool
 	FailureReason string
 	Duration      time.Duration
-	GlobalSpanIDs []string // Span IDs that matched with MATCH_SCOPE_GLOBAL (excluding pre-app-start)
 }
 
 // ValidateExecutor wraps Executor with validation-specific behavior
+// Note: With the new validation flow, most logic is handled by the regular Executor
+// and the backend processes results to curate the test suite
 type ValidateExecutor struct {
 	*Executor
 }
@@ -30,6 +31,8 @@ func NewValidateExecutor(base *Executor) *ValidateExecutor {
 
 // ValidateDraftTraces runs validation for all draft traces
 // Returns partial results if context is cancelled (workflow timeout)
+// Note: This is retained for backwards compatibility but the new validation flow
+// uses executor.RunTests directly with result uploads
 func (ve *ValidateExecutor) ValidateDraftTraces(ctx context.Context, tests []Test) ([]ValidationResult, error) {
 	var results []ValidationResult
 
@@ -77,19 +80,6 @@ func (ve *ValidateExecutor) validateSingleTrace(ctx context.Context, test *Test)
 			result.FailureReason = fmt.Sprintf("deviations: %d", len(testResult.Deviations))
 		} else if testResult.Error != "" {
 			result.FailureReason = testResult.Error
-		}
-	}
-
-	// Collect global span IDs from match events
-	// Only include spans that matched with MATCH_SCOPE_GLOBAL and are NOT pre-app-start
-	if ve.GetServer() != nil {
-		for _, event := range ve.GetServer().GetMatchEvents(test.TraceID) {
-			if event.MatchLevel != nil &&
-				event.MatchLevel.MatchScope == backend.MatchScope_MATCH_SCOPE_GLOBAL &&
-				event.ReplaySpan != nil &&
-				!event.ReplaySpan.IsPreAppStart {
-				result.GlobalSpanIDs = append(result.GlobalSpanIDs, event.SpanID)
-			}
 		}
 	}
 

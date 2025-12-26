@@ -51,8 +51,7 @@ var (
 	clientID           string
 
 	// Validation mode
-	validateSuiteOnMain bool
-	mainBranch          string
+	validateSuiteIfDefaultBranch bool
 )
 
 //go:embed short_docs/run.md
@@ -93,8 +92,7 @@ func init() {
 	runCmd.Flags().StringVar(&clientID, "client-id", "", "[Cloud] Client ID for JWT auth (optional; ignored when using API key)") // Tusk client ID. Not used right now, but could be useful for auth
 
 	// Validation mode flags
-	runCmd.Flags().BoolVar(&validateSuiteOnMain, "validate-suite-on-main", false, "[Cloud] Validate draft traces on main branch before adding to suite")
-	runCmd.Flags().StringVar(&mainBranch, "main-branch", "main", "[Cloud] Name of the main branch (e.g., 'main', 'master', 'dev')")
+	runCmd.Flags().BoolVar(&validateSuiteIfDefaultBranch, "validate-suite-if-default-branch", false, "[Cloud] Validate traces on default branch before adding to suite")
 
 	_ = runCmd.Flags().MarkHidden("client-id")
 	runCmd.Flags().SortFlags = false
@@ -159,15 +157,24 @@ func runTests(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Check for validation mode on main branch BEFORE creating drift run
-		// Validation mode has its own flow and doesn't need a drift run
-		if validateSuiteOnMain {
+		// Check for validation mode - validation mode fetches default branch from backend
+		if validateSuiteIfDefaultBranch {
+			// Get default branch from backend
+			infoReq := &backend.GetObservableServiceInfoRequest{
+				ObservableServiceId: cfg.Service.ID,
+			}
+			info, err := client.GetObservableServiceInfo(context.Background(), infoReq, authOptions)
+			if err != nil {
+				return fmt.Errorf("failed to get observable service info: %w", err)
+			}
+
+			// Check if we're on the default branch
 			currentBranch := getCurrentBranch()
-			if currentBranch == mainBranch {
+			if currentBranch == info.DefaultBranch {
+				slog.Debug("On default branch (%s == %s), running validation run\n", currentBranch, info.DefaultBranch)
 				return runValidationMode(cmd, client, authOptions, cfg)
 			}
-			// Not on main branch - fall through to normal replay flow
-			slog.Info("Not on main branch, continuing with normal replay", "currentBranch", currentBranch, "mainBranch", mainBranch)
+			slog.Debug("Not on default branch (%s != %s), running regular run\n", currentBranch, info.DefaultBranch)
 		}
 
 		if ci {
@@ -192,10 +199,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 			req := &backend.CreateDriftRunRequest{
 				ObservableServiceId: cfg.Service.ID,
 				CliVersion:          version.Version,
-				CommitSha:           commitSha,
-				PrNumber:            prNumber,
-				BranchName:          branchName,
-				ExternalCheckRunId:  externalCheckRunID,
+				CommitSha:           stringPtr(commitSha),
+				PrNumber:            stringPtr(prNumber),
+				BranchName:          stringPtr(branchName),
+				ExternalCheckRunId:  stringPtr(externalCheckRunID),
+				IsValidationRun:     false,
 			}
 
 			id, err := client.CreateDriftRun(context.Background(), req, authOptions)
@@ -897,51 +905,115 @@ func getCurrentBranch() string {
 	return strings.TrimSpace(string(output))
 }
 
-// runValidationMode runs the validation flow for draft traces on main branch
+// runValidationMode runs the validation flow for traces on the default branch
+// This validates both DRAFT and IN_SUITE tests, with the backend handling suite curation
 func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions api.AuthOptions, cfg *config.Config) error {
 	ctx := context.Background()
 
-	fmt.Println("Running suite validation on main branch")
-
-	// 1. Fetch draft traces
-	draftTests, err := fetchDraftTraces(ctx, client, authOptions, cfg.Service.ID)
-	if err != nil {
-		return fmt.Errorf("failed to fetch draft traces: %w", err)
+	// 1. Create validation drift run
+	createReq := &backend.CreateDriftRunRequest{
+		ObservableServiceId: cfg.Service.ID,
+		CliVersion:          version.Version,
+		IsValidationRun:     true,
+		// commit_sha, pr_number, branch_name, external_check_run_id are not needed for validation_runs
 	}
 
-	if len(draftTests) == 0 {
-		fmt.Println("No draft traces to validate")
+	driftRunID, err := client.CreateDriftRun(ctx, createReq, authOptions)
+	if err != nil {
+		return fmt.Errorf("failed to create validation drift run: %w", err)
+	}
+
+	fmt.Printf("Created validation drift run: %s\n", driftRunID)
+
+	// Update status to RUNNING
+	statusReq := &backend.UpdateDriftRunCIStatusRequest{
+		DriftRunId: driftRunID,
+		CiStatus:   backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_RUNNING,
+	}
+	if err := client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions); err != nil {
+		slog.Warn("Failed to update CI status to RUNNING", "error", err)
+	}
+
+	// 2. Fetch ALL tests (draft + in_suite) for validation
+	tests, err := fetchValidationTraceTests(ctx, client, authOptions, cfg.Service.ID)
+	if err != nil {
+		updateStatusToFailure(ctx, client, driftRunID, authOptions, fmt.Sprintf("Failed to fetch tests: %v", err))
+		return fmt.Errorf("failed to fetch validation traces: %w", err)
+	}
+
+	if len(tests) == 0 {
+		fmt.Println("No traces to validate")
+		statusReq := &backend.UpdateDriftRunCIStatusRequest{
+			DriftRunId:      driftRunID,
+			CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS,
+			CiStatusMessage: stringPtr("No traces to validate"),
+		}
+		_ = client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions)
 		return nil
 	}
 
-	fmt.Printf("Found %d draft traces to validate\n", len(draftTests))
+	fmt.Printf("Found %d traces to validate\n", len(tests))
 
-	// 2. Fetch pre-app-start spans for environment grouping
+	// 3. Fetch pre-app-start spans for environment grouping
 	preAppStartSpans, err := runner.FetchPreAppStartSpansFromCloud(ctx, client, authOptions, cfg.Service.ID, false, quiet)
 	if err != nil {
 		slog.Warn("Failed to fetch pre-app-start spans", "error", err)
 	}
 
-	// 3. Group by environment
-	groupResult, err := runner.GroupTestsByEnvironment(draftTests, preAppStartSpans)
+	// 4. Group by environment
+	groupResult, err := runner.GroupTestsByEnvironment(tests, preAppStartSpans)
 	if err != nil {
+		updateStatusToFailure(ctx, client, driftRunID, authOptions, fmt.Sprintf("Failed to group tests: %v", err))
 		return fmt.Errorf("failed to group tests by environment: %w", err)
 	}
 
-	// 4. Create executor and run validation
+	// 5. Create executor
 	executor := runner.NewExecutor()
 	if concurrency > 0 {
 		executor.SetConcurrency(concurrency)
 	}
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
 
-	var allResults []runner.ValidationResult
-	var allGlobalSpanIDs []string
+	// 6. Set up result upload callback (same as regular CI flow)
+	var mu sync.Mutex
+	uploadedCount := 0
+	attemptedCount := 0
+	var lastUploadErr error
 
+	executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+		// Upload result to backend
+		err := runner.UploadSingleTestResult(
+			ctx,
+			client,
+			driftRunID,
+			authOptions,
+			executor,
+			res,
+			test,
+		)
+
+		mu.Lock()
+		attemptedCount++
+		if err != nil {
+			lastUploadErr = err
+			slog.Warn("Failed to upload test result", "traceID", test.TraceID, "error", err)
+		} else {
+			uploadedCount++
+		}
+		mu.Unlock()
+
+		// Cleanup trace spans
+		if executor.GetServer() != nil {
+			executor.GetServer().CleanupTraceSpans(test.TraceID)
+		}
+	})
+
+	// 7. Run tests by environment
+	var allResults []runner.TestResult
 	for _, group := range groupResult.Groups {
 		fmt.Printf("Validating %d traces in environment: %s\n", len(group.Tests), group.Name)
 
-		// Prepare suite spans for this environment (AllowSuiteWideMatching = true to load all suite spans)
+		// Prepare suite spans (AllowSuiteWideMatching = true to load all suite spans)
 		if err := runner.PrepareAndSetSuiteSpans(ctx, executor, runner.SuiteSpanOptions{
 			IsCloudMode:            true,
 			Client:                 client,
@@ -949,12 +1021,12 @@ func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions a
 			ServiceID:              cfg.Service.ID,
 			Interactive:            false,
 			Quiet:                  quiet,
-			AllowSuiteWideMatching: true, // Load ALL suite spans for validation
+			AllowSuiteWideMatching: true,
 		}, group.Tests); err != nil {
 			slog.Warn("Failed to prepare suite spans", "error", err)
 		}
 
-		// Set environment variables from the group
+		// Set environment variables
 		oldEnvVars := make(map[string]string)
 		for k, v := range group.EnvVars {
 			oldEnvVars[k] = os.Getenv(k)
@@ -963,117 +1035,62 @@ func runValidationMode(cmd *cobra.Command, client *api.TuskClient, authOptions a
 
 		if err := executor.StartEnvironment(); err != nil {
 			slog.Warn("Failed to start environment", "env", group.Name, "error", err)
-			// Restore env vars
-			for k, v := range oldEnvVars {
-				if v == "" {
-					os.Unsetenv(k)
-				} else {
-					os.Setenv(k, v)
-				}
-			}
+			restoreEnvVars(oldEnvVars)
 			continue
 		}
 
-		validator := runner.NewValidateExecutor(executor)
-		results, err := validator.ValidateDraftTraces(ctx, group.Tests)
+		results, err := executor.RunTests(group.Tests)
 		if err != nil {
-			slog.Warn("Validation error", "env", group.Name, "error", err)
+			slog.Warn("Test execution error", "env", group.Name, "error", err)
 		}
 		allResults = append(allResults, results...)
 
-		// Collect global span IDs
-		for _, r := range results {
-			allGlobalSpanIDs = append(allGlobalSpanIDs, r.GlobalSpanIDs...)
-		}
-
 		_ = executor.StopEnvironment()
-
-		// Restore env vars
-		for k, v := range oldEnvVars {
-			if v == "" {
-				os.Unsetenv(k)
-			} else {
-				os.Setenv(k, v)
-			}
-		}
+		restoreEnvVars(oldEnvVars)
 	}
 
-	// 5. Categorize results
-	var passed, failed []runner.ValidationResult
+	// 8. Update final CI status
+	// Backend will automatically process results and curate suite
+	passed := 0
+	failed := 0
 	for _, r := range allResults {
 		if r.Passed {
-			passed = append(passed, r)
+			passed++
 		} else {
-			failed = append(failed, r)
+			failed++
 		}
 	}
 
-	fmt.Printf("\nValidation complete: %d passed, %d failed\n", len(passed), len(failed))
+	fmt.Printf("\nValidation complete: %d passed, %d failed\n", passed, failed)
 
-	// 6. Mark global spans in backend (deduplicated)
-	if len(allGlobalSpanIDs) > 0 {
-		seen := make(map[string]bool)
-		var unique []string
-		for _, id := range allGlobalSpanIDs {
-			if !seen[id] {
-				seen[id] = true
-				unique = append(unique, id)
-			}
-		}
-
-		fmt.Printf("Marking %d spans as global\n", len(unique))
-		req := &backend.MarkSpansAsGlobalRequest{
-			ObservableServiceId: cfg.Service.ID,
-			SpanIds:             unique,
-		}
-		if _, err := client.MarkSpansAsGlobal(ctx, req, authOptions); err != nil {
-			slog.Warn("Failed to mark global spans", "error", err)
-		}
+	finalStatus := backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS
+	statusReq = &backend.UpdateDriftRunCIStatusRequest{
+		DriftRunId:      driftRunID,
+		CiStatus:        finalStatus,
+		CiStatusMessage: stringPtr(fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)),
+	}
+	if err := client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions); err != nil {
+		slog.Warn("Failed to update CI status", "error", err)
 	}
 
-	// 7. Delete failed traces
-	if len(failed) > 0 {
-		failedIDs := make([]string, len(failed))
-		for i, f := range failed {
-			failedIDs[i] = f.TraceTestID
-		}
-		fmt.Printf("Removing %d failed traces\n", len(failedIDs))
-		req := &backend.DeleteFailedDraftTracesRequest{
-			ObservableServiceId: cfg.Service.ID,
-			TraceTestIds:        failedIDs,
-		}
-		if _, err := client.DeleteFailedDraftTraces(ctx, req, authOptions); err != nil {
-			slog.Warn("Failed to delete failed traces", "error", err)
-		}
+	mu.Lock()
+	fmt.Printf("Successfully uploaded %d/%d test results\n", uploadedCount, attemptedCount)
+	if attemptedCount > uploadedCount && lastUploadErr != nil {
+		fmt.Printf("Last upload error: %v\n", lastUploadErr)
 	}
+	mu.Unlock()
 
-	// 8. Add passed traces to suite
-	if len(passed) > 0 {
-		passedIDs := make([]string, len(passed))
-		for i, p := range passed {
-			passedIDs[i] = p.TraceTestID
-		}
-		fmt.Printf("Adding %d validated traces to test suite\n", len(passedIDs))
-		req := &backend.AddTracesToSuiteRequest{
-			ObservableServiceId: cfg.Service.ID,
-			TraceTestIds:        passedIDs,
-		}
-		if _, err := client.AddTracesToSuite(ctx, req, authOptions); err != nil {
-			return fmt.Errorf("failed to add traces to suite: %w", err)
-		}
-	}
-
-	fmt.Println("Suite validation completed successfully")
-	return nil // Always exit success
+	fmt.Println("Suite validation completed - backend will process results and update suite")
+	return nil
 }
 
-// fetchDraftTraces fetches all draft traces from the cloud
-func fetchDraftTraces(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID string) ([]runner.Test, error) {
+// fetchValidationTraceTests fetches all traces for validation (draft + in_suite)
+func fetchValidationTraceTests(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID string) ([]runner.Test, error) {
 	var allTests []*backend.TraceTest
 	var cursor string
 
 	for {
-		req := &backend.GetDraftTraceTestsRequest{
+		req := &backend.GetValidationTraceTestsRequest{
 			ObservableServiceId: serviceID,
 			PageSize:            50,
 		}
@@ -1081,7 +1098,7 @@ func fetchDraftTraces(ctx context.Context, client *api.TuskClient, auth api.Auth
 			req.PaginationCursor = &cursor
 		}
 
-		resp, err := client.GetDraftTraceTests(ctx, req, auth)
+		resp, err := client.GetValidationTraceTests(ctx, req, auth)
 		if err != nil {
 			return nil, err
 		}
@@ -1095,4 +1112,23 @@ func fetchDraftTraces(ctx context.Context, client *api.TuskClient, auth api.Auth
 	}
 
 	return runner.ConvertTraceTestsToRunnerTests(allTests), nil
+}
+
+func updateStatusToFailure(ctx context.Context, client *api.TuskClient, driftRunID string, auth api.AuthOptions, message string) {
+	statusReq := &backend.UpdateDriftRunCIStatusRequest{
+		DriftRunId:      driftRunID,
+		CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
+		CiStatusMessage: stringPtr(message),
+	}
+	_ = client.UpdateDriftRunCIStatus(ctx, statusReq, auth)
+}
+
+func restoreEnvVars(oldEnvVars map[string]string) {
+	for k, v := range oldEnvVars {
+		if v == "" {
+			os.Unsetenv(k)
+		} else {
+			os.Setenv(k, v)
+		}
+	}
 }
