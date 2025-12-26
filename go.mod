@@ -3,7 +3,7 @@ module github.com/Use-Tusk/tusk-drift-cli
 go 1.25.0
 
 require (
-	github.com/Use-Tusk/fence v0.1.2
+	github.com/Use-Tusk/fence v0.1.4
 	github.com/Use-Tusk/tusk-drift-schemas v0.1.19
 	github.com/agnivade/levenshtein v1.0.3
 	github.com/atotto/clipboard v0.1.4
@@ -33,6 +33,7 @@ require (
 require (
 	github.com/alecthomas/chroma/v2 v2.14.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.9.1 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
@@ -68,6 +69,6 @@ require (
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 )

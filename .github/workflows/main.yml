@@ -74,7 +74,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y bubblewrap socat
+          sudo apt-get install -y bubblewrap socat uidmap
+          # Configure subuid/subgid for the runner user (required for unprivileged user namespaces)
+          echo "$(whoami):100000:65536" | sudo tee -a /etc/subuid
+          echo "$(whoami):100000:65536" | sudo tee -a /etc/subgid
+          # Make bwrap setuid so it can create namespaces as non-root user
+          sudo chmod u+s $(which bwrap)
 
       - name: Test
         run: make test-ci
