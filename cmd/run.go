@@ -171,10 +171,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 			// Check if we're on the default branch
 			currentBranch := getCurrentBranch()
 			if currentBranch == info.DefaultBranch {
-				slog.Debug("On default branch (%s == %s), running validation run\n", currentBranch, info.DefaultBranch)
+				slog.Debug("On default branch, running validation run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
 				return runValidationMode(client, authOptions, cfg)
 			}
-			slog.Debug("Not on default branch (%s != %s), running regular run\n", currentBranch, info.DefaultBranch)
+			slog.Debug("Not on default branch, running regular run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
 		}
 
 		if ci {
