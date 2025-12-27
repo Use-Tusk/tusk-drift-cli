@@ -24,7 +24,7 @@ func NewTracker(cmd *cobra.Command) *Tracker {
 	}
 
 	// Check if we need to show first-run notice (before creating client)
-	firstRun := ShowFirstRunNotice()
+	firstRun := ShowFirstRunNotice(cmd)
 
 	client := NewClient()
 	if client == nil {
