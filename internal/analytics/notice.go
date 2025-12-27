@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
@@ -16,7 +17,12 @@ To disable: export TUSK_ANALYTICS_DISABLED=1 or run: tusk analytics disable`
 
 // ShowFirstRunNotice displays the analytics notice on first run
 // Returns true if the notice was shown (and we should track first_run)
-func ShowFirstRunNotice() bool {
+func ShowFirstRunNotice(cmd *cobra.Command) bool {
+	// Skip if user is running "analytics disable" - don't show notice when they're trying to disable
+	if getCommandPath(cmd) == "analytics disable" {
+		return false
+	}
+
 	// Skip if analytics is disabled (includes CI check)
 	if !cliconfig.IsAnalyticsEnabled() {
 		return false
