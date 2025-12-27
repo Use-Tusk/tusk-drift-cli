@@ -524,6 +524,13 @@ func (ms *Server) handleConnection(conn net.Conn) {
 				slog.Debug("SDK connection closed")
 				return
 			}
+			// Connection reset/closed errors are expected during shutdown
+			errStr := err.Error()
+			if strings.Contains(errStr, "connection reset by peer") ||
+				strings.Contains(errStr, "use of closed network connection") {
+				slog.Debug("SDK connection closed during shutdown", "error", err)
+				return
+			}
 			slog.Error("Failed to read message length", "error", err)
 			return
 		}

@@ -24,6 +24,7 @@ type ProcessManager struct {
 	workDir      string
 	fenceManager *fence.Manager
 	fenceEnabled bool
+	debug        bool
 }
 
 // ManagedProcess represents a background process
@@ -85,14 +86,15 @@ func (rb *RingBuffer) All() []string {
 
 // NewProcessManager creates a new ProcessManager
 func NewProcessManager(workDir string) *ProcessManager {
-	return NewProcessManagerWithOptions(workDir, false)
+	return NewProcessManagerWithOptions(workDir, false, false)
 }
 
 // NewProcessManagerWithOptions creates a new ProcessManager with options
-func NewProcessManagerWithOptions(workDir string, disableSandbox bool) *ProcessManager {
+func NewProcessManagerWithOptions(workDir string, disableSandbox bool, debug bool) *ProcessManager {
 	pm := &ProcessManager{
 		processes: make(map[string]*ManagedProcess),
 		workDir:   workDir,
+		debug:     debug,
 	}
 
 	if disableSandbox {
@@ -102,7 +104,7 @@ func NewProcessManagerWithOptions(workDir string, disableSandbox bool) *ProcessM
 
 	// Initialize fence for sandboxing RunCommand (security protection)
 	cfg := createFenceConfig(workDir)
-	pm.fenceManager = fence.NewManager(cfg, false, false)
+	pm.fenceManager = fence.NewManager(cfg, debug, false)
 	if err := pm.fenceManager.Initialize(); err != nil {
 		// Fence initialization failed - continue without sandboxing
 		// (esp when running on unsupported platforms or missing dependencies)

@@ -120,6 +120,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	executor := runner.NewExecutor()
 	executor.SetDisableSandbox(disableSandbox)
+	executor.SetDebug(debug)
 
 	_ = config.Load(cfgFile)
 	cfg, getConfigErr := config.Get()

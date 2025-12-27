@@ -72,6 +72,7 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		SkipPermissions: expSkipPermissions,
 		DisableSandbox:  expDisableSandbox,
 		DisableProgress: expDisableProgress,
+		Debug:           debug,
 	}
 
 	a, err := agent.New(cfg)

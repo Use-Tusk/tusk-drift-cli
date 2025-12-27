@@ -23,7 +23,7 @@ go.work.sum
 
 # Built binaries
 tusk
-tusk-drift-cli
+tusk-*
 
 # IDE files
 .vscode/
