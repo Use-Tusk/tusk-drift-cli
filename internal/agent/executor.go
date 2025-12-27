@@ -490,6 +490,6 @@ func NewProcessManager(workDir string) *ProcessManager {
 }
 
 // NewProcessManagerWithOptions creates a new ProcessManager with options
-func NewProcessManagerWithOptions(workDir string, disableSandbox bool) *ProcessManager {
-	return tools.NewProcessManagerWithOptions(workDir, disableSandbox)
+func NewProcessManagerWithOptions(workDir string, disableSandbox bool, debug bool) *ProcessManager {
+	return tools.NewProcessManagerWithOptions(workDir, disableSandbox, debug)
 }

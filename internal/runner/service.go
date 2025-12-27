@@ -45,7 +45,7 @@ func (e *Executor) StartService() error {
 	command := cfg.Service.Start.Command
 	if !e.disableSandbox && fence.IsSupported() {
 		fenceCfg := createReplayFenceConfig()
-		e.fenceManager = fence.NewManager(fenceCfg, false, false)
+		e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
 		e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
 
 		if err := e.fenceManager.Initialize(); err != nil {

@@ -81,7 +81,7 @@ func New(cfg Config) (*Agent, error) {
 		return nil, err
 	}
 
-	pm := NewProcessManagerWithOptions(cfg.WorkDir, cfg.DisableSandbox)
+	pm := NewProcessManagerWithOptions(cfg.WorkDir, cfg.DisableSandbox, cfg.Debug)
 	phaseMgr := NewPhaseManager()
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 

@@ -101,4 +101,5 @@ type Config struct {
 	SkipPermissions bool // Skip permission prompts for consequential actions
 	DisableSandbox  bool // Disable fence sandboxing for commands
 	DisableProgress bool // Don't save or resume from PROGRESS.md
+	Debug           bool // Enable debug mode for fence sandbox
 }

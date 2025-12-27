@@ -36,6 +36,7 @@ type Executor struct {
 	suiteSpans        []*core.Span
 	cancelTests       context.CancelFunc
 	disableSandbox    bool
+	debug             bool
 	fenceManager      *fence.Manager
 }
 
@@ -55,6 +56,11 @@ func (e *Executor) SetDisableSandbox(disable bool) {
 // IsSandboxDisabled returns true if fence sandboxing is disabled
 func (e *Executor) IsSandboxDisabled() bool {
 	return e.disableSandbox
+}
+
+// SetDebug enables debug mode for fence sandbox
+func (e *Executor) SetDebug(debug bool) {
+	e.debug = debug
 }
 
 func (e *Executor) SetResultsOutput(dir string) {
