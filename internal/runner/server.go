@@ -580,6 +580,13 @@ func (ms *Server) handleConnection(conn net.Conn) {
 				slog.Debug("SDK connection closed")
 				return
 			}
+			// Connection reset/closed errors are expected during shutdown
+			errStr := err.Error()
+			if strings.Contains(errStr, "connection reset by peer") ||
+				strings.Contains(errStr, "use of closed network connection") {
+				slog.Debug("SDK connection closed during shutdown", "error", err)
+				return
+			}
 			slog.Error("Failed to read message length", "error", err)
 			return
 		}
@@ -1038,7 +1045,7 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	case backend.MatchScope_MATCH_SCOPE_GLOBAL:
 		if testID != "" {
 			msg := "🟢 Found best match for request across traces\n"
-			if span != nil && span.IsPreAppStart {
+			if span.IsPreAppStart {
 				msg = "🟢 Found best match for request across traces (pre-app-start)\n"
 			}
 			logging.LogToCurrentTest(testID, msg)

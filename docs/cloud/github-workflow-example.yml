@@ -31,7 +31,7 @@ jobs:
 
       - name: Install Tusk Drift CLI
         run: |
-          curl -fsSL https://raw.githubusercontent.com/Use-Tusk/tusk-drift-cli/main/install.sh | sh
+          curl -fsSL https://cli.usetusk.ai/install.sh | sh
           tusk --version
 
       - name: Run Tusk Drift trace tests

@@ -484,6 +484,76 @@ func TestBuildTraceTestResultsProto_WithMockNotFound(t *testing.T) {
 		assert.NotNil(t, mockNotFoundSpanResult.StackTrace, "Should include stack trace from the mock-not-found event")
 		assert.Equal(t, "at test.ts:10", *mockNotFoundSpanResult.StackTrace)
 		assert.NotNil(t, mockNotFoundSpanResult.ReplaySpan, "Should include the replay span that failed to find a mock")
+
+		// Verify the inbound span deviation includes details about which calls failed
+		require.Len(t, inboundSpanResult.Deviations, 2, "Should have original deviation + mock-not-found deviation")
+		mockNotFoundDeviation := inboundSpanResult.Deviations[1] // The mock-not-found deviation is appended
+		assert.Equal(t, "response", mockNotFoundDeviation.Field)
+		assert.Contains(t, mockNotFoundDeviation.Description, "mock not found for outbound call(s):")
+		assert.Contains(t, mockNotFoundDeviation.Description, "pg pg.query", "Should include package name and span name")
+	})
+
+	t.Run("mock not found deviation includes multiple failed calls", func(t *testing.T) {
+		// This would be a rare edge case. Usually when there is a "mock not found", the SDK would
+		// propagate this error and the service under test would typically fail/throw an error.
+		// This could theoretically still happen for parallel outbound calls, or non-awaited async calls.
+		t.Parallel()
+
+		cfg, _ := config.Get()
+		server, err := NewServer("test-service", &cfg.Service)
+		require.NoError(t, err)
+		defer func() { _ = server.Stop() }()
+
+		// Record multiple mock-not-found events
+		server.recordMockNotFoundEvent("trace-1", MockNotFoundEvent{
+			PackageName: "pg",
+			SpanName:    "pg.query",
+			Operation:   "query",
+			StackTrace:  "at db.ts:10",
+			Timestamp:   time.Now(),
+			Error:       "no mock found",
+		})
+		server.recordMockNotFoundEvent("trace-1", MockNotFoundEvent{
+			PackageName: "http",
+			SpanName:    "GET /api/users",
+			Operation:   "GET",
+			StackTrace:  "at api.ts:20",
+			Timestamp:   time.Now(),
+			Error:       "no mock found",
+		})
+
+		executor := &Executor{
+			server: server,
+		}
+
+		tests := []Test{
+			{TraceID: "trace-1", TraceTestID: "tt-1"},
+		}
+
+		results := []TestResult{
+			{
+				TestID: "trace-1",
+				Passed: false,
+			},
+		}
+
+		protoResults := BuildTraceTestResultsProto(executor, results, tests)
+
+		require.Len(t, protoResults, 1)
+		result := protoResults[0]
+
+		assert.Equal(t, backend.TraceTestFailureReason_TRACE_TEST_FAILURE_REASON_MOCK_NOT_FOUND, *result.TestFailureReason)
+
+		// Find the inbound span result with the deviation
+		require.NotEmpty(t, result.SpanResults)
+		inboundSpanResult := result.SpanResults[0]
+
+		require.Len(t, inboundSpanResult.Deviations, 1, "Should have one deviation describing all failed calls")
+		deviation := inboundSpanResult.Deviations[0]
+		assert.Equal(t, "response", deviation.Field)
+		assert.Contains(t, deviation.Description, "mock not found for outbound call(s):")
+		assert.Contains(t, deviation.Description, "pg pg.query", "Should include first failed call")
+		assert.Contains(t, deviation.Description, "http GET /api/users", "Should include second failed call")
 	})
 
 	t.Run("no mock-not-found events falls back to response mismatch", func(t *testing.T) {

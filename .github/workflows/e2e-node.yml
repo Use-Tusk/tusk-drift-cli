@@ -1,0 +1,58 @@
+name: E2E Tests (Node.js)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest] # fence (sandbox) supported platforms
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Linux sandbox dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap socat uidmap
+          # Configure subuid/subgid for the runner user (required for unprivileged user namespaces)
+          echo "$(whoami):100000:65536" | sudo tee -a /etc/subuid
+          echo "$(whoami):100000:65536" | sudo tee -a /etc/subgid
+          # Make bwrap setuid so it can create namespaces as non-root user
+          sudo chmod u+s $(which bwrap)
+
+      - name: Build CLI
+        run: make build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.18.0
+
+      - name: Clone drift-node-demo
+        run: git clone https://github.com/Use-Tusk/drift-node-demo.git ../drift-node-demo
+
+      - name: Install demo dependencies
+        working-directory: ../drift-node-demo
+        run: npm ci
+
+      - name: Run Node.js E2E tests
+        working-directory: ../drift-node-demo
+        run: |
+          $GITHUB_WORKSPACE/tusk run --print
+          # Exits non-zero if any test has deviations

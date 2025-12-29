@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
@@ -36,6 +37,9 @@ type Executor struct {
 	globalSpans            []*core.Span // Explicitly marked global spans for cross-trace matching
 	allowSuiteWideMatching bool         // When true, allows cross-trace matching from any suite span
 	cancelTests            context.CancelFunc
+	disableSandbox         bool
+	debug                  bool
+	fenceManager           *fence.Manager
 }
 
 func NewExecutor() *Executor {
@@ -44,6 +48,21 @@ func NewExecutor() *Executor {
 		parallel:    5,
 		testTimeout: 30 * time.Second,
 	}
+}
+
+// SetDisableSandbox sets whether to disable fence sandboxing for the service process
+func (e *Executor) SetDisableSandbox(disable bool) {
+	e.disableSandbox = disable
+}
+
+// IsSandboxDisabled returns true if fence sandboxing is disabled
+func (e *Executor) IsSandboxDisabled() bool {
+	return e.disableSandbox
+}
+
+// SetDebug enables debug mode for fence sandbox
+func (e *Executor) SetDebug(debug bool) {
+	e.debug = debug
 }
 
 func (e *Executor) SetResultsOutput(dir string) {

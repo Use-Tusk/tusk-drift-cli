@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
@@ -40,8 +41,31 @@ func (e *Executor) StartService() error {
 
 	slog.Debug("Starting service", "command", cfg.Service.Start.Command)
 
+	// Wrap command with fence sandboxing (if supported and not disabled)
+	command := cfg.Service.Start.Command
+	if !e.disableSandbox && fence.IsSupported() {
+		fenceCfg := createReplayFenceConfig()
+		e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
+		e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
+
+		if err := e.fenceManager.Initialize(); err != nil {
+			slog.Warn("Failed to initialize fence sandbox, continuing without sandboxing", "error", err)
+			e.fenceManager = nil
+		} else {
+			wrappedCmd, err := e.fenceManager.WrapCommand(command)
+			if err != nil {
+				slog.Warn("Failed to wrap command with fence, continuing without sandboxing", "error", err)
+				e.fenceManager.Cleanup()
+				e.fenceManager = nil
+			} else {
+				command = wrappedCmd
+				logging.LogToService("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
+			}
+		}
+	}
+
 	ctx := context.Background()
-	e.serviceCmd = createServiceCommand(ctx, cfg.Service.Start.Command)
+	e.serviceCmd = createServiceCommand(ctx, command)
 
 	// Set up process group so we can kill all child processes
 	setupProcessGroup(e.serviceCmd)
@@ -85,6 +109,10 @@ func (e *Executor) StartService() error {
 	}
 
 	if err := e.serviceCmd.Start(); err != nil {
+		if e.fenceManager != nil {
+			e.fenceManager.Cleanup()
+			e.fenceManager = nil
+		}
 		return fmt.Errorf("failed to start service: %w", err)
 	}
 
@@ -98,11 +126,41 @@ func (e *Executor) StartService() error {
 	return nil
 }
 
+// createReplayFenceConfig creates fence config for replay mode.
+// This blocks localhost outbound connections to force the service to use SDK mocks.
+func createReplayFenceConfig() *fence.Config {
+	f := false
+	return &fence.Config{
+		Network: fence.NetworkConfig{
+			AllowedDomains: []string{
+				// Allow localhost for the service's own health checks
+				"localhost",
+				"127.0.0.1",
+			},
+			AllowLocalBinding:   true, // Allow service to bind to its port
+			AllowLocalOutbound:  &f,   // Block outbound to localhost (Postgres, Redis, etc.)
+			AllowAllUnixSockets: true, // Allow SDK to connect to mock server via Unix socket
+		},
+		Filesystem: fence.FilesystemConfig{
+			AllowWrite: []string{
+				".",
+				".tusk",
+				"node_modules",
+				"/tmp",
+			},
+		},
+	}
+}
+
 func (e *Executor) StopService() error {
 	cfg, _ := config.Get()
 
 	defer func() {
 		e.cleanupLogFiles()
+		if e.fenceManager != nil {
+			e.fenceManager.Cleanup()
+			e.fenceManager = nil
+		}
 		logging.LogToService("Service stopped")
 	}()
 
