@@ -53,12 +53,13 @@ func BuildSuiteSpansForRun(
 	// Fetch global spans
 	if opts.IsCloudMode && opts.Client != nil {
 		global, err := FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
-		if err != nil {
+		switch {
+		case err != nil:
 			slog.Warn("Failed to fetch global spans", "error", err)
-		} else if opts.AllowSuiteWideMatching {
+		case opts.AllowSuiteWideMatching:
 			// Validation mode: add global spans directly to suite spans for matching
 			suiteSpans = append(suiteSpans, global...)
-		} else {
+		default:
 			// Normal replay mode: keep global spans separate for dedicated index
 			globalSpans = global
 		}
@@ -275,61 +276,6 @@ func FetchLocalPreAppStartSpans(interactive bool) ([]*core.Span, error) {
 		}
 	}
 	return out, nil
-}
-
-// fetchAllSuiteSpans fetches all suite spans from cloud (used for single trace test runs)
-func fetchAllSuiteSpans(
-	ctx context.Context,
-	client *api.TuskClient,
-	auth api.AuthOptions,
-	serviceID string,
-	interactive bool,
-	quiet bool,
-) ([]*core.Span, error) {
-	tracker := utils.NewProgressTracker("Fetching suite spans", interactive, quiet)
-	defer tracker.Stop()
-
-	var spans []*core.Span
-	cur := ""
-	fetchedTests := 0
-
-	for {
-		req := &backend.GetAllTraceTestsRequest{
-			ObservableServiceId: serviceID,
-			PageSize:            50,
-		}
-		if cur != "" {
-			req.PaginationCursor = &cur
-		}
-		resp, err := client.GetAllTraceTests(ctx, req, auth)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
-		}
-
-		// Set total on first request
-		if cur == "" {
-			tracker.SetTotal(int(resp.TotalCount))
-		}
-
-		for _, tt := range resp.TraceTests {
-			if len(tt.Spans) > 0 {
-				spans = append(spans, tt.Spans...)
-			}
-		}
-
-		fetchedTests += len(resp.TraceTests)
-		tracker.Update(fetchedTests)
-
-		if next := resp.GetNextCursor(); next != "" {
-			cur = next
-			continue
-		}
-		break
-	}
-
-	tracker.Finish(fmt.Sprintf("✓ Loaded %d suite spans from %d tests", len(spans), fetchedTests))
-
-	return spans, nil
 }
 
 // DedupeSpans deduplicates spans by (trace_id, span_id) while preserving order

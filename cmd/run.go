@@ -490,11 +490,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 		if driftRunID != "" {
 			initialLogs = append(initialLogs, fmt.Sprintf("Created Tusk Drift run: %s", driftRunID))
 		}
-		if isValidation {
+		switch {
+		case isValidation:
 			initialLogs = append(initialLogs, "📡 Fetching traces to validate from Tusk Drift Cloud...")
-		} else if cloud && client != nil {
+		case cloud && client != nil:
 			initialLogs = append(initialLogs, "📡 Fetching tests from Tusk Drift Cloud...")
-		} else {
+		default:
 			initialLogs = append(initialLogs, "📁 Loading tests from local traces...")
 		}
 

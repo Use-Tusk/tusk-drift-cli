@@ -72,13 +72,14 @@ func (ve *ValidateExecutor) validateSingleTrace(ctx context.Context, test *Test)
 	}
 
 	if !result.Passed {
-		if runErr != nil {
+		switch {
+		case runErr != nil:
 			result.FailureReason = fmt.Sprintf("run_error: %v", runErr)
-		} else if testResult.CrashedServer {
+		case testResult.CrashedServer:
 			result.FailureReason = "server_crashed"
-		} else if len(testResult.Deviations) > 0 {
+		case len(testResult.Deviations) > 0:
 			result.FailureReason = fmt.Sprintf("deviations: %d", len(testResult.Deviations))
-		} else if testResult.Error != "" {
+		case testResult.Error != "":
 			result.FailureReason = testResult.Error
 		}
 	}

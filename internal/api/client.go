@@ -379,4 +379,3 @@ func (c *TuskClient) GetValidationTraceTests(ctx context.Context, in *backend.Ge
 	}
 	return nil, fmt.Errorf("invalid response")
 }
-
