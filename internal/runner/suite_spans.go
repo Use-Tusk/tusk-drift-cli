@@ -41,8 +41,6 @@ type BuildSuiteSpansResult struct {
 }
 
 // BuildSuiteSpansForRun builds the suite spans for the run.
-// When AllowSuiteWideMatching is true, all suite spans are loaded for cross-trace matching.
-// When false, only global spans (is_global=true) are loaded for cross-trace matching.
 // Returns the suite spans, global spans (when not suite-wide matching), pre-app-start count, and unique trace count.
 func BuildSuiteSpansForRun(
 	ctx context.Context,

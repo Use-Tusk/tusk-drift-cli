@@ -148,6 +148,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	var driftRunID string
 	var client *api.TuskClient
 	var authOptions api.AuthOptions
+	isValidation := false
 
 	if cloud {
 		var err error
@@ -172,38 +173,51 @@ func runTests(cmd *cobra.Command, args []string) error {
 			currentBranch := getBranchFromEnv()
 			if currentBranch == info.DefaultBranch {
 				slog.Debug("On default branch, running validation run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
-				return runValidationMode(client, authOptions, cfg)
+				isValidation = true
+			} else {
+				slog.Debug("Not on default branch, running regular run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
 			}
-			slog.Debug("Not on default branch, running regular run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
 		}
 
-		if ci {
-			ciMetadata := CIMetadata{
-				CommitSha:          commitSha,
-				PRNumber:           prNumber,
-				BranchName:         branchName,
-				ExternalCheckRunID: externalCheckRunID,
-			}
+		if ci || isValidation {
+			var req *backend.CreateDriftRunRequest
 
-			ciMetadata, err = validateCIMetadata(ciMetadata)
-			if err != nil {
-				cmd.SilenceUsage = true
-				return err
-			}
+			if isValidation {
+				// Validation mode: no CI metadata needed
+				req = &backend.CreateDriftRunRequest{
+					ObservableServiceId: cfg.Service.ID,
+					CliVersion:          version.Version,
+					IsValidationRun:     true,
+				}
+			} else {
+				// Regular CI mode: validate and include CI metadata
+				ciMetadata := CIMetadata{
+					CommitSha:          commitSha,
+					PRNumber:           prNumber,
+					BranchName:         branchName,
+					ExternalCheckRunID: externalCheckRunID,
+				}
 
-			commitSha = ciMetadata.CommitSha
-			prNumber = ciMetadata.PRNumber
-			branchName = ciMetadata.BranchName
-			externalCheckRunID = ciMetadata.ExternalCheckRunID
+				ciMetadata, err = validateCIMetadata(ciMetadata)
+				if err != nil {
+					cmd.SilenceUsage = true
+					return err
+				}
 
-			req := &backend.CreateDriftRunRequest{
-				ObservableServiceId: cfg.Service.ID,
-				CliVersion:          version.Version,
-				CommitSha:           stringPtr(commitSha),
-				PrNumber:            stringPtr(prNumber),
-				BranchName:          stringPtr(branchName),
-				ExternalCheckRunId:  stringPtr(externalCheckRunID),
-				IsValidationRun:     false,
+				commitSha = ciMetadata.CommitSha
+				prNumber = ciMetadata.PRNumber
+				branchName = ciMetadata.BranchName
+				externalCheckRunID = ciMetadata.ExternalCheckRunID
+
+				req = &backend.CreateDriftRunRequest{
+					ObservableServiceId: cfg.Service.ID,
+					CliVersion:          version.Version,
+					CommitSha:           stringPtr(commitSha),
+					PrNumber:            stringPtr(prNumber),
+					BranchName:          stringPtr(branchName),
+					ExternalCheckRunId:  stringPtr(externalCheckRunID),
+					IsValidationRun:     false,
+				}
 			}
 
 			id, err := client.CreateDriftRun(context.Background(), req, authOptions)
@@ -263,7 +277,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	// Per-test cloud upload while TUI is active (and also in headless)
 	// Cloud mode, overrides the above OnTestCompleted callback
-	if cloud && client != nil && ci {
+	if cloud && client != nil && (ci || isValidation) {
 		// Save existing callback if print mode is enabled
 		existingCallback := func(res runner.TestResult, test runner.Test) {}
 		if !interactive {
@@ -326,23 +340,31 @@ func runTests(cmd *cobra.Command, args []string) error {
 	if deferLoadTests {
 		// Defer loading to the TUI (async)
 	} else {
-		loadTests := makeLoadTestsFunc(
-			executor,
-			client,
-			authOptions,
-			cfg.Service.ID,
-			driftRunID,
-			traceID,
-			traceTestID,
-			allCloudTraceTests || !ci,
-			filter,
-			false,
-			quiet,
-		)
-		tests, err = loadTests(context.Background())
+		if isValidation {
+			// Validation mode: fetch all validation traces (draft + in_suite)
+			tests, err = fetchValidationTraceTests(context.Background(), client, authOptions, cfg.Service.ID)
+		} else {
+			loadTests := makeLoadTestsFunc(
+				executor,
+				client,
+				authOptions,
+				cfg.Service.ID,
+				driftRunID,
+				traceID,
+				traceTestID,
+				allCloudTraceTests || !ci,
+				filter,
+				false,
+				quiet,
+			)
+			tests, err = loadTests(context.Background())
+		}
 		if err != nil {
 			cmd.SilenceUsage = true
 			if cloud && client != nil {
+				if isValidation {
+					updateStatusToFailure(context.Background(), client, driftRunID, authOptions, fmt.Sprintf("Failed to fetch tests: %v", err))
+				}
 				return fmt.Errorf("failed to load cloud tests: %w", err)
 			}
 			return fmt.Errorf("failed to load tests: %w", err)
@@ -350,18 +372,23 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	if !deferLoadTests && len(tests) == 0 {
-		if print && outputFormat == "json" {
-			fmt.Println("[]")
-			fmt.Fprintln(os.Stderr, "No tests found")
-		} else {
-			fmt.Println("No tests found")
+		noTestsMsg := "No tests found"
+		if isValidation {
+			noTestsMsg = "No traces to validate"
 		}
 
-		if cloud && client != nil && ci {
+		if print && outputFormat == "json" {
+			fmt.Println("[]")
+			fmt.Fprintln(os.Stderr, noTestsMsg)
+		} else {
+			fmt.Println(noTestsMsg)
+		}
+
+		if cloud && client != nil && (ci || isValidation) {
 			statusReq := &backend.UpdateDriftRunCIStatusRequest{
 				DriftRunId:      driftRunID,
 				CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS,
-				CiStatusMessage: stringPtr("No tests found"),
+				CiStatusMessage: stringPtr(noTestsMsg),
 			}
 			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
 				slog.Warn("Failed to update CI status to SUCCESS", "error", err)
@@ -371,8 +398,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if !interactive && !cloud {
-		fmt.Fprintf(os.Stderr, "\n➤ Loaded %d tests from local traces\n", len(tests))
+	if !interactive && !quiet {
+		if isValidation {
+			fmt.Fprintf(os.Stderr, "\n➤ Found %d traces to validate\n", len(tests))
+		} else if !cloud {
+			fmt.Fprintf(os.Stderr, "\n➤ Loaded %d tests from local traces\n", len(tests))
+		}
 	}
 
 	// Fetch pre-app-start spans before grouping (needed for ENV_VARS extraction)
@@ -413,13 +444,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 			context.Background(),
 			executor,
 			runner.SuiteSpanOptions{
-				IsCloudMode: cloud,
-				Client:      client,
-				AuthOptions: authOptions,
-				ServiceID:   cfg.Service.ID,
-				TraceTestID: traceTestID,
-				Interactive: false,
-				Quiet:       quiet,
+				IsCloudMode:            cloud,
+				Client:                 client,
+				AuthOptions:            authOptions,
+				ServiceID:              cfg.Service.ID,
+				TraceTestID:            traceTestID,
+				Interactive:            false,
+				Quiet:                  quiet,
+				AllowSuiteWideMatching: isValidation,
 			},
 			tests,
 		); err != nil {
@@ -453,17 +485,22 @@ func runTests(cmd *cobra.Command, args []string) error {
 		if driftRunID != "" {
 			initialLogs = append(initialLogs, fmt.Sprintf("Created Tusk Drift run: %s", driftRunID))
 		}
-		if cloud && client != nil {
+		if isValidation {
+			initialLogs = append(initialLogs, "📡 Fetching traces to validate from Tusk Drift Cloud...")
+		} else if cloud && client != nil {
 			initialLogs = append(initialLogs, "📡 Fetching tests from Tusk Drift Cloud...")
 		} else {
 			initialLogs = append(initialLogs, "📁 Loading tests from local traces...")
 		}
 
-		_, err := tui.RunTestsInteractiveWithOpts(nil, executor, &tui.InteractiveOpts{
-			InitialServiceLogs:    initialLogs,
-			StartAfterTestsLoaded: true,
-			IsCloudMode:           cloud,
-			LoadTests: makeLoadTestsFunc(
+		// Create LoadTests function based on mode
+		var loadTestsFn func(ctx context.Context) ([]runner.Test, error)
+		if isValidation {
+			loadTestsFn = func(ctx context.Context) ([]runner.Test, error) {
+				return fetchValidationTraceTests(ctx, client, authOptions, cfg.Service.ID)
+			}
+		} else {
+			loadTestsFn = makeLoadTestsFunc(
 				executor,
 				client,
 				authOptions,
@@ -475,25 +512,38 @@ func runTests(cmd *cobra.Command, args []string) error {
 				filter,
 				true,
 				quiet,
-			),
+			)
+		}
+
+		_, err := tui.RunTestsInteractiveWithOpts(nil, executor, &tui.InteractiveOpts{
+			InitialServiceLogs:    initialLogs,
+			StartAfterTestsLoaded: true,
+			IsCloudMode:           cloud,
+			LoadTests:             loadTestsFn,
 			OnBeforeEnvironmentStart: func(exec *runner.Executor, tests []runner.Test) error {
 				return runner.PrepareAndSetSuiteSpans(
 					context.Background(),
 					exec,
 					runner.SuiteSpanOptions{
-						IsCloudMode: cloud,
-						Client:      client,
-						AuthOptions: authOptions,
-						ServiceID:   cfg.Service.ID,
-						TraceTestID: traceTestID,
-						Interactive: true,
+						IsCloudMode:            cloud,
+						Client:                 client,
+						AuthOptions:            authOptions,
+						ServiceID:              cfg.Service.ID,
+						TraceTestID:            traceTestID,
+						Interactive:            true,
+						AllowSuiteWideMatching: isValidation,
 					},
 					tests,
 				)
 			},
 			OnAllCompleted: func(results []runner.TestResult, tests []runner.Test, exec *runner.Executor) {
-				if cloud && client != nil && ci {
-					if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
+				if cloud && client != nil && (ci || isValidation) {
+					var statusMessage string
+					if isValidation {
+						passed, failed := countPassedFailed(results)
+						statusMessage = fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)
+					}
+					if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
 						slog.Warn("Interactive: cloud finalize failed", "error", err)
 					}
 					mu.Lock()
@@ -504,7 +554,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			},
 		})
 		if err != nil {
-			if cloud && client != nil && ci {
+			if cloud && client != nil && (ci || isValidation) {
 				statusReq := &backend.UpdateDriftRunCIStatusRequest{
 					DriftRunId:      driftRunID,
 					CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
@@ -534,7 +584,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 
 			// Update CI status to FAILURE if in cloud mode
-			if cloud && client != nil && ci {
+			if cloud && client != nil && (ci || isValidation) {
 				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
 					slog.Warn("Headless: cloud finalize failed", "error", err)
 				}
@@ -558,7 +608,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		if err = executor.StartEnvironment(); err != nil {
 			cmd.SilenceUsage = true
 
-			if cloud && client != nil && ci {
+			if cloud && client != nil && (ci || isValidation) {
 				statusReq := &backend.UpdateDriftRunCIStatusRequest{
 					DriftRunId:      driftRunID,
 					CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
@@ -588,7 +638,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 
 			// Update CI status to FAILURE if in cloud mode
-			if cloud && client != nil && ci {
+			if cloud && client != nil && (ci || isValidation) {
 				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
 					slog.Warn("Headless: cloud finalize failed", "error", err)
 				}
@@ -616,11 +666,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	// Step 5: Upload results to backend if in cloud mode
 	// Do this before returning any error so CI status is always updated
-	if cloud && client != nil && ci {
+	if cloud && client != nil && (ci || isValidation) {
+		var statusMessage string
+		if isValidation {
+			passed, failed := countPassedFailed(results)
+			statusMessage = fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)
+		}
 		// streamed is always true here so this only updates the CI status
 		// Does NOT upload results to the backend as they are already uploaded via UploadSingleTestResult during the callback
-		if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
+		if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
 			slog.Warn("Headless: cloud finalize failed", "error", err)
+		}
+		if isValidation {
+			fmt.Println("\nSuite validation completed - backend will process results and update suite")
 		}
 		mu.Lock()
 		fmt.Fprintf(os.Stderr, "\nSuccessfully uploaded %d/%d test results", uploadedCount, attemptedCount)
@@ -635,7 +693,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		cmd.SilenceUsage = true
 		// In CI mode, don't fail on test deviations - only fail on execution/upload errors
 		// As long as all tests ran and results were uploaded successfully, we want the CI workflow to pass.
-		if ci && cloud {
+		if (ci || isValidation) && cloud {
 			return nil
 		}
 		return outputErr
@@ -896,192 +954,6 @@ func getBranchFromEnv() string {
 	return strings.TrimSpace(string(output))
 }
 
-// runValidationMode runs the validation flow for traces on the default branch
-// This validates both DRAFT and IN_SUITE tests, with the backend handling suite curation
-func runValidationMode(client *api.TuskClient, authOptions api.AuthOptions, cfg *config.Config) error {
-	ctx := context.Background()
-	interactive := !print && utils.IsTerminal()
-
-	// 1. Create validation drift run
-	createReq := &backend.CreateDriftRunRequest{
-		ObservableServiceId: cfg.Service.ID,
-		CliVersion:          version.Version,
-		IsValidationRun:     true,
-		// commit_sha, pr_number, branch_name, external_check_run_id are not needed for validation_runs
-	}
-
-	driftRunID, err := client.CreateDriftRun(ctx, createReq, authOptions)
-	if err != nil {
-		return fmt.Errorf("failed to create validation drift run: %w", err)
-	}
-
-	// Update status to RUNNING
-	statusReq := &backend.UpdateDriftRunCIStatusRequest{
-		DriftRunId: driftRunID,
-		CiStatus:   backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_RUNNING,
-	}
-	if err := client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions); err != nil {
-		slog.Warn("Failed to update CI status to RUNNING", "error", err)
-	}
-
-	// 2. Fetch ALL tests (draft + in_suite) for validation
-	tests, err := fetchValidationTraceTests(ctx, client, authOptions, cfg.Service.ID)
-	if err != nil {
-		updateStatusToFailure(ctx, client, driftRunID, authOptions, fmt.Sprintf("Failed to fetch tests: %v", err))
-		return fmt.Errorf("failed to fetch validation traces: %w", err)
-	}
-
-	if len(tests) == 0 {
-		fmt.Println("No traces to validate")
-		statusReq := &backend.UpdateDriftRunCIStatusRequest{
-			DriftRunId:      driftRunID,
-			CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS,
-			CiStatusMessage: stringPtr("No traces to validate"),
-		}
-		_ = client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions)
-		return nil
-	}
-
-	if !interactive {
-		fmt.Printf("Found %d traces to validate\n", len(tests))
-	}
-
-	// Use TUI for interactive mode
-	if interactive {
-		return runValidationModeInteractive(ctx, client, authOptions, cfg, driftRunID, tests)
-	}
-
-	// 3. Fetch pre-app-start spans for environment grouping
-	preAppStartSpans, err := runner.FetchPreAppStartSpansFromCloud(ctx, client, authOptions, cfg.Service.ID, false, quiet)
-	if err != nil {
-		slog.Warn("Failed to fetch pre-app-start spans", "error", err)
-	}
-
-	// 4. Group by environment
-	groupResult, err := runner.GroupTestsByEnvironment(tests, preAppStartSpans)
-	if err != nil {
-		updateStatusToFailure(ctx, client, driftRunID, authOptions, fmt.Sprintf("Failed to group tests: %v", err))
-		return fmt.Errorf("failed to group tests by environment: %w", err)
-	}
-
-	// 5. Create executor
-	executor := runner.NewExecutor()
-	if concurrency > 0 {
-		executor.SetConcurrency(concurrency)
-	}
-	executor.SetEnableServiceLogs(enableServiceLogs || debug)
-
-	// 6. Set up result upload callback (same as regular CI flow)
-	var mu sync.Mutex
-	uploadedCount := 0
-	attemptedCount := 0
-	var lastUploadErr error
-
-	executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
-		// Upload result to backend
-		err := runner.UploadSingleTestResult(
-			ctx,
-			client,
-			driftRunID,
-			authOptions,
-			executor,
-			res,
-			test,
-		)
-
-		mu.Lock()
-		attemptedCount++
-		if err != nil {
-			lastUploadErr = err
-			slog.Warn("Failed to upload test result", "traceID", test.TraceID, "error", err)
-		} else {
-			uploadedCount++
-		}
-		mu.Unlock()
-
-		// Cleanup trace spans
-		if executor.GetServer() != nil {
-			executor.GetServer().CleanupTraceSpans(test.TraceID)
-		}
-	})
-
-	// 7. Run tests by environment
-	var allResults []runner.TestResult
-	for _, group := range groupResult.Groups {
-		fmt.Printf("Validating %d traces in environment: %s\n", len(group.Tests), group.Name)
-
-		// Prepare suite spans (AllowSuiteWideMatching = true to load all suite spans)
-		if err := runner.PrepareAndSetSuiteSpans(ctx, executor, runner.SuiteSpanOptions{
-			IsCloudMode:            true,
-			Client:                 client,
-			AuthOptions:            authOptions,
-			ServiceID:              cfg.Service.ID,
-			Interactive:            false,
-			Quiet:                  quiet,
-			AllowSuiteWideMatching: true,
-		}, group.Tests); err != nil {
-			slog.Warn("Failed to prepare suite spans", "error", err)
-		}
-
-		// Set environment variables
-		oldEnvVars := make(map[string]envVarState)
-		for k, v := range group.EnvVars {
-			val, wasSet := os.LookupEnv(k)
-			oldEnvVars[k] = envVarState{value: val, wasSet: wasSet}
-			os.Setenv(k, v)
-		}
-
-		if err := executor.StartEnvironment(); err != nil {
-			slog.Warn("Failed to start environment", "env", group.Name, "error", err)
-			restoreEnvVars(oldEnvVars)
-			continue
-		}
-
-		results, err := executor.RunTests(group.Tests)
-		if err != nil {
-			slog.Warn("Test execution error", "env", group.Name, "error", err)
-		}
-		allResults = append(allResults, results...)
-
-		_ = executor.StopEnvironment()
-		restoreEnvVars(oldEnvVars)
-	}
-
-	// 8. Update final CI status
-	// Backend will automatically process results and curate suite
-	passed := 0
-	failed := 0
-	for _, r := range allResults {
-		if r.Passed {
-			passed++
-		} else {
-			failed++
-		}
-	}
-
-	fmt.Printf("\nValidation complete: %d passed, %d failed\n", passed, failed)
-
-	finalStatus := backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS
-	statusReq = &backend.UpdateDriftRunCIStatusRequest{
-		DriftRunId:      driftRunID,
-		CiStatus:        finalStatus,
-		CiStatusMessage: stringPtr(fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)),
-	}
-	if err := client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions); err != nil {
-		slog.Warn("Failed to update CI status", "error", err)
-	}
-
-	mu.Lock()
-	fmt.Printf("Successfully uploaded %d/%d test results\n", uploadedCount, attemptedCount)
-	if attemptedCount > uploadedCount && lastUploadErr != nil {
-		fmt.Printf("Last upload error: %v\n", lastUploadErr)
-	}
-	mu.Unlock()
-
-	fmt.Println("Suite validation completed - backend will process results and update suite")
-	return nil
-}
-
 // fetchValidationTraceTests fetches all traces for validation (draft + in_suite)
 func fetchValidationTraceTests(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID string) ([]runner.Test, error) {
 	var allTests []*backend.TraceTest
@@ -1121,128 +993,14 @@ func updateStatusToFailure(ctx context.Context, client *api.TuskClient, driftRun
 	_ = client.UpdateDriftRunCIStatus(ctx, statusReq, auth)
 }
 
-// envVarState tracks the original state of an environment variable.
-// We need to distinguish between "unset" and "set to empty string" because
-// os.Getenv() returns "" for both cases. Without tracking wasSet, restoring
-// a variable originally set to "" would incorrectly unset it instead.
-type envVarState struct {
-	value  string
-	wasSet bool
-}
-
-func restoreEnvVars(oldEnvVars map[string]envVarState) {
-	for k, state := range oldEnvVars {
-		if !state.wasSet {
-			os.Unsetenv(k)
+// countPassedFailed counts passed and failed tests from results
+func countPassedFailed(results []runner.TestResult) (passed, failed int) {
+	for _, r := range results {
+		if r.Passed {
+			passed++
 		} else {
-			os.Setenv(k, state.value)
+			failed++
 		}
 	}
-}
-
-// runValidationModeInteractive runs validation mode with the interactive TUI
-func runValidationModeInteractive(
-	ctx context.Context,
-	client *api.TuskClient,
-	authOptions api.AuthOptions,
-	cfg *config.Config,
-	driftRunID string,
-	tests []runner.Test,
-) error {
-	executor := runner.NewExecutor()
-
-	// Configure executor
-	if concurrency > 0 {
-		executor.SetConcurrency(concurrency)
-	}
-	executor.SetEnableServiceLogs(enableServiceLogs || debug)
-
-	// Set up upload callback with per-test logging
-	var mu sync.Mutex
-	uploadedCount := 0
-	attemptedCount := 0
-
-	executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
-		err := runner.UploadSingleTestResult(
-			ctx,
-			client,
-			driftRunID,
-			authOptions,
-			executor,
-			res,
-			test,
-		)
-
-		mu.Lock()
-		attemptedCount++
-		if err != nil {
-			logging.LogToCurrentTest(test.TraceID, fmt.Sprintf("\n🟠 Failed to upload test results: %v\n", err))
-		} else {
-			uploadedCount++
-			logging.LogToCurrentTest(test.TraceID, "\n📝 Test result successfully uploaded\n")
-		}
-		mu.Unlock()
-
-		// Cleanup trace spans
-		if executor.GetServer() != nil {
-			executor.GetServer().CleanupTraceSpans(test.TraceID)
-		}
-	})
-
-	// Initial service logs
-	initialLogs := []string{
-		fmt.Sprintf("📡 Found %d traces to validate", len(tests)),
-	}
-
-	// Use TUI with pre-loaded tests
-	_, err := tui.RunTestsInteractiveWithOpts(tests, executor, &tui.InteractiveOpts{
-		InitialServiceLogs:    initialLogs,
-		StartAfterTestsLoaded: false, // Tests already loaded
-		IsCloudMode:           true,
-		OnBeforeEnvironmentStart: func(exec *runner.Executor, envTests []runner.Test) error {
-			return runner.PrepareAndSetSuiteSpans(ctx, exec, runner.SuiteSpanOptions{
-				IsCloudMode:            true,
-				Client:                 client,
-				AuthOptions:            authOptions,
-				ServiceID:              cfg.Service.ID,
-				Interactive:            true,
-				Quiet:                  quiet,
-				AllowSuiteWideMatching: true,
-			}, envTests)
-		},
-		OnAllCompleted: func(results []runner.TestResult, allTests []runner.Test, exec *runner.Executor) {
-			// Count results
-			passed := 0
-			failed := 0
-			for _, r := range results {
-				if r.Passed {
-					passed++
-				} else {
-					failed++
-				}
-			}
-
-			// Update final CI status
-			statusReq := &backend.UpdateDriftRunCIStatusRequest{
-				DriftRunId:      driftRunID,
-				CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS,
-				CiStatusMessage: stringPtr(fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)),
-			}
-			if err := client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions); err != nil {
-				slog.Warn("Failed to update CI status", "error", err)
-			}
-
-			// Log upload summary
-			mu.Lock()
-			logging.LogToService(fmt.Sprintf("Upload summary: %d/%d results uploaded", uploadedCount, attemptedCount))
-			mu.Unlock()
-		},
-	})
-
-	if err != nil {
-		updateStatusToFailure(ctx, client, driftRunID, authOptions, fmt.Sprintf("Validation failed: %v", err))
-		return err
-	}
-
-	return nil
+	return
 }
