@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,7 +168,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			}
 
 			// Check if we're on the default branch
-			currentBranch := getCurrentBranch()
+			currentBranch := getBranchFromEnv()
 			if currentBranch == info.DefaultBranch {
 				slog.Debug("On default branch, running validation run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
 				return runValidationMode(client, authOptions, cfg)
@@ -829,21 +828,7 @@ func validateCIMetadata(metadata CIMetadata) (CIMetadata, error) {
 		}
 
 		if metadata.BranchName == "" {
-			if isGitHub {
-				// For pull requests, prefer the head ref (actual branch name)
-				// GITHUB_HEAD_REF is only set for pull_request events
-				metadata.BranchName = os.Getenv("GITHUB_HEAD_REF")
-				if metadata.BranchName == "" {
-					// For non-PR events (push, etc.), use the ref name
-					metadata.BranchName = os.Getenv("GITHUB_REF_NAME")
-				}
-			} else if isGitLab {
-				// Prefer merge request source branch name when available
-				metadata.BranchName = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
-				if metadata.BranchName == "" {
-					metadata.BranchName = os.Getenv("CI_COMMIT_REF_NAME")
-				}
-			}
+			metadata.BranchName = getBranchFromEnv()
 		}
 
 		if metadata.ExternalCheckRunID == "" {
@@ -883,26 +868,24 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-// getCurrentBranch returns the current git branch name
-func getCurrentBranch() string {
-	// Check GitHub Actions env vars first
-	if ref := os.Getenv("GITHUB_REF_NAME"); ref != "" {
-		return ref
-	}
-	// Check GitLab CI
-	if branch := os.Getenv("CI_COMMIT_BRANCH"); branch != "" {
+// getBranchFromEnv returns the branch name from CI environment variables
+// Returns empty string if no branch can be determined from environment
+func getBranchFromEnv() string {
+	// GitHub Actions - prefer GITHUB_HEAD_REF for PRs (actual branch name)
+	if branch := os.Getenv("GITHUB_HEAD_REF"); branch != "" {
 		return branch
 	}
+	if branch := os.Getenv("GITHUB_REF_NAME"); branch != "" {
+		return branch
+	}
+	// GitLab CI - prefer merge request source branch when available
 	if branch := os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"); branch != "" {
 		return branch
 	}
-	// Fallback: git rev-parse
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
+	if branch := os.Getenv("CI_COMMIT_REF_NAME"); branch != "" {
+		return branch
 	}
-	return strings.TrimSpace(string(output))
+	return ""
 }
 
 // runValidationMode runs the validation flow for traces on the default branch
@@ -1033,9 +1016,10 @@ func runValidationMode(client *api.TuskClient, authOptions api.AuthOptions, cfg 
 		}
 
 		// Set environment variables
-		oldEnvVars := make(map[string]string)
+		oldEnvVars := make(map[string]envVarState)
 		for k, v := range group.EnvVars {
-			oldEnvVars[k] = os.Getenv(k)
+			val, wasSet := os.LookupEnv(k)
+			oldEnvVars[k] = envVarState{value: val, wasSet: wasSet}
 			os.Setenv(k, v)
 		}
 
@@ -1129,12 +1113,21 @@ func updateStatusToFailure(ctx context.Context, client *api.TuskClient, driftRun
 	_ = client.UpdateDriftRunCIStatus(ctx, statusReq, auth)
 }
 
-func restoreEnvVars(oldEnvVars map[string]string) {
-	for k, v := range oldEnvVars {
-		if v == "" {
+// envVarState tracks the original state of an environment variable.
+// We need to distinguish between "unset" and "set to empty string" because
+// os.Getenv() returns "" for both cases. Without tracking wasSet, restoring
+// a variable originally set to "" would incorrectly unset it instead.
+type envVarState struct {
+	value  string
+	wasSet bool
+}
+
+func restoreEnvVars(oldEnvVars map[string]envVarState) {
+	for k, state := range oldEnvVars {
+		if !state.wasSet {
 			os.Unsetenv(k)
 		} else {
-			os.Setenv(k, v)
+			os.Setenv(k, state.value)
 		}
 	}
 }
