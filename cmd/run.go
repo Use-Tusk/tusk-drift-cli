@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -885,7 +886,14 @@ func getBranchFromEnv() string {
 	if branch := os.Getenv("CI_COMMIT_REF_NAME"); branch != "" {
 		return branch
 	}
-	return ""
+
+	// Fallback: git rev-parse
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // runValidationMode runs the validation flow for traces on the default branch

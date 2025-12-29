@@ -52,35 +52,23 @@ func BuildSuiteSpansForRun(
 	var suiteSpans []*core.Span
 	var globalSpans []*core.Span
 
-	if opts.AllowSuiteWideMatching {
-		// Validation mode: load ALL suite spans for cross-trace matching
-		if opts.IsCloudMode && opts.Client != nil {
-			all, err := fetchAllSuiteSpans(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
-			if err != nil {
-				return nil, fmt.Errorf("fetch all suite spans: %w", err)
-			}
-			suiteSpans = append(suiteSpans, all...)
+	// Fetch global spans
+	if opts.IsCloudMode && opts.Client != nil {
+		global, err := FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
+		if err != nil {
+			slog.Warn("Failed to fetch global spans", "error", err)
+		} else if opts.AllowSuiteWideMatching {
+			// Validation mode: add global spans directly to suite spans for matching
+			suiteSpans = append(suiteSpans, global...)
+		} else {
+			// Normal replay mode: keep global spans separate for dedicated index
+			globalSpans = global
 		}
-		// Also include spans from tests being validated
-		for _, t := range currentTests {
-			suiteSpans = append(suiteSpans, t.Spans...)
-		}
-	} else {
-		// Normal replay mode: fetch global spans separately for dedicated index
-		if opts.IsCloudMode && opts.Client != nil {
-			var err error
-			globalSpans, err = FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
-			if err != nil {
-				slog.Warn("Failed to fetch global spans", "error", err)
-			}
-		}
+	}
 
-		// Only include spans from the current test's own trace (not other tests being replayed together)
-		for _, t := range currentTests {
-			if len(t.Spans) > 0 {
-				suiteSpans = append(suiteSpans, t.Spans...)
-			}
-		}
+	// Add spans from current tests
+	for _, t := range currentTests {
+		suiteSpans = append(suiteSpans, t.Spans...)
 	}
 
 	// Pre-app-start spans are always included (both modes)
