@@ -159,7 +159,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 
 		// Check for validation mode - validation mode fetches default branch from backend
-		if validateSuiteIfDefaultBranch {
+		if validateSuiteIfDefaultBranch && traceTestID == "" {
 			// Get default branch from backend
 			infoReq := &backend.GetObservableServiceInfoRequest{
 				ObservableServiceId: cfg.Service.ID,

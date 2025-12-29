@@ -4,6 +4,13 @@ on:
   pull_request:
     paths:
       - "backend/**"
+  # Push to main is required for --validate-suite-if-default-branch to validate
+  # new traces before adding them to the test suite
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
 
 jobs:
   tusk-drift:
@@ -31,7 +38,7 @@ jobs:
         # CLI automatically picks up commit SHA, PR number, branch name,
         # and external check run ID from CI environment variables.
         run: |
-          tusk run -c -p --ci
+          tusk run -c -p --ci --validate-suite-if-default-branch
         working-directory: ./backend
         env:
           TUSK_API_KEY: ${{ secrets.TUSK_API_KEY }}

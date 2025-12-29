@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/Use-Tusk/fence v0.1.1
-	github.com/Use-Tusk/tusk-drift-schemas v0.1.19
+	github.com/Use-Tusk/tusk-drift-schemas v0.1.21
 	github.com/agnivade/levenshtein v1.0.3
 	github.com/atotto/clipboard v0.1.4
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
@@ -71,5 +71,3 @@ require (
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 )
-
-replace github.com/Use-Tusk/tusk-drift-schemas => ../tusk-drift-schemas

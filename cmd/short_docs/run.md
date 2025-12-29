@@ -44,4 +44,5 @@ An interactive session is started by default; use `-p`/`--print` for noninteract
 
 - `tusk run --cloud`: fetches all tests from Tusk Drift Cloud for your service and runs them locally; no Tusk Drift run is created and results are not uploaded.
 - `tusk run --cloud --ci`: creates a Tusk Drift run, fetches your test suite from Tusk Drift Cloud, and uploads test results. Use `-a/--all-cloud-trace-tests` to run all tests instead of the run-scoped suite.
+- `tusk run --cloud --ci --validate-suite-if-default-branch`: on the default branch, creates a validation run, fetches draft and in-suite tests, and validates they can be replayed before adding them to the suite. On other branches, this flag is ignored and the command behaves like `--cloud --ci`.
 - `--trace-test-id` may be used with `--cloud` to run a single cloud trace test.
