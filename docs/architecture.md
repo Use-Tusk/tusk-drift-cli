@@ -65,6 +65,19 @@ The interactive UI orchestrates execution around the `Executor`, surfaces live l
 
 You can also run in non-interactive mode by passing `--print` to `tusk run`.
 
+### Sandboxing with Fence
+
+During replay mode, the CLI uses [Fence](https://github.com/Use-Tusk/fence) to sandbox the service under test. Fence is a process sandboxing tool that provides network and filesystem isolation.
+
+**Why sandboxing matters for replays:**
+
+- Blocks localhost outbound connections (Postgres, Redis, HTTP services) to enforce mock usage
+- Ensures deterministic replay by preventing live I/O
+- Allows Unix socket communication for SDK <-> mock server protocol
+- Preserves localhost inbound for health checks
+
+Sandboxing is enabled by default when the platform supports it (macOS/Linux). Use `--disable-sandbox` to bypass if needed.
+
 ### Backend client
 
 Protobuf‑over‑HTTP client for communications to the Tusk Drift Cloud backend (create run, get tests, upload results, finalize).
@@ -235,6 +248,7 @@ results:
 - **Concurrency**: Tests can run concurrently, with per‑test attribution for mock events.
 - **Service logs**: Written to `.tusk/logs/tusk-replay-*.log` when `--enable-service-logs` is provided.
 - **Timeouts**: SDK ACK ~10s, HTTP client ~30s. Socket messages are capped at 1MB.
+- **Sandboxing**: Uses [Fence](https://github.com/Use-Tusk/fence) to block localhost outbound (Postgres, Redis, etc.), enforcing SDK mock usage. Linux requires `bubblewrap` and `socat`. Disable with `--disable-sandbox`.
 
 ## Troubleshooting
 
