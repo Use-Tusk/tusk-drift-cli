@@ -96,8 +96,7 @@ Download the latest release from [GitHub Releases](https://github.com/Use-Tusk/t
    tusk --version
    ```
 
-> [!NOTE]
-> Windows requires additional configuration for running tests. See [Windows Support](docs/configuration.md#windows-support) for details on TCP communication mode setup.
+Note: Windows requires additional configuration for running tests. See [Windows Support](docs/configuration.md#windows-support) for details on TCP communication mode setup.
 </details>
 
 ### Manual Download
