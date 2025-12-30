@@ -476,3 +476,75 @@ tusk_api:
 ```
 
 To run against traces to Tusk Drift Cloud, your config file must contain `service.id` and `tusk_api.url`.
+
+## Windows Support
+
+On Windows, Unix sockets are not supported, so you must use TCP communication mode.
+
+### Requirements for Windows
+
+1. Set `service.communication.type` to `tcp` in your config
+2. Override `TUSK_MOCK_HOST` to `localhost` in your start command (the CLI defaults to `host.docker.internal` which only works inside Docker)
+
+### Example Windows config
+
+```yaml
+service:
+  name: my-service
+  port: 3000
+  start:
+    # Note: set TUSK_MOCK_HOST with no space before &&
+    command: set TUSK_MOCK_HOST=localhost&& npm run start
+  readiness_check:
+    # Use curl.exe (not curl) on Windows, or use PowerShell
+    command: curl.exe -fsS http://localhost:3000/health
+    timeout: 30s
+    interval: 1s
+  communication:
+    type: tcp
+    tcp_port: 9001
+
+traces:
+  dir: .tusk/traces
+```
+
+### Key differences from macOS/Linux
+
+<table>
+  <thead>
+    <tr>
+      <th>Aspect</th>
+      <th>macOS/Linux</th>
+      <th>Windows</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Communication</td>
+      <td>Unix socket (default)</td>
+      <td>TCP (required)</td>
+    </tr>
+    <tr>
+      <td>Mock host</td>
+      <td>N/A</td>
+      <td>Must override to <code>localhost</code></td>
+    </tr>
+    <tr>
+      <td>Shell</td>
+      <td><code>/bin/sh -c</code></td>
+      <td><code>cmd.exe /c</code></td>
+    </tr>
+    <tr>
+      <td>curl</td>
+      <td><code>curl</code></td>
+      <td><code>curl.exe</code></td>
+    </tr>
+  </tbody>
+</table>
+
+If `curl.exe` is not available, use PowerShell:
+
+```yaml
+readiness_check:
+  command: powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3000/health -UseBasicParsing; exit 0 } catch { exit 1 }"
+```

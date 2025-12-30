@@ -53,17 +53,51 @@ To install a specific version:
 curl -fsSL https://cli.usetusk.ai/install.sh | sh -s -- v1.2.3
 ```
 
+Linux additional dependencies (for replay sandboxing):
+
+- Debian/Ubuntu: `sudo apt install bubblewrap socat`
+- Fedora/RHEL: `sudo dnf install bubblewrap socat`
+- Arch: `sudo pacman -S bubblewrap socat`
+
+Without these, sandboxing is disabled and replays run without network isolation. See [Architecture - Sandboxing](docs/architecture.md#sandboxing-with-fence).
+
 **Homebrew:**
 
 Coming soon.
 
 **Windows:**
 
+We recommend using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) for the best experience on Windows. With WSL, you can use the Linux/macOS installation steps above and avoid Windows-specific configuration. For native Windows installation without WSL, expand below to see the steps.
+
+<details>
+<summary><b>Installation steps</b></summary>
 Download the latest release from [GitHub Releases](https://github.com/Use-Tusk/tusk-drift-cli/releases/latest):
 
-1. Download `tusk-drift-cli_*_Windows_x86_64.zip`
+1. Download `tusk-drift-cli_*_Windows_x86_64.zip` (or `arm64` for ARM-based Windows)
 2. Extract the ZIP file
-3. Move `tusk.exe` to a directory in your PATH, or add the extracted directory to your PATH
+3. Move `tusk.exe` to a directory in your PATH (e.g., `C:\tools\`), or add the extracted directory to your PATH:
+
+   **Option A: Add to PATH via PowerShell (run as Administrator):**
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\path\to\tusk", "User")
+   ```
+
+   **Option B: Add to PATH via System Settings:**
+   - Press `Win + R`, type `sysdm.cpl`, press Enter
+   - Click "Environment Variables"
+   - Under "User variables", select `Path` and click "Edit"
+   - Click "New" and add the folder containing `tusk.exe`
+   - Click OK to save
+
+4. Restart your terminal and verify:
+
+   ```powershell
+   tusk --version
+   ```
+
+Note: Windows requires additional configuration for running tests. See [Windows Support](docs/configuration.md#windows-support) for details on TCP communication mode setup.
+</details>
 
 ### Manual Download
 
