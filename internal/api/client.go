@@ -347,3 +347,35 @@ func (c *TuskClient) CreateApiKey(ctx context.Context, in *backend.CreateApiKeyR
 
 	return &out, nil
 }
+
+// GetObservableServiceInfo fetches observable service info including default branch
+func (c *TuskClient) GetObservableServiceInfo(ctx context.Context, in *backend.GetObservableServiceInfoRequest, auth AuthOptions) (*backend.GetObservableServiceInfoResponseSuccess, error) {
+	var out backend.GetObservableServiceInfoResponse
+	if err := c.makeClientServiceRequest(ctx, "get_observable_service_info", in, &out, auth); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}
+
+// GetValidationTraceTests fetches traces for validation (both DRAFT and IN_SUITE)
+func (c *TuskClient) GetValidationTraceTests(ctx context.Context, in *backend.GetValidationTraceTestsRequest, auth AuthOptions) (*backend.GetValidationTraceTestsResponseSuccess, error) {
+	var out backend.GetValidationTraceTestsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_validation_trace_tests", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}

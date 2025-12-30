@@ -296,59 +296,104 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	}
 	slog.Debug("Priority 4 failed: No used span by input value hash with reduced schema", "traceId", traceID)
 
-	// Priority 5: Input value hash across suite
-	// Note: this is a duplicate of priority 11 in FindBestMatchAcrossTraces
-	// Some requests (e.g., db auth) may only be recorded in certain traces. We check suite-wide
-	// by exact value hash here to avoid incorrectly matching by schema hash in later priorities.
-	slog.Debug("Trying Priority 5: Input value hash across suite", "traceId", traceID)
-	suiteValueHashCandidates := mm.server.GetSuiteSpansByValueHash(req.OutboundSpan.GetInputValueHash())
-	filteredSuiteValueHashCandidates := mm.filterByPreAppStart(suiteValueHashCandidates, req.OutboundSpan.IsPreAppStart)
-	if match := mm.findFirstUnused(filteredSuiteValueHashCandidates); match != nil {
-		slog.Debug("Found suite unused span by input value hash", "spanName", match.Name)
-		mm.markSpanAsUsed(match)
-		return match, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
-			MatchDescription: "Suite unused span by input value hash",
-		}, nil
-	}
-	if match := mm.findFirstUsed(filteredSuiteValueHashCandidates); match != nil {
-		slog.Debug("Found suite used span by input value hash", "spanName", match.Name)
-		mm.markSpanAsUsed(match)
-		return match, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
-			MatchDescription: "Suite used span by input value hash",
-		}, nil
-	}
-	slog.Debug("Priority 5 failed: No suite span by input value hash", "traceId", traceID)
+	// Priority 5-6: Cross-trace matching
+	// In validation mode: search all suite spans to discover new global dependencies
+	// In regular replay mode: only search explicitly marked global spans
+	if mm.server.AllowSuiteWideMatching() {
+		// Validation mode: search all suite spans
+		slog.Debug("Trying Priority 5: Input value hash across suite (validation mode)", "traceId", traceID)
+		suiteValueHashCandidates := mm.server.GetSuiteSpansByValueHash(req.OutboundSpan.GetInputValueHash())
+		filteredSuiteValueHashCandidates := mm.filterByPreAppStart(suiteValueHashCandidates, req.OutboundSpan.IsPreAppStart)
+		if match := mm.findFirstUnused(filteredSuiteValueHashCandidates); match != nil {
+			slog.Debug("Found suite unused span by input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Suite unused span by input value hash",
+			}, nil
+		}
+		if match := mm.findFirstUsed(filteredSuiteValueHashCandidates); match != nil {
+			slog.Debug("Found suite used span by input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Suite used span by input value hash",
+			}, nil
+		}
+		slog.Debug("Priority 5 failed: No suite span by input value hash", "traceId", traceID)
 
-	// Priority 6: Reduced input value hash across suite
-	// Some requests (e.g., db auth) may only be recorded in certain traces. We check suite-wide
-	// by reduced value hash here to avoid incorrectly matching by schema hash in later priorities.
-	// Note: This is duplicated in Priority 13 in FindBestMatchAcrossTraces for pre-app-start requests.
-	slog.Debug("Trying Priority 6: Reduced input value hash across suite", "traceId", traceID)
-	suiteReducedValueHashCandidates := mm.server.GetSuiteSpansByReducedValueHash(reducedRequestValueHash(req))
-	filteredSuiteReducedValueHashCandidates := mm.filterByPreAppStart(suiteReducedValueHashCandidates, req.OutboundSpan.IsPreAppStart)
-	if match := mm.findFirstUnused(filteredSuiteReducedValueHashCandidates); match != nil {
-		slog.Debug("Found suite unused span by reduced input value hash", "spanName", match.Name)
-		mm.markSpanAsUsed(match)
-		return match, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
-			MatchDescription: "Suite unused span by reduced input value hash",
-		}, nil
+		slog.Debug("Trying Priority 6: Reduced input value hash across suite (validation mode)", "traceId", traceID)
+		suiteReducedValueHashCandidates := mm.server.GetSuiteSpansByReducedValueHash(reducedRequestValueHash(req))
+		filteredSuiteReducedValueHashCandidates := mm.filterByPreAppStart(suiteReducedValueHashCandidates, req.OutboundSpan.IsPreAppStart)
+		if match := mm.findFirstUnused(filteredSuiteReducedValueHashCandidates); match != nil {
+			slog.Debug("Found suite unused span by reduced input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Suite unused span by reduced input value hash",
+			}, nil
+		}
+		if match := mm.findFirstUsed(filteredSuiteReducedValueHashCandidates); match != nil {
+			slog.Debug("Found suite used span by reduced input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Suite used span by reduced input value hash",
+			}, nil
+		}
+		slog.Debug("Priority 6 failed: No suite span by reduced input value hash", "traceId", traceID)
+	} else {
+		// Regular replay mode: only search explicitly marked global spans
+		slog.Debug("Trying Priority 5: Input value hash in global spans", "traceId", traceID)
+		globalValueHashCandidates := mm.server.GetGlobalSpansByValueHash(req.OutboundSpan.GetInputValueHash())
+		filteredGlobalValueHashCandidates := mm.filterByPreAppStart(globalValueHashCandidates, req.OutboundSpan.IsPreAppStart)
+		if match := mm.findFirstUnused(filteredGlobalValueHashCandidates); match != nil {
+			slog.Debug("Found global unused span by input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Global unused span by input value hash",
+			}, nil
+		}
+		if match := mm.findFirstUsed(filteredGlobalValueHashCandidates); match != nil {
+			slog.Debug("Found global used span by input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Global used span by input value hash",
+			}, nil
+		}
+		slog.Debug("Priority 5 failed: No global span by input value hash", "traceId", traceID)
+
+		slog.Debug("Trying Priority 6: Reduced input value hash in global spans", "traceId", traceID)
+		globalReducedValueHashCandidates := mm.server.GetGlobalSpansByReducedValueHash(reducedRequestValueHash(req))
+		filteredGlobalReducedValueHashCandidates := mm.filterByPreAppStart(globalReducedValueHashCandidates, req.OutboundSpan.IsPreAppStart)
+		if match := mm.findFirstUnused(filteredGlobalReducedValueHashCandidates); match != nil {
+			slog.Debug("Found global unused span by reduced input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Global unused span by reduced input value hash",
+			}, nil
+		}
+		if match := mm.findFirstUsed(filteredGlobalReducedValueHashCandidates); match != nil {
+			slog.Debug("Found global used span by reduced input value hash", "spanName", match.Name)
+			mm.markSpanAsUsed(match)
+			return match, &backend.MatchLevel{
+				MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
+				MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
+				MatchDescription: "Global used span by reduced input value hash",
+			}, nil
+		}
+		slog.Debug("Priority 6 failed: No global span by reduced input value hash", "traceId", traceID)
 	}
-	if match := mm.findFirstUsed(filteredSuiteReducedValueHashCandidates); match != nil {
-		slog.Debug("Found suite used span by reduced input value hash", "spanName", match.Name)
-		mm.markSpanAsUsed(match)
-		return match, &backend.MatchLevel{
-			MatchType:        backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA,
-			MatchScope:       backend.MatchScope_MATCH_SCOPE_GLOBAL,
-			MatchDescription: "Suite used span by reduced input value hash",
-		}, nil
-	}
-	slog.Debug("Priority 6 failed: No suite span by reduced input value hash", "traceId", traceID)
 
 	// Priority 7-10: Schema-based matching still uses sortedSpans (by package)
 	// These don't have pre-computed hashes, so we keep the existing logic

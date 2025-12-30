@@ -110,12 +110,16 @@ func UpdateDriftRunCIStatusWrapper(
 	driftRunID string,
 	authOptions api.AuthOptions,
 	results []TestResult,
+	statusMessageOverride ...string,
 ) error {
 	// Note: We always report SUCCESS status here unless there was an error executing tests.
 	// Individual test failures (assertions, deviations, etc.) are not considered CI failures.
 	// The CI run succeeded if all tests were executed, regardless of test outcomes.
 	finalStatus := backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_SUCCESS
 	statusMessage := fmt.Sprintf("Completed %d tests", len(results))
+	if len(statusMessageOverride) > 0 && statusMessageOverride[0] != "" {
+		statusMessage = statusMessageOverride[0]
+	}
 	statusReq := &backend.UpdateDriftRunCIStatusRequest{
 		DriftRunId:      driftRunID,
 		CiStatus:        finalStatus,

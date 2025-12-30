@@ -171,7 +171,6 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 		context.Background(),
 		executor,
 		runner.SuiteSpanOptions{
-			AllTests:    tests,
 			Interactive: false,
 			Quiet:       true,
 		},

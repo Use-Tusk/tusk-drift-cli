@@ -115,6 +115,16 @@ func (e *Executor) StartServer() error {
 		server.SetSuiteSpans(e.suiteSpans)
 	}
 
+	// Apply global spans for cross-trace matching
+	if len(e.globalSpans) > 0 {
+		server.SetGlobalSpans(e.globalSpans)
+	}
+
+	// Apply suite-wide matching setting (for local runs or validation mode)
+	if e.allowSuiteWideMatching {
+		server.SetAllowSuiteWideMatching(true)
+	}
+
 	if server.GetCommunicationType() == CommunicationTCP {
 		_, port := server.GetConnectionInfo()
 		slog.Debug("Mock server ready", "type", "TCP", "port", port)

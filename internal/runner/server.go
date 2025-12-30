@@ -56,19 +56,25 @@ type Server struct {
 	suiteSpansBySchemaHash        map[string][]*core.Span
 	suiteSpansByReducedSchemaHash map[string][]*core.Span
 
-	currentTestID      atomic.Value
-	ctx                context.Context
-	cancel             context.CancelFunc
-	wg                 sync.WaitGroup
-	mu                 sync.RWMutex
-	connWriteMutex     sync.Mutex
-	sdkVersion         string
-	sdkConnected       bool
-	sdkConnectedChan   chan struct{}
-	suiteSpans         []*core.Span
-	matchEvents        map[string][]MatchEvent
-	replayInbound      map[string]*core.Span
-	mockNotFoundEvents map[string][]MockNotFoundEvent
+	// Global spans (explicitly marked is_global=true) - used in regular replay mode
+	globalSpans                   []*core.Span
+	globalSpansByValueHash        map[string][]*core.Span
+	globalSpansByReducedValueHash map[string][]*core.Span
+
+	currentTestID          atomic.Value
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	wg                     sync.WaitGroup
+	mu                     sync.RWMutex
+	connWriteMutex         sync.Mutex
+	sdkVersion             string
+	sdkConnected           bool
+	sdkConnectedChan       chan struct{}
+	suiteSpans             []*core.Span
+	matchEvents            map[string][]MatchEvent
+	replayInbound          map[string]*core.Span
+	mockNotFoundEvents     map[string][]MockNotFoundEvent
+	allowSuiteWideMatching bool // When true, allows cross-trace matching from any suite span
 
 	// For TCP communication (docker environments)
 	communicationType CommunicationType
@@ -152,6 +158,8 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		suiteSpansByValueHash:         make(map[string][]*core.Span),
 		suiteSpansBySchemaHash:        make(map[string][]*core.Span),
 		suiteSpansByReducedSchemaHash: make(map[string][]*core.Span),
+		globalSpansByValueHash:        make(map[string][]*core.Span),
+		globalSpansByReducedValueHash: make(map[string][]*core.Span),
 
 		ctx:                ctx,
 		cancel:             cancel,
@@ -413,6 +421,54 @@ func (ms *Server) GetSuiteSpans() []*core.Span {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 	return ms.suiteSpans
+}
+
+func (ms *Server) SetAllowSuiteWideMatching(enabled bool) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	ms.allowSuiteWideMatching = enabled
+}
+
+func (ms *Server) AllowSuiteWideMatching() bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.allowSuiteWideMatching
+}
+
+// SetGlobalSpans sets the global spans (explicitly marked is_global=true) and builds indexes
+func (ms *Server) SetGlobalSpans(spans []*core.Span) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	ms.globalSpans = spans
+
+	// Build indexes for global spans
+	ms.globalSpansByValueHash = make(map[string][]*core.Span)
+	ms.globalSpansByReducedValueHash = make(map[string][]*core.Span)
+
+	for _, span := range spans {
+		// Value hash index
+		if span.InputValueHash != "" {
+			ms.globalSpansByValueHash[span.InputValueHash] = append(ms.globalSpansByValueHash[span.InputValueHash], span)
+		}
+
+		// Reduced value hash index
+		reducedHash := reducedInputValueHash(span)
+		if reducedHash != "" {
+			ms.globalSpansByReducedValueHash[reducedHash] = append(ms.globalSpansByReducedValueHash[reducedHash], span)
+		}
+	}
+}
+
+func (ms *Server) GetGlobalSpansByValueHash(valueHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.globalSpansByValueHash[valueHash]
+}
+
+func (ms *Server) GetGlobalSpansByReducedValueHash(reducedHash string) []*core.Span {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.globalSpansByReducedValueHash[reducedHash]
 }
 
 func (ms *Server) GetSpansByPackageForTrace(traceID string, packageName string) []*core.Span {
