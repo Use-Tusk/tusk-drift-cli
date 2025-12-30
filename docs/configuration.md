@@ -497,7 +497,7 @@ service:
     command: set TUSK_MOCK_HOST=localhost&& npm run start
   readiness_check:
     # Use curl.exe (not curl) on Windows, or use PowerShell
-    command: curl.exe -fsS <http://localhost:3000/health>
+    command: curl.exe -fsS http://localhost:3000/health
     timeout: 30s
     interval: 1s
   communication:
@@ -546,5 +546,5 @@ If `curl.exe` is not available, use PowerShell:
 
 ```yaml
 readiness_check:
-  command: powershell -Command "try { Invoke-WebRequest -Uri <http://localhost:3000/health> -UseBasicParsing; exit 0 } catch { exit 1 }"
+  command: powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3000/health -UseBasicParsing; exit 0 } catch { exit 1 }"
 ```
