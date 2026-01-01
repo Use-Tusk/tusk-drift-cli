@@ -11,8 +11,8 @@ import (
 
 // SDK manifest URLs
 const (
-	NodeSDKManifestURL = "https://unpkg.com/@use-tusk/drift-node-sdk@latest/dist/instrumentation-manifest.json"
-	// PythonSDKManifestURL = "..." // Coming soon
+	NodeSDKManifestURL   = "https://unpkg.com/@use-tusk/drift-node-sdk@latest/dist/instrumentation-manifest.json"
+	PythonSDKManifestURL = "https://raw.githubusercontent.com/Use-Tusk/drift-python-sdk/main/instrumentation-manifest.json" // TODO: Use actual URL once published
 )
 
 // Trusted CDN hosts for SDK manifests
@@ -20,6 +20,21 @@ var trustedManifestHosts = []string{
 	"unpkg.com",
 	"cdn.jsdelivr.net",
 	"registry.npmjs.org",
+	"raw.githubusercontent.com",
+	"pypi.org",
+}
+
+// GetManifestURLForProjectType returns the SDK manifest URL for a given project type.
+// Returns empty string if no manifest URL is available for the project type.
+func GetManifestURLForProjectType(projectType string) string {
+	switch projectType {
+	case "nodejs":
+		return NodeSDKManifestURL
+	case "python":
+		return PythonSDKManifestURL
+	default:
+		return ""
+	}
 }
 
 // FetchManifestFromURL fetches an SDK manifest from a URL

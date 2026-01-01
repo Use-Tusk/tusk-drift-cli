@@ -58,11 +58,12 @@ type APIError struct {
 type State struct {
 	// Discovery results
 	ProjectType      string `json:"project_type"`       // "nodejs", "python", "go", etc.
-	PackageManager   string `json:"package_manager"`    // "npm", "yarn", "pnpm", "pip", etc.
+	PackageManager   string `json:"package_manager"`    // "npm", "yarn", "pnpm" (Node.js); "pip", "poetry", "uv", "pipenv" (Python)
 	ModuleSystem     string `json:"module_system"`      // "esm", "cjs" (Node.js specific)
-	EntryPoint       string `json:"entry_point"`        // e.g., "src/server.ts", "main.py"
-	StartCommand     string `json:"start_command"`      // e.g., "npm run start"
-	Port             string `json:"port"`               // e.g., "3000"
+	Framework        string `json:"framework"`          // "fastapi", "flask", "django" (Python specific); "express", "fastify", "hono" (Node.js)
+	EntryPoint       string `json:"entry_point"`        // e.g., "src/server.ts", "main.py", "app/main.py"
+	StartCommand     string `json:"start_command"`      // e.g., "npm run start", "uvicorn app.main:app"
+	Port             string `json:"port"`               // e.g., "3000", "8000"
 	HealthEndpoint   string `json:"health_endpoint"`    // e.g., "/health"
 	DockerType       string `json:"docker_type"`        // "none", "dockerfile", "compose"
 	ServiceName      string `json:"service_name"`       // e.g., "my-service"

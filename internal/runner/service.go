@@ -142,13 +142,44 @@ func createReplayFenceConfig() *fence.Config {
 			AllowAllUnixSockets: true, // Allow SDK to connect to mock server via Unix socket
 		},
 		Filesystem: fence.FilesystemConfig{
-			AllowWrite: []string{
-				".",
-				".tusk",
-				"node_modules",
-				"/tmp",
-			},
+			AllowWrite: getAllowedWriteDirs(),
 		},
+	}
+}
+
+// getAllowedWriteDirs returns the list of directories that should be writable
+// during replay mode. This includes common directories for both Node.js and Python
+// projects to ensure broad compatibility.
+func getAllowedWriteDirs() []string {
+	return []string{
+		// Common directories
+		".",
+		".tusk",
+		"/tmp",
+		"~/.npm",
+		"~/.cache",
+		"~/.npm/_cacache",
+		"~/.cache",
+		"~/.bun/**",
+		"~/.local/share/**",
+
+		// Node.js specific
+		"node_modules",
+
+		// Python specific
+		".venv",
+		"venv",
+		".virtualenv",
+		"__pycache__",
+		".pytest_cache",
+		".mypy_cache",
+		".ruff_cache",
+		"*.egg-info",
+		"dist",
+		"build",
+
+		// Common build/cache directories
+		".cache",
 	}
 }
 

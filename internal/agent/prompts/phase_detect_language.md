@@ -16,7 +16,7 @@ Identify the project's language/runtime by checking for common project markers.
 ### Instructions
 
 1. Use `list_directory` to check the project root for these markers
-2. If multiple markers exist (e.g., package.json AND go.mod), ask the user which is the primary project
+2. If multiple markers exist (e.g., package.json AND pyproject.toml), ask the user which is the primary project
 3. If no markers found, ask the user what type of project this is
 
 ### Decision
@@ -32,13 +32,24 @@ Call `transition_phase` with:
 }
 ```
 
+**If Python detected:**
+Call `transition_phase` with:
+
+```json
+{
+  "results": {
+    "project_type": "python"
+  }
+}
+```
+
 **If unsupported language detected:**
 You must call `abort_setup` with a clear explanation and the detected project type:
 
 ```json
 {
-  "reason": "Detected Python project (found requirements.txt). Tusk Drift currently only supports Node.js services. Support for Python is coming soon.",
-  "project_type": "python"
+  "reason": "Detected Go project (found go.mod). Tusk Drift currently only supports Node.js and Python services. Support for Go is coming soon.",
+  "project_type": "go"
 }
 ```
 
