@@ -51,6 +51,7 @@ from fastapi import FastAPI
 app = FastAPI()
 
 # After creating the app and registering routes:
+from drift import TuskDrift
 TuskDrift.get_instance().mark_app_as_ready()
 ```
 
