@@ -84,6 +84,9 @@ func (pm *PhaseManager) UpdateState(results map[string]interface{}) {
 	if v, ok := results["module_system"].(string); ok {
 		pm.state.ModuleSystem = v
 	}
+	if v, ok := results["framework"].(string); ok {
+		pm.state.Framework = v
+	}
 	if v, ok := results["entry_point"].(string); ok {
 		pm.state.EntryPoint = v
 	}
@@ -186,6 +189,9 @@ func (pm *PhaseManager) RestoreDiscoveredInfo(info map[string]string) {
 	}
 	if v, ok := info["Module System"]; ok {
 		pm.state.ModuleSystem = v
+	}
+	if v, ok := info["Framework"]; ok {
+		pm.state.Framework = v
 	}
 	if v, ok := info["Entry Point"]; ok {
 		pm.state.EntryPoint = v
@@ -304,10 +310,11 @@ func detectLanguagePhase() *Phase {
 
 func checkCompatibilityPhase() *Phase {
 	return &Phase{
-		ID:           "check_compatibility",
-		Name:         "Check Compatibility",
-		Description:  "Verify project dependencies are compatible with the SDK",
-		Instructions: PhaseCheckCompatibilityPrompt,
+		ID:          "check_compatibility",
+		Name:        "Check Compatibility",
+		Description: "Verify project dependencies are compatible with the SDK",
+		// Instructions will be set dynamically in OnEnter based on project type
+		Instructions: PhaseCheckCompatibilityNodejsPrompt, // Default to Node.js, overridden in OnEnter
 		Tools: Tools(
 			ToolReadFile,
 			ToolGrep,
@@ -319,24 +326,30 @@ func checkCompatibilityPhase() *Phase {
 		MaxIterations: 15,
 		OnEnter: func(state *State) string {
 			// Fetch SDK manifest based on detected language
-			if state.ProjectType == "nodejs" {
-				manifest, err := tools.FetchManifestFromURL(tools.NodeSDKManifestURL)
-				if err != nil {
-					return fmt.Sprintf("❌ Failed to fetch SDK manifest: %s\n\nProceed with manual compatibility check.", err)
-				}
-				return fmt.Sprintf("### SDK Manifest (fetched automatically)\n\n```json\n%s\n```", manifest)
+			manifestURL := tools.GetManifestURLForProjectType(state.ProjectType)
+			if manifestURL == "" {
+				return fmt.Sprintf("⚠️ No SDK manifest available for project type '%s'. Proceed with manual compatibility check.", state.ProjectType)
 			}
-			return ""
+
+			manifest, err := tools.FetchManifestFromURL(manifestURL)
+			if err != nil {
+				return fmt.Sprintf("❌ Failed to fetch SDK manifest: %s\n\nProceed with manual compatibility check.", err)
+			}
+
+			// Provide language-specific instructions
+			instructions := GetCheckCompatibilityPrompt(state.ProjectType)
+			return fmt.Sprintf("### Language-Specific Instructions\n\n%s\n\n### SDK Manifest (fetched automatically)\n\n```json\n%s\n```", instructions, manifest)
 		},
 	}
 }
 
 func gatherInfoPhase() *Phase {
 	return &Phase{
-		ID:           "gather_info",
-		Name:         "Gather Project Info",
-		Description:  "Collect project details for SDK setup",
-		Instructions: PhaseGatherInfoNodejsPrompt, // TODO: Select based on project_type
+		ID:          "gather_info",
+		Name:        "Gather Project Info",
+		Description: "Collect project details for SDK setup",
+		// Instructions will be set dynamically in OnEnter based on project type
+		Instructions: PhaseGatherInfoNodejsPrompt, // Default to Node.js, overridden in OnEnter
 		Tools: Tools(
 			ToolReadFile,
 			ToolListDirectory,
@@ -347,8 +360,12 @@ func gatherInfoPhase() *Phase {
 		Required:      true,
 		MaxIterations: 50,
 		OnEnter: func(state *State) string {
-			// Could return language-specific guidance here
-			// For now, the prompt is already Node.js specific
+			// Return language-specific gather info instructions
+			instructions := GetGatherInfoPrompt(state.ProjectType)
+			if instructions != PhaseGatherInfoNodejsPrompt {
+				// Override with language-specific instructions
+				return fmt.Sprintf("### Language-Specific Instructions\n\n%s", instructions)
+			}
 			return ""
 		},
 	}
@@ -377,10 +394,11 @@ func confirmAppStartsPhase() *Phase {
 
 func instrumentSDKPhase() *Phase {
 	return &Phase{
-		ID:           "instrument_sdk",
-		Name:         "Instrument SDK",
-		Description:  "Install and configure the Tusk Drift SDK",
-		Instructions: PhaseInstrumentSDKPrompt,
+		ID:          "instrument_sdk",
+		Name:        "Instrument SDK",
+		Description: "Install and configure the Tusk Drift SDK",
+		// Instructions will be set dynamically in OnEnter based on project type
+		Instructions: PhaseInstrumentSDKNodejsPrompt, // Default to Node.js, overridden in OnEnter
 		Tools: Tools(
 			ToolReadFile,
 			ToolWriteFile,
@@ -392,6 +410,15 @@ func instrumentSDKPhase() *Phase {
 			ToolTransitionPhase,
 		),
 		Required: true,
+		OnEnter: func(state *State) string {
+			// Return language-specific SDK instrumentation instructions
+			instructions := GetInstrumentSDKPrompt(state.ProjectType)
+			if instructions != PhaseInstrumentSDKNodejsPrompt {
+				// Override with language-specific instructions
+				return fmt.Sprintf("### Language-Specific Instructions\n\n%s", instructions)
+			}
+			return ""
+		},
 	}
 }
 

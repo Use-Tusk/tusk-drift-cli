@@ -93,8 +93,24 @@ func (ft *FilesystemTools) ListDirectory(input json.RawMessage) (string, error) 
 		return "", fmt.Errorf("failed to read directory: %w", err)
 	}
 
+	// Filter out files for cleaner display
+	// Only apply filter if there are other files to show
+	var filteredEntries []os.DirEntry
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == ".DS_Store" || strings.HasPrefix(name, ".env") {
+			continue
+		}
+		filteredEntries = append(filteredEntries, entry)
+	}
+
+	displayEntries := filteredEntries
+	if len(displayEntries) == 0 {
+		displayEntries = entries
+	}
+
 	var lines []string
-	for i, entry := range entries {
+	for i, entry := range displayEntries {
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -102,7 +118,7 @@ func (ft *FilesystemTools) ListDirectory(input json.RawMessage) (string, error) 
 
 		// Tree-style prefix
 		var prefix string
-		if i == len(entries)-1 {
+		if i == len(displayEntries)-1 {
 			prefix = "└── "
 		} else {
 			prefix = "├── "

@@ -167,6 +167,8 @@ func createFenceConfig(workDir string) *fence.Config {
 				".tusk",        // Tusk config directory
 				"node_modules", // npm packages
 				"/tmp",         // Temp files
+				"~/.npm",       // npm cache
+				"~/.cache",     // General cache directory
 			},
 			DenyWrite: []string{
 				"../*", // Prevent escaping project directory
