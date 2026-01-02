@@ -2,8 +2,8 @@ github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
 github.com/Use-Tusk/fence v0.1.5 h1:plOPBX2uqJK50MJEVKeigFv8INYEV783LMVz1cMMa5E=
 github.com/Use-Tusk/fence v0.1.5/go.mod h1:HQQjPkpRKkapla8wSXuTkaHVCXh5zSZTiAHnBy+Xxvg=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.21 h1:e4M2NbMMcmGY28XdAGdo1IiZmPGk4gHnwDHM9BM/r74=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.21/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
+github.com/Use-Tusk/tusk-drift-schemas v0.1.22 h1:ejGIHkuWl2opDjphP6w+1PA7ZpFrpRxPYylEmzaLU7M=
+github.com/Use-Tusk/tusk-drift-schemas v0.1.22/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
 github.com/agnivade/levenshtein v1.0.3 h1:M5ZnqLOoZR8ygVq0FfkXsNOKzMCk0xRiow0R5+5VkQ0=
 github.com/agnivade/levenshtein v1.0.3/go.mod h1:4SFRZbbXWLF4MU1T9Qg0pGgH3Pjs+t6ie5efyrwRJXs=
 github.com/alecthomas/assert/v2 v2.7.0 h1:QtqSACNS3tF7oasA8CU6A6sXZSBDqnm7RfpLl9bZqbE=

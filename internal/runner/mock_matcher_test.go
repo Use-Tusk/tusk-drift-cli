@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
@@ -99,8 +98,8 @@ func TestFindBestMatchWithTracePriority_InputValueHash_PrefersUnusedOldest(t *te
 	require.NotNil(t, level)
 
 	assert.Equal(t, "s1", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope)
 
 	server.mu.RLock()
 	assert.True(t, server.spanUsage[traceID]["s1"])
@@ -112,8 +111,8 @@ func TestFindBestMatchWithTracePriority_InputValueHash_PrefersUnusedOldest(t *te
 	require.NotNil(t, match2)
 	require.NotNil(t, level2)
 	assert.Equal(t, "s2", match2.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level2.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level2.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level2.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_TRACE, level2.MatchScope)
 
 	// Both used now; should fall back to used (earliest)
 	match3, level3, err := mm.FindBestMatchWithTracePriority(req, traceID)
@@ -121,8 +120,8 @@ func TestFindBestMatchWithTracePriority_InputValueHash_PrefersUnusedOldest(t *te
 	require.NotNil(t, match3)
 	require.NotNil(t, level3)
 	assert.Equal(t, "s1", match3.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level3.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level3.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level3.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_TRACE, level3.MatchScope)
 }
 
 func TestFindBestMatchWithTracePriority_ReducedInputValueHash_MatchesWhenDirectHashDiffers(t *testing.T) {
@@ -160,8 +159,8 @@ func TestFindBestMatchWithTracePriority_ReducedInputValueHash_MatchesWhenDirectH
 	require.NotNil(t, level)
 
 	assert.Equal(t, "sR", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope)
 }
 
 func TestFindBestMatchWithTracePriority_InputSchemaHash_WithHTTPShape(t *testing.T) {
@@ -205,8 +204,8 @@ func TestFindBestMatchWithTracePriority_InputSchemaHash_WithHTTPShape(t *testing
 	require.NotNil(t, level)
 
 	assert.Equal(t, "sH", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope)
 }
 
 func TestSchemaMatchWithHttpShape_GraphQLNormalization(t *testing.T) {
@@ -281,8 +280,8 @@ func TestFindBestMatchAcrossTraces_GlobalValueHash(t *testing.T) {
 	require.NotNil(t, level)
 
 	assert.Equal(t, "sa", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }
 
 func TestFindBestMatchAcrossTraces_GlobalSchemaHash(t *testing.T) {
@@ -322,8 +321,8 @@ func TestFindBestMatchAcrossTraces_GlobalSchemaHash(t *testing.T) {
 	require.NotNil(t, level)
 
 	assert.Equal(t, "sa", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }
 
 func TestFindBestMatchAcrossTraces_GlobalReducedSchemaHash(t *testing.T) {
@@ -372,8 +371,8 @@ func TestFindBestMatchAcrossTraces_GlobalReducedSchemaHash(t *testing.T) {
 	require.NotNil(t, level)
 
 	assert.Equal(t, "sa", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH_REDUCED_SCHEMA, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }
 
 func TestFindBestMatchAcrossTraces_PrefersValueHashOverSchemaHash(t *testing.T) {
@@ -409,7 +408,7 @@ func TestFindBestMatchAcrossTraces_PrefersValueHashOverSchemaHash(t *testing.T) 
 
 	// Should pick value hash match (Priority 10) over schema hash match (Priority 12)
 	assert.Equal(t, "exact", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
 }
 
 func TestFindBestMatchAcrossTraces_NonPreAppStart_DoesNotMatchOnSchema(t *testing.T) {
@@ -482,8 +481,8 @@ func TestFindBestMatchAcrossTraces_SchemaHash_PreAppStartFiltering(t *testing.T)
 
 	// Should only match the pre-app-start span
 	assert.Equal(t, "pre-app", match.SpanId)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }
 
 func TestReducedInputSchemaHash_WithHttpShape(t *testing.T) {
@@ -589,7 +588,7 @@ func TestFindBestMatchWithTracePriority_SimilarityScoring_PicksClosestMatch(t *t
 	assert.Equal(t, "span-similar", match.SpanId, "Should pick the span with more similar input value")
 
 	// Should be a schema hash match (Priority 5)
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_SCHEMA_HASH, level.MatchType)
 
 	// Match description should include similarity scores
 	assert.Contains(t, level.MatchDescription, "similarity:")
@@ -956,8 +955,8 @@ func TestFindBestMatchWithTracePriority_SuiteValueHash_MatchesAcrossTraces(t *te
 
 	// Should match the suite span from another trace via Priority 5
 	assert.Equal(t, "suite-span", match.SpanId, "Should find match from suite via Priority 5")
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope, "Suite match should have GLOBAL scope")
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope, "Suite match should have GLOBAL scope")
 }
 
 // TestFindBestMatchWithTracePriority_SuiteReducedValueHash_MatchesAcrossTraces tests that Priority 6
@@ -1012,8 +1011,8 @@ func TestFindBestMatchWithTracePriority_SuiteReducedValueHash_MatchesAcrossTrace
 
 	// Should match via Priority 6 (reduced value hash)
 	assert.Equal(t, "suite-span", match.SpanId, "Should find match from suite via Priority 6")
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope, "Suite match should have GLOBAL scope")
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope, "Suite match should have GLOBAL scope")
 }
 
 // TestFindBestMatchWithTracePriority_PrefersTraceOverSuite tests that trace-level matches
@@ -1050,8 +1049,8 @@ func TestFindBestMatchWithTracePriority_PrefersTraceOverSuite(t *testing.T) {
 
 	// Should prefer trace-level match (Priority 1) over suite-level (Priority 5)
 	assert.Equal(t, "trace-span", match.SpanId, "Should prefer trace match over suite match")
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope, "Trace match should have TRACE scope")
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_TRACE, level.MatchScope, "Trace match should have TRACE scope")
 }
 
 // TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed tests that Priority 5
@@ -1086,21 +1085,21 @@ func TestFindBestMatchWithTracePriority_SuiteValueHash_PrefersUnusedOverUsed(t *
 	require.NoError(t, err)
 	require.NotNil(t, match1)
 	assert.Equal(t, "suite-first", match1.SpanId, "First match should be first unused in index")
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level1.MatchScope)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level1.MatchScope)
 
 	// Second match should get next unused
 	match2, level2, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
 	require.NoError(t, err)
 	require.NotNil(t, match2)
 	assert.Equal(t, "suite-second", match2.SpanId, "Second match should be next unused")
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level2.MatchScope)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level2.MatchScope)
 
 	// Third match should fall back to used (first in index)
 	match3, level3, err := mm.FindBestMatchWithTracePriority(req, "trace-current")
 	require.NoError(t, err)
 	require.NotNil(t, match3)
 	assert.Equal(t, "suite-first", match3.SpanId, "Third match should fall back to first used")
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level3.MatchScope)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level3.MatchScope)
 }
 
 // TestFindBestMatchWithTracePriority_RegularReplayMode_OnlySearchesGlobalSpans tests that in regular
@@ -1152,8 +1151,8 @@ func TestFindBestMatchWithTracePriority_RegularReplayMode_OnlySearchesGlobalSpan
 
 	// Should match the global span, NOT the suite span (because we're in regular replay mode)
 	assert.Equal(t, "global-span", match.SpanId, "Should find match from global spans, not suite spans")
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }
 
 // TestFindBestMatchWithTracePriority_RegularReplayMode_NoMatchWhenNotGlobal tests that in regular
@@ -1266,6 +1265,6 @@ func TestFindBestMatchWithTracePriority_RegularReplayMode_GlobalReducedValueHash
 
 	// Should match via Priority 6 (reduced value hash in global spans)
 	assert.Equal(t, "global-span", match.SpanId, "Should find match from global spans via reduced hash")
-	assert.Equal(t, backend.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
-	assert.Equal(t, backend.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
+	assert.Equal(t, core.MatchType_MATCH_TYPE_INPUT_VALUE_HASH_REDUCED_SCHEMA, level.MatchType)
+	assert.Equal(t, core.MatchScope_MATCH_SCOPE_GLOBAL, level.MatchScope)
 }

@@ -25,7 +25,6 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
-	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
 	"google.golang.org/protobuf/proto"
@@ -94,12 +93,12 @@ const (
 )
 
 type MatchEvent struct {
-	SpanID     string              `json:"spanId"`
-	MatchLevel *backend.MatchLevel `json:"matchLevel"`
-	StackTrace string              `json:"stackTrace"`
-	InputData  map[string]any      `json:"inputData,omitempty"`
-	Timestamp  time.Time           `json:"timestamp"`
-	ReplaySpan *core.Span          `json:"replaySpan,omitempty"`
+	SpanID     string           `json:"spanId"`
+	MatchLevel *core.MatchLevel `json:"matchLevel"`
+	StackTrace string           `json:"stackTrace"`
+	InputData  map[string]any   `json:"inputData,omitempty"`
+	Timestamp  time.Time        `json:"timestamp"`
+	ReplaySpan *core.Span       `json:"replaySpan,omitempty"`
 }
 
 type MockNotFoundEvent struct {
@@ -957,7 +956,7 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 
 	matcher := NewMockMatcher(ms)
 	var span *core.Span
-	var matchLevel *backend.MatchLevel
+	var matchLevel *core.MatchLevel
 	var err error
 
 	// If we have a test ID, try to find mock in the trace first
@@ -1038,11 +1037,11 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 
 	// Log based on actual match scope from MatchLevel
 	switch matchLevel.MatchScope {
-	case backend.MatchScope_MATCH_SCOPE_TRACE:
+	case core.MatchScope_MATCH_SCOPE_TRACE:
 		if testID != "" {
 			logging.LogToCurrentTest(testID, "🟢 Found best match for request in trace\n")
 		}
-	case backend.MatchScope_MATCH_SCOPE_GLOBAL:
+	case core.MatchScope_MATCH_SCOPE_GLOBAL:
 		if testID != "" {
 			msg := "🟢 Found best match for request across traces\n"
 			if span.IsPreAppStart {
@@ -1106,11 +1105,14 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	slog.Debug("Found mock match",
 		"testID", testID,
 		"spanName", span.Name,
-		"spanID", span.SpanId)
+		"spanID", span.SpanId,
+		"matchLevel", matchLevel,
+	)
 
 	return &core.GetMockResponse{
 		Found:        true,
 		ResponseData: responseData,
+		MatchLevel:   matchLevel,
 	}
 }
 
