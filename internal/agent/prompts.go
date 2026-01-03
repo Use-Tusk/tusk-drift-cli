@@ -52,6 +52,29 @@ var PhaseComplexTestPrompt string
 //go:embed prompts/phase_summary.md
 var PhaseSummaryPrompt string
 
+// Cloud setup prompts
+//
+//go:embed prompts/phase_cloud_auth.md
+var PhaseCloudAuthPrompt string
+
+//go:embed prompts/phase_cloud_detect_repo.md
+var PhaseCloudDetectRepoPrompt string
+
+//go:embed prompts/phase_cloud_verify_access.md
+var PhaseCloudVerifyAccessPrompt string
+
+//go:embed prompts/phase_cloud_create_service.md
+var PhaseCloudCreateServicePrompt string
+
+//go:embed prompts/phase_cloud_create_api_key.md
+var PhaseCloudCreateApiKeyPrompt string
+
+//go:embed prompts/phase_cloud_configure_recording.md
+var PhaseCloudConfigureRecordingPrompt string
+
+//go:embed prompts/phase_cloud_summary.md
+var PhaseCloudSummaryPrompt string
+
 // GetGatherInfoPrompt returns the appropriate gather info prompt for the project type.
 func GetGatherInfoPrompt(projectType string) string {
 	switch projectType {

@@ -24,10 +24,26 @@ const (
 	ToolWaitForReady           ToolName = "wait_for_ready"
 	ToolHTTPRequest            ToolName = "http_request"
 	ToolAskUser                ToolName = "ask_user"
+	ToolAskUserSelect          ToolName = "ask_user_select"
 	ToolTuskList               ToolName = "tusk_list"
 	ToolTuskRun                ToolName = "tusk_run"
 	ToolTransitionPhase        ToolName = "transition_phase"
 	ToolAbortSetup             ToolName = "abort_setup"
+
+	// Cloud setup tools
+	ToolCloudCheckAuth         ToolName = "cloud_check_auth"
+	ToolCloudLogin             ToolName = "cloud_login"
+	ToolCloudWaitForLogin      ToolName = "cloud_wait_for_login"
+	ToolCloudGetClients        ToolName = "cloud_get_clients"
+	ToolCloudSelectClient      ToolName = "cloud_select_client"
+	ToolCloudDetectGitRepo     ToolName = "cloud_detect_git_repo"
+	ToolCloudVerifyRepoAccess  ToolName = "cloud_verify_repo_access"
+	ToolCloudGetAuthURL        ToolName = "cloud_get_auth_url"
+	ToolCloudOpenBrowser       ToolName = "cloud_open_browser"
+	ToolCloudCreateService     ToolName = "cloud_create_service"
+	ToolCloudCreateApiKey      ToolName = "cloud_create_api_key"
+	ToolCloudCheckApiKeyExists ToolName = "cloud_check_api_key_exists"
+	ToolCloudSaveConfig        ToolName = "cloud_save_config"
 )
 
 // ToolDefinition is the single source of truth for a tool's metadata and implementation
@@ -329,6 +345,38 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				"required": ["question"]
 			}`),
 		},
+		ToolAskUserSelect: {
+			Name:        ToolAskUserSelect,
+			Description: "Present the user with a list of options to choose from. Use instead of ask_user when there are specific options to select from (e.g., choosing an organization, selecting a config option). Returns the ID of the selected option.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"question": {
+						"type": "string",
+						"description": "Question or prompt to show above the options"
+					},
+					"options": {
+						"type": "array",
+						"description": "List of options for the user to choose from",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"description": "Unique identifier for this option (returned when selected)"
+								},
+								"label": {
+									"type": "string",
+									"description": "Display text shown to the user"
+								}
+							},
+							"required": ["id", "label"]
+						}
+					}
+				},
+				"required": ["question", "options"]
+			}`),
+		},
 		ToolTuskList: {
 			Name:        ToolTuskList,
 			Description: "Run 'tusk list' to show available recorded traces. Use after recording to verify traces were captured.",
@@ -390,6 +438,206 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				"required": ["reason"]
 			}`),
 		},
+
+		// Cloud setup tools
+		ToolCloudCheckAuth: {
+			Name:        ToolCloudCheckAuth,
+			Description: "Check if the user is already authenticated with Tusk Cloud. Returns authentication status and user info if logged in.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		ToolCloudLogin: {
+			Name:        ToolCloudLogin,
+			Description: "Initiate the device code login flow. Opens a browser for the user to authenticate. Returns the verification URL and user code that should be displayed to the user. After calling this, use ask_user to tell the user to complete authentication in their browser, then call cloud_wait_for_login to wait for completion.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		ToolCloudWaitForLogin: {
+			Name:        ToolCloudWaitForLogin,
+			Description: "Wait for the device code authentication to complete. Call this after cloud_login and after instructing the user to complete browser authentication. Polls until the user completes authentication or timeout.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		ToolCloudGetClients: {
+			Name:        ToolCloudGetClients,
+			Description: "Get the list of organizations/clients the user belongs to.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		ToolCloudSelectClient: {
+			Name:        ToolCloudSelectClient,
+			Description: "Select and save the organization/client to use for cloud operations.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"client_id": {
+						"type": "string",
+						"description": "The ID of the client/organization to select"
+					},
+					"client_name": {
+						"type": "string",
+						"description": "The name of the client/organization"
+					}
+				},
+				"required": ["client_id", "client_name"]
+			}`),
+		},
+		ToolCloudDetectGitRepo: {
+			Name:        ToolCloudDetectGitRepo,
+			Description: "Detect the Git repository information (owner, repo name, hosting type) from the current directory.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		ToolCloudVerifyRepoAccess: {
+			Name:        ToolCloudVerifyRepoAccess,
+			Description: "Verify that Tusk has access to the GitHub/GitLab repository. Returns repo ID if successful, or an error indicating the user needs to install the Tusk app.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"owner": {
+						"type": "string",
+						"description": "Repository owner (username or org)"
+					},
+					"repo": {
+						"type": "string",
+						"description": "Repository name"
+					},
+					"client_id": {
+						"type": "string",
+						"description": "The client/organization ID to use"
+					}
+				},
+				"required": ["owner", "repo"]
+			}`),
+		},
+		ToolCloudGetAuthURL: {
+			Name:        ToolCloudGetAuthURL,
+			Description: "Get the URL for GitHub/GitLab app installation. Use when verify_repo_access fails with NO_CODE_HOSTING_RESOURCE.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"hosting_type": {
+						"type": "string",
+						"description": "The code hosting type: 'github' or 'gitlab'"
+					},
+					"client_id": {
+						"type": "string",
+						"description": "The client/organization ID"
+					},
+					"user_id": {
+						"type": "string",
+						"description": "The user ID"
+					}
+				},
+				"required": ["hosting_type", "client_id", "user_id"]
+			}`),
+		},
+		ToolCloudOpenBrowser: {
+			Name:        ToolCloudOpenBrowser,
+			Description: "Open a URL in the user's default browser.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {
+						"type": "string",
+						"description": "The URL to open"
+					}
+				},
+				"required": ["url"]
+			}`),
+		},
+		ToolCloudCreateService: {
+			Name:        ToolCloudCreateService,
+			Description: "Create an observable service in Tusk Cloud for the repository.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"owner": {
+						"type": "string",
+						"description": "Repository owner"
+					},
+					"repo": {
+						"type": "string",
+						"description": "Repository name"
+					},
+					"client_id": {
+						"type": "string",
+						"description": "The client/organization ID"
+					},
+					"project_type": {
+						"type": "string",
+						"description": "Project type: 'nodejs' or 'python'"
+					},
+					"app_dir": {
+						"type": "string",
+						"description": "Optional relative path from repo root to the app directory"
+					}
+				},
+				"required": ["owner", "repo", "project_type"]
+			}`),
+		},
+		ToolCloudCreateApiKey: {
+			Name:        ToolCloudCreateApiKey,
+			Description: "Create a new API key for CI/CD authentication.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"description": "Name for the API key (e.g., 'CI/CD Key')"
+					},
+					"client_id": {
+						"type": "string",
+						"description": "The client/organization ID"
+					}
+				},
+				"required": ["name"]
+			}`),
+		},
+		ToolCloudCheckApiKeyExists: {
+			Name:        ToolCloudCheckApiKeyExists,
+			Description: "Check if the user already has a TUSK_API_KEY environment variable configured.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		ToolCloudSaveConfig: {
+			Name:        ToolCloudSaveConfig,
+			Description: "Save cloud configuration (service ID, recording settings) to .tusk/config.yaml.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"service_id": {
+						"type": "string",
+						"description": "The observable service ID"
+					},
+					"sampling_rate": {
+						"type": "number",
+						"description": "Sampling rate (0.0 to 1.0, e.g., 0.1 for 10%)"
+					},
+					"export_spans": {
+						"type": "boolean",
+						"description": "Whether to export spans to Tusk Cloud"
+					},
+					"enable_env_var_recording": {
+						"type": "boolean",
+						"description": "Whether to record environment variables"
+					}
+				},
+				"required": ["service_id", "sampling_rate", "export_spans", "enable_env_var_recording"]
+			}`),
+		},
 	}
 }
 
@@ -401,6 +649,7 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 	http := tools.NewHTTPTools()
 	user := tools.NewUserTools()
 	tusk := tools.NewTuskTools(workDir)
+	cloud := tools.NewCloudTools()
 
 	// Map tool names to their executors
 	executorMap := map[ToolName]ToolExecutor{
@@ -416,10 +665,26 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolWaitForReady:           proc.WaitForReady,
 		ToolHTTPRequest:            http.Request,
 		ToolAskUser:                user.Ask,
+		ToolAskUserSelect:          nil, // Handled specially in agent.go like ask_user
 		ToolTuskList:               tusk.List,
 		ToolTuskRun:                tusk.Run,
 		ToolTransitionPhase:        phaseMgr.PhaseTransitionTool(),
 		ToolAbortSetup:             tools.AbortSetup,
+
+		// Cloud tools
+		ToolCloudCheckAuth:         cloud.CheckAuth,
+		ToolCloudLogin:             cloud.Login,
+		ToolCloudWaitForLogin:      cloud.WaitForLogin,
+		ToolCloudGetClients:        cloud.GetClients,
+		ToolCloudSelectClient:      cloud.SelectClient,
+		ToolCloudDetectGitRepo:     cloud.DetectGitRepo,
+		ToolCloudVerifyRepoAccess:  cloud.VerifyRepoAccess,
+		ToolCloudGetAuthURL:        cloud.GetCodeHostingAuthURL,
+		ToolCloudOpenBrowser:       cloud.OpenBrowser,
+		ToolCloudCreateService:     cloud.CreateObservableService,
+		ToolCloudCreateApiKey:      cloud.CreateApiKey,
+		ToolCloudCheckApiKeyExists: cloud.CheckApiKeyExists,
+		ToolCloudSaveConfig:        cloud.SaveCloudConfig,
 	}
 
 	// Build registry with definitions + executors

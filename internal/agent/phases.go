@@ -136,6 +136,47 @@ func (pm *PhaseManager) UpdateState(results map[string]interface{}) {
 	if v, ok := results["complex_test_passed"].(bool); ok {
 		pm.state.ComplexTestPassed = v
 	}
+
+	// Cloud setup state
+	if v, ok := results["is_authenticated"].(bool); ok {
+		pm.state.IsAuthenticated = v
+	}
+	if v, ok := results["user_email"].(string); ok {
+		pm.state.UserEmail = v
+	}
+	if v, ok := results["user_id"].(string); ok {
+		pm.state.UserId = v
+	}
+	if v, ok := results["selected_client_id"].(string); ok {
+		pm.state.SelectedClientID = v
+	}
+	if v, ok := results["selected_client_name"].(string); ok {
+		pm.state.SelectedClientName = v
+	}
+	if v, ok := results["git_repo_owner"].(string); ok {
+		pm.state.GitRepoOwner = v
+	}
+	if v, ok := results["git_repo_name"].(string); ok {
+		pm.state.GitRepoName = v
+	}
+	if v, ok := results["code_hosting_type"].(string); ok {
+		pm.state.CodeHostingType = v
+	}
+	if v, ok := results["cloud_service_id"].(string); ok {
+		pm.state.CloudServiceID = v
+	}
+	if v, ok := results["api_key_created"].(bool); ok {
+		pm.state.ApiKeyCreated = v
+	}
+	if v, ok := results["sampling_rate"].(float64); ok {
+		pm.state.SamplingRate = v
+	}
+	if v, ok := results["export_spans"].(bool); ok {
+		pm.state.ExportSpans = v
+	}
+	if v, ok := results["enable_env_var_recording"].(bool); ok {
+		pm.state.EnableEnvVarRecording = v
+	}
 }
 
 // StateAsContext returns the current state as a string for the prompt
@@ -235,6 +276,44 @@ func (pm *PhaseManager) RestoreSetupProgress(progress map[string]bool) {
 // GetState returns the current state
 func (pm *PhaseManager) GetState() *State {
 	return pm.state
+}
+
+// HasCloudPhases returns true if cloud phases have been added
+func (pm *PhaseManager) HasCloudPhases() bool {
+	for _, phase := range pm.phases {
+		if phase.ID == "cloud_auth" {
+			return true
+		}
+	}
+	return false
+}
+
+// AddCloudPhases adds the cloud setup phases after local setup is complete
+func (pm *PhaseManager) AddCloudPhases() {
+	cloudPhases := []*Phase{
+		cloudAuthPhase(),
+		cloudDetectRepoPhase(),
+		cloudVerifyAccessPhase(),
+		cloudCreateServicePhase(),
+		cloudCreateApiKeyPhase(),
+		cloudConfigureRecordingPhase(),
+		cloudSummaryPhase(),
+	}
+	pm.phases = append(pm.phases, cloudPhases...)
+}
+
+// SetCloudOnlyMode replaces local phases with cloud-only phases (for --skip-to-cloud testing)
+func (pm *PhaseManager) SetCloudOnlyMode() {
+	pm.phases = []*Phase{
+		cloudAuthPhase(),
+		cloudDetectRepoPhase(),
+		cloudVerifyAccessPhase(),
+		cloudCreateServicePhase(),
+		cloudCreateApiKeyPhase(),
+		cloudConfigureRecordingPhase(),
+		cloudSummaryPhase(),
+	}
+	pm.currentIdx = 0
 }
 
 // PhaseTransitionTool creates the transition_phase tool executor
@@ -538,4 +617,124 @@ func PhasesSummary() string {
 		lines = append(lines, fmt.Sprintf("%d. %s (%s): %s", i+1, phase.Name, required, phase.Description))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// Cloud Setup Phases
+
+func cloudAuthPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_auth",
+		Name:         "Cloud Auth",
+		Description:  "Authenticate with Tusk Cloud",
+		Instructions: PhaseCloudAuthPrompt,
+		Tools: Tools(
+			ToolCloudCheckAuth,
+			ToolCloudLogin,
+			ToolCloudWaitForLogin,
+			ToolCloudGetClients,
+			ToolCloudSelectClient,
+			ToolAskUser,
+			ToolAskUserSelect,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 20,
+	}
+}
+
+func cloudDetectRepoPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_detect_repo",
+		Name:         "Detect Repository",
+		Description:  "Detect Git repository information",
+		Instructions: PhaseCloudDetectRepoPrompt,
+		Tools: Tools(
+			ToolCloudDetectGitRepo,
+			ToolAskUser,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 10,
+	}
+}
+
+func cloudVerifyAccessPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_verify_access",
+		Name:         "Verify Access",
+		Description:  "Verify Tusk has access to the repository",
+		Instructions: PhaseCloudVerifyAccessPrompt,
+		Tools: Tools(
+			ToolCloudVerifyRepoAccess,
+			ToolCloudGetAuthURL,
+			ToolCloudOpenBrowser,
+			ToolAskUser,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 30,
+	}
+}
+
+func cloudCreateServicePhase() *Phase {
+	return &Phase{
+		ID:           "cloud_create_service",
+		Name:         "Create Service",
+		Description:  "Create observable service in Tusk Cloud",
+		Instructions: PhaseCloudCreateServicePrompt,
+		Tools: Tools(
+			ToolCloudCreateService,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 10,
+	}
+}
+
+func cloudCreateApiKeyPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_create_api_key",
+		Name:         "Create API Key",
+		Description:  "Create API key for CI/CD",
+		Instructions: PhaseCloudCreateApiKeyPrompt,
+		Tools: Tools(
+			ToolCloudCheckApiKeyExists,
+			ToolCloudCreateApiKey,
+			ToolAskUser,
+			ToolTransitionPhase,
+		),
+		Required:      false,
+		MaxIterations: 15,
+	}
+}
+
+func cloudConfigureRecordingPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_configure_recording",
+		Name:         "Configure Recording",
+		Description:  "Configure recording parameters",
+		Instructions: PhaseCloudConfigureRecordingPrompt,
+		Tools: Tools(
+			ToolCloudSaveConfig,
+			ToolAskUser,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 15,
+	}
+}
+
+func cloudSummaryPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_summary",
+		Name:         "Cloud Summary",
+		Description:  "Generate cloud setup report",
+		Instructions: PhaseCloudSummaryPrompt,
+		Tools: Tools(
+			ToolWriteFile,
+			ToolReadFile,
+			ToolTransitionPhase,
+		),
+		Required: true,
+	}
 }

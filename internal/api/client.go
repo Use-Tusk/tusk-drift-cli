@@ -9,10 +9,11 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"google.golang.org/protobuf/proto"
 )
@@ -67,9 +68,20 @@ const (
 	ClientServiceAPIPath  = "/api/drift/client_service"
 )
 
-// GetBaseURL returns the API base URL, allowing override via TUSK_CLOUD_API_URL env var
+// GetBaseURL returns the API base URL with the following priority:
+// 1. TUSK_CLOUD_API_URL environment variable
+// 2. tusk_api.url from .tusk/config.yaml
+// 3. Default URL (https://api.usetusk.ai)
 func GetBaseURL() string {
-	return utils.EnvDefault("TUSK_CLOUD_API_URL", DefaultBaseURL)
+	if envURL := os.Getenv("TUSK_CLOUD_API_URL"); envURL != "" {
+		return envURL
+	}
+
+	if cfg, err := config.Get(); err == nil && cfg.TuskAPI.URL != "" {
+		return cfg.TuskAPI.URL
+	}
+
+	return DefaultBaseURL
 }
 
 func NewClient(baseURL, apiKey string) *TuskClient {
