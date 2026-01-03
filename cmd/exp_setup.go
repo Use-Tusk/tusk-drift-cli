@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/agent"
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ var (
 	expSkipPermissions bool
 	expDisableSandbox  bool
 	expDisableProgress bool
+	expSkipToCloud     bool
 )
 
 var expCmd = &cobra.Command{
@@ -49,6 +51,7 @@ func init() {
 	expSetupCmd.Flags().BoolVar(&expSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
 	expSetupCmd.Flags().BoolVar(&expDisableSandbox, "disable-sandbox", false, "Disable command sandboxing (for MacOS/Linux only)")
 	expSetupCmd.Flags().BoolVar(&expDisableProgress, "disable-progress-state", false, "Disable progress state (saving to a PROGRESS.md file) or resuming from it")
+	expSetupCmd.Flags().BoolVar(&expSkipToCloud, "skip-to-cloud", false, "Skip local setup and go directly to cloud setup (for testing)")
 }
 
 func runExpSetup(cmd *cobra.Command, args []string) error {
@@ -65,6 +68,16 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
+	// When skipping to cloud, verify that local setup has been completed
+	if expSkipToCloud {
+		configPath := filepath.Join(workDir, ".tusk", "config.yaml")
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			return fmt.Errorf("--skip-to-cloud requires local setup to be complete first.\n\nNo .tusk/config.yaml found. Please run 'tusk exp setup' (without --skip-to-cloud) first to complete local setup, or create .tusk/config.yaml manually")
+		}
+		fmt.Println("🔧 Skipping to cloud setup (--skip-to-cloud mode)")
+		fmt.Println()
+	}
+
 	cfg := agent.Config{
 		APIKey:          apiKey,
 		Model:           expModel,
@@ -72,6 +85,7 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		SkipPermissions: expSkipPermissions,
 		DisableSandbox:  expDisableSandbox,
 		DisableProgress: expDisableProgress,
+		SkipToCloud:     expSkipToCloud,
 		Debug:           debug,
 	}
 
