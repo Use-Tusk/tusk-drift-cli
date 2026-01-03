@@ -344,7 +344,10 @@ func (a *Authenticator) PollForToken(ctx context.Context, dcr DeviceCodeResponse
 		case "expired_token":
 			return errors.New("the authentication request expired. Please try again.")
 		default:
-			return fmt.Errorf("authentication failed: %s", tr.ErrorDescription)
+			if tr.ErrorDescription != "" {
+				return fmt.Errorf("authentication failed (%s): %s", tr.Error, tr.ErrorDescription)
+			}
+			return fmt.Errorf("authentication failed: %s", tr.Error)
 		}
 	}
 }

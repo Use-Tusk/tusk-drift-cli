@@ -928,10 +928,16 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 	}
 
 	a.tuiModel.SendToolComplete(a.program, c.Name, true, selectedLabel)
+
+	result := map[string]string{
+		"selected_id":    selectedID,
+		"selected_label": selectedLabel,
+	}
+	resultJSON, _ := json.Marshal(result)
 	return Content{
 		Type:      "tool_result",
 		ToolUseID: c.ID,
-		Content:   fmt.Sprintf(`{"selected_id": "%s", "selected_label": "%s"}`, selectedID, selectedLabel),
+		Content:   string(resultJSON),
 	}
 }
 

@@ -71,8 +71,11 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 	// When skipping to cloud, verify that local setup has been completed
 	if expSkipToCloud {
 		configPath := filepath.Join(workDir, ".tusk", "config.yaml")
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			return fmt.Errorf("--skip-to-cloud requires local setup to be complete first.\n\nNo .tusk/config.yaml found. Please run 'tusk exp setup' (without --skip-to-cloud) first to complete local setup, or create .tusk/config.yaml manually")
+		if _, err := os.Stat(configPath); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("--skip-to-cloud requires local setup to be complete first.\n\nNo .tusk/config.yaml found. Please run 'tusk exp setup' (without --skip-to-cloud) first to complete local setup, or create .tusk/config.yaml manually")
+			}
+			return fmt.Errorf("failed to check .tusk/config.yaml: %w", err)
 		}
 		fmt.Println("🔧 Skipping to cloud setup (--skip-to-cloud mode)")
 		fmt.Println()

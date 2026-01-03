@@ -16,6 +16,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+	"gopkg.in/yaml.v3"
 )
 
 // CloudTools provides cloud-related operations for the agent
@@ -540,8 +541,16 @@ func (ct *CloudTools) GetCodeHostingAuthURL(input json.RawMessage) (string, erro
 	var authURL string
 	switch params.HostingType {
 	case "github":
-		state := fmt.Sprintf(`{"clientId":"%s","userId":"%s","source":"cli-setup-agent"}`, params.ClientID, params.UserID)
-		encodedState := url.QueryEscape(state)
+		stateObj := map[string]string{
+			"clientId": params.ClientID,
+			"userId":   params.UserID,
+			"source":   "cli-setup-agent",
+		}
+		stateJSON, err := json.Marshal(stateObj)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal state: %w", err)
+		}
+		encodedState := url.QueryEscape(string(stateJSON))
 		githubAppName := utils.EnvDefault("GITHUB_APP_NAME", "use-tusk")
 		authURL = fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s", githubAppName, encodedState)
 	case "gitlab":
@@ -732,68 +741,43 @@ func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 		return "", fmt.Errorf("invalid input: %w", err)
 	}
 
-	// Read the existing config file
 	configPath := ".tusk/config.yaml"
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	content := string(data)
-
-	// Update service.id if not already set
-	if params.ServiceID != "" && !strings.Contains(content, "id:") && strings.Contains(content, "service:") {
-		// Find the service section and add id
-		content = strings.Replace(content, "service:", fmt.Sprintf("service:\n  id: %s", params.ServiceID), 1)
+	var config map[string]any
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return "", fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Update or add recording section
-	recordingSection := fmt.Sprintf(`recording:
-  sampling_rate: %.2f
-  export_spans: %t
-  enable_env_var_recording: %t`, params.SamplingRate, params.ExportSpans, params.EnableEnvVarRecording)
-
-	if strings.Contains(content, "recording:") {
-		// Find and replace the recording section
-		// This is a simplified approach - in production you'd use yaml parsing
-		lines := strings.Split(content, "\n")
-		var newLines []string
-		inRecording := false
-		for _, line := range lines {
-			if strings.HasPrefix(line, "recording:") {
-				inRecording = true
-				newLines = append(newLines, recordingSection)
-				continue
-			}
-			if inRecording && (strings.HasPrefix(line, "  ") || strings.TrimSpace(line) == "") {
-				// Skip old recording settings
-				if strings.TrimSpace(line) == "" && len(newLines) > 0 && strings.HasPrefix(newLines[len(newLines)-1], "  ") {
-					continue
-				}
-				if strings.HasPrefix(line, "  ") {
-					continue
-				}
-			}
-			if inRecording && !strings.HasPrefix(line, " ") && strings.TrimSpace(line) != "" {
-				inRecording = false
-			}
-			if !inRecording {
-				newLines = append(newLines, line)
+	if params.ServiceID != "" {
+		if service, ok := config["service"].(map[string]any); ok {
+			if _, hasID := service["id"]; !hasID {
+				service["id"] = params.ServiceID
 			}
 		}
-		content = strings.Join(newLines, "\n")
-	} else {
-		// Add recording section at the end
-		content = strings.TrimRight(content, "\n") + "\n\n" + recordingSection + "\n"
 	}
 
-	// Add tusk_api.url if not present
-	if !strings.Contains(content, "tusk_api:") {
-		content = strings.TrimRight(content, "\n") + fmt.Sprintf("\n\ntusk_api:\n  url: %s\n", api.DefaultBaseURL)
+	config["recording"] = map[string]any{
+		"sampling_rate":            params.SamplingRate,
+		"export_spans":             params.ExportSpans,
+		"enable_env_var_recording": params.EnableEnvVarRecording,
 	}
 
-	// Write back
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+	if _, hasTuskAPI := config["tusk_api"]; !hasTuskAPI {
+		config["tusk_api"] = map[string]any{
+			"url": api.DefaultBaseURL,
+		}
+	}
+
+	output, err := yaml.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, output, 0o600); err != nil {
 		return "", fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -831,7 +815,7 @@ func (ct *CloudTools) WaitForAuth(input json.RawMessage) (string, error) {
 			if err != nil {
 				continue
 			}
-			if err := authenticator.TryExistingAuth(context.Background()); err == nil {
+			if err := authenticator.TryExistingAuth(ctx); err == nil {
 				ct.authenticator = authenticator
 				ct.bearerToken = authenticator.AccessToken
 				ct.userEmail = authenticator.Email

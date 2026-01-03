@@ -383,8 +383,14 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.addLog("tool-start", displayName, msg.toolName)
 
+			// Skip showing input for tools where the UI will show it interactively
+			skipInputTools := map[string]bool{
+				"ask_user":        true,
+				"ask_user_select": true,
+			}
+
 			// Show the input on separate lines if it's meaningful
-			if msg.input != "" && msg.input != "{}" {
+			if msg.input != "" && msg.input != "{}" && !skipInputTools[msg.toolName] {
 				formattedInput := formatToolInput(msg.input, m.width-10)
 				for line := range strings.SplitSeq(formattedInput, "\n") {
 					if strings.TrimSpace(line) != "" {
@@ -410,8 +416,16 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addLog("error", fmt.Sprintf("   ✗ %s failed", displayName), msg.toolName)
 		}
 		// Show truncated output, preserving indentation
-		// Skip output for ask_user - we already showed the user's response when they pressed Enter
-		if msg.output != "" && msg.toolName != "ask_user" {
+		// Skip output for certain tools
+		skipOutputTools := map[string]bool{
+			"ask_user":             true,
+			"ask_user_select":      true,
+			"cloud_check_auth":     true,
+			"cloud_login":          true,
+			"cloud_wait_for_login": true,
+			"cloud_get_clients":    true,
+		}
+		if msg.output != "" && !skipOutputTools[msg.toolName] {
 			outputLines := strings.Split(msg.output, "\n")
 			maxLines := 4
 			for i, line := range outputLines {
