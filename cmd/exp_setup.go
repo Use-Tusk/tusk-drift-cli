@@ -17,6 +17,8 @@ var (
 	expDisableSandbox  bool
 	expDisableProgress bool
 	expSkipToCloud     bool
+	expPrintMode       bool
+	expOutputLogs      bool
 )
 
 var expCmd = &cobra.Command{
@@ -52,6 +54,8 @@ func init() {
 	expSetupCmd.Flags().BoolVar(&expDisableSandbox, "disable-sandbox", false, "Disable command sandboxing (for MacOS/Linux only)")
 	expSetupCmd.Flags().BoolVar(&expDisableProgress, "disable-progress-state", false, "Disable progress state (saving to a PROGRESS.md file) or resuming from it")
 	expSetupCmd.Flags().BoolVar(&expSkipToCloud, "skip-to-cloud", false, "Skip local setup and go directly to cloud setup (for testing)")
+	expSetupCmd.Flags().BoolVar(&expPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout")
+	expSetupCmd.Flags().BoolVar(&expOutputLogs, "output-logs", false, "Output all logs (tool calls, messages) to .tusk/logs/setup-<datetime>.log")
 }
 
 func runExpSetup(cmd *cobra.Command, args []string) error {
@@ -90,6 +94,8 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		DisableProgress: expDisableProgress,
 		SkipToCloud:     expSkipToCloud,
 		Debug:           debug,
+		PrintMode:       expPrintMode,
+		OutputLogs:      expOutputLogs,
 	}
 
 	a, err := agent.New(cfg)
