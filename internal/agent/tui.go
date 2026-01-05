@@ -311,6 +311,20 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
 
+	case tea.MouseMsg:
+		// Handle mouse wheel scrolling
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.autoScroll = false
+			m.viewport.ScrollUp(3)
+		case tea.MouseButtonWheelDown:
+			m.viewport.ScrollDown(3)
+			if m.viewport.AtBottom() {
+				m.autoScroll = true
+			}
+		}
+		return m, nil
+
 	case tickMsg:
 		m.lastTickTime = time.Time(msg)
 		m.pulsePhase = (m.pulsePhase + 1) % 20
@@ -730,6 +744,18 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateViewportSize() // Reclaim space from textarea
 			m.addLog("dim", "   (cancelled)", "")
 			return m, nil
+		case "pgup":
+			// Allow scrolling viewport while in input mode
+			m.autoScroll = false
+			m.viewport.HalfPageUp()
+			return m, nil
+		case "pgdown":
+			// Allow scrolling viewport while in input mode
+			m.viewport.HalfPageDown()
+			if m.viewport.AtBottom() {
+				m.autoScroll = true
+			}
+			return m, nil
 		default:
 			// Forward all other keys to textarea (handles paste, typing, backspace, etc.)
 			var cmd tea.Cmd
@@ -862,6 +888,16 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.userSelectMode = false
 			return m, m.initiateShutdown()
+		case "pgup":
+			m.autoScroll = false
+			m.viewport.HalfPageUp()
+			return m, nil
+		case "pgdown":
+			m.viewport.HalfPageDown()
+			if m.viewport.AtBottom() {
+				m.autoScroll = true
+			}
+			return m, nil
 		}
 		return m, nil
 	}
@@ -1430,21 +1466,94 @@ func extractPathFromInput(input string) string {
 }
 
 // GetFinalOutput returns the log content for printing after exit
+// Renders a complete view similar to the TUI layout
 func (m *TUIModel) GetFinalOutput() string {
 	m.logMutex.RLock()
 	defer m.logMutex.RUnlock()
 
+	width := m.width
+	if width == 0 {
+		width = 80
+	}
+
 	var lines []string
+
+	titleText := "• TUSK DRIFT AUTO SETUP •"
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(styles.PrimaryColor)).
+		Width(width).
+		Align(lipgloss.Center)
 	lines = append(lines, "")
-	lines = append(lines, components.Title(80, "TUSK DRIFT AI SETUP"))
+	lines = append(lines, titleStyle.Render(titleText))
+
+	var statusText string
+	switch {
+	case m.completed:
+		statusText = fmt.Sprintf("✓ Completed %d/%d phases", m.phaseNumber, m.totalPhases)
+	case m.hasError:
+		statusText = fmt.Sprintf("✗ Failed at phase %d/%d: %s", m.phaseNumber, m.totalPhases, m.currentPhase)
+	case m.shutdownRequested:
+		statusText = fmt.Sprintf("⏹ Stopped at phase %d/%d: %s", m.phaseNumber, m.totalPhases, m.currentPhase)
+	default:
+		statusText = fmt.Sprintf("Phase %d/%d: %s", m.phaseNumber, m.totalPhases, m.currentPhase)
+	}
+	statusStyle := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
+	lines = append(lines, statusStyle.Render(statusText))
+
+	// Progress bar (static representation)
+	var progressPercent float64
+	if m.totalPhases > 0 {
+		if m.completed {
+			progressPercent = 1.0
+		} else {
+			progressPercent = float64(m.phaseNumber-1) / float64(m.totalPhases)
+		}
+	}
+	progressWidth := width - 4
+	filledWidth := int(float64(progressWidth) * progressPercent)
+	emptyWidth := progressWidth - filledWidth
+	progressBar := lipgloss.NewStyle().Foreground(lipgloss.Color(styles.PrimaryColor)).Render(strings.Repeat("█", filledWidth))
+	progressBar += lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("░", emptyWidth))
+	lines = append(lines, "  "+progressBar)
 	lines = append(lines, "")
 
+	// Info panel (detected info)
+	if len(m.sidebarOrder) > 0 {
+		var detectedItems []string
+		for _, key := range m.sidebarOrder {
+			value := m.sidebarInfo[key]
+			keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+			detectedItems = append(detectedItems, keyStyle.Render(key+": ")+value)
+		}
+		separator := "  •  "
+		infoContent := strings.Join(detectedItems, separator)
+
+		boxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("238")).
+			Padding(0, 1).
+			Width(width - 2)
+		lines = append(lines, boxStyle.Render(infoContent))
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, styles.DimStyle.Render(strings.Repeat("─", width)))
+	lines = append(lines, "")
+
+	// Log entries
 	for _, entry := range m.logs {
+		if entry.level == "spacing" {
+			lines = append(lines, "") // Preserve spacing as empty lines
+			continue
+		}
 		styled := m.styleLogEntry(entry)
 		if styled != "" {
 			lines = append(lines, styled)
 		}
 	}
+
+	lines = append(lines, "")
 
 	return strings.Join(lines, "\n")
 }
