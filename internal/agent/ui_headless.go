@@ -2,7 +2,6 @@ package agent
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -38,7 +37,6 @@ var (
 
 // HeadlessUI implements AgentUI for terminal output without TUI
 type HeadlessUI struct {
-	ctx           context.Context
 	reader        *bufio.Reader
 	isThinking    bool
 	currentPhase  string
@@ -47,9 +45,8 @@ type HeadlessUI struct {
 }
 
 // NewHeadlessUI creates a new headless UI
-func NewHeadlessUI(ctx context.Context) *HeadlessUI {
+func NewHeadlessUI() *HeadlessUI {
 	return &HeadlessUI{
-		ctx:    ctx,
 		reader: bufio.NewReader(os.Stdin),
 	}
 }

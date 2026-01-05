@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 )
 
@@ -45,7 +44,7 @@ type AgentLogger struct {
 // NewAgentLogger creates a new logger that writes to .tusk/logs/setup-<datetime>.log
 // mode should be "TUI" or "Headless"
 func NewAgentLogger(workDir string, mode string) (*AgentLogger, error) {
-	logsDir := utils.GetLogsDir()
+	logsDir := filepath.Join(workDir, ".tusk", "logs")
 	if err := os.MkdirAll(logsDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create logs directory: %w", err)
 	}
@@ -163,6 +162,9 @@ func (l *AgentLogger) LogThinking(thinking bool) {
 
 // LogError logs an error
 func (l *AgentLogger) LogError(err error) {
+	if err == nil {
+		return
+	}
 	l.writeEntry(LogEntry{
 		Timestamp: time.Now(),
 		Type:      "error",

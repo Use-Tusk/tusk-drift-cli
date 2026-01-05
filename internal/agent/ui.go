@@ -49,7 +49,7 @@ type AgentUI interface {
 // NewAgentUI creates the appropriate UI implementation based on the mode
 func NewAgentUI(ctx context.Context, cancel context.CancelFunc, headless bool, phaseNames []string) AgentUI {
 	if headless {
-		return NewHeadlessUI(ctx)
+		return NewHeadlessUI()
 	}
 	return NewTUIUI(ctx, cancel, phaseNames)
 }
