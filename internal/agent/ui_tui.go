@@ -26,7 +26,7 @@ func NewTUIUI(ctx context.Context, cancel context.CancelFunc, phaseNames []strin
 
 // Start initializes and starts the TUI program
 func (u *TUIUI) Start() error {
-	u.program = tea.NewProgram(u.model, tea.WithAltScreen())
+	u.program = tea.NewProgram(u.model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	return nil
 }
 
