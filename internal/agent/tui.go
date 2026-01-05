@@ -1489,10 +1489,10 @@ func (m *TUIModel) GetFinalOutput() string {
 
 	var statusText string
 	switch {
-	case m.completed:
-		statusText = fmt.Sprintf("✓ Completed %d/%d phases", m.phaseNumber, m.totalPhases)
 	case m.hasError:
 		statusText = fmt.Sprintf("✗ Failed at phase %d/%d: %s", m.phaseNumber, m.totalPhases, m.currentPhase)
+	case m.completed:
+		statusText = fmt.Sprintf("✓ Completed %d/%d phases", m.phaseNumber, m.totalPhases)
 	case m.shutdownRequested:
 		statusText = fmt.Sprintf("⏹ Stopped at phase %d/%d: %s", m.phaseNumber, m.totalPhases, m.currentPhase)
 	default:
