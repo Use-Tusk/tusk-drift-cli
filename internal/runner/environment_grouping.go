@@ -86,6 +86,15 @@ func extractEnvironmentFromTest(test *Test) string {
 	return ""
 }
 
+// isEnvVarsSpan checks if the span is a pre-app-start environment variables span
+// Supports both Node.js (process.env) and Python (os.environ)
+func isEnvVarsSpan(span *core.Span) bool {
+	if !span.IsPreAppStart {
+		return false
+	}
+	return span.PackageName == "process.env" || span.PackageName == "os.environ"
+}
+
 // extractEnvVarsForEnvironment finds the ENV_VARS span for a given environment
 // Searches through preAppStartSpans for process.env spans that match the given environment
 // If multiple exist for same environment, selects most recent by timestamp
@@ -94,8 +103,7 @@ func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment str
 
 	// Search through pre-app-start spans for ENV_VARS spans
 	for _, span := range preAppStartSpans {
-		// Filter for process.env spans that are pre-app-start
-		if span.PackageName == "process.env" && span.IsPreAppStart && span.GetEnvironment() == environment {
+		if isEnvVarsSpan(span) && span.GetEnvironment() == environment {
 			candidateSpans = append(candidateSpans, span)
 		}
 	}
