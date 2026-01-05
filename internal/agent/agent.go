@@ -62,12 +62,18 @@ type Agent struct {
 	skipPermissions bool
 	disableProgress bool
 	skipToCloud     bool
+	printMode       bool
 
 	// TUI
 	tuiModel *TUIModel
 	program  *tea.Program
 	ctx      context.Context
 	cancel   context.CancelFunc
+
+	// Logging
+	logger      *AgentLogger
+	finalStatus CloseStatus
+	finalError  error
 
 	// Analytics
 	tracker   *analytics.Tracker
@@ -92,7 +98,7 @@ func New(cfg Config) (*Agent, error) {
 
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 
-	return &Agent{
+	a := &Agent{
 		client:          client,
 		allTools:        tools,
 		executors:       executors,
@@ -102,7 +108,22 @@ func New(cfg Config) (*Agent, error) {
 		skipPermissions: cfg.SkipPermissions,
 		disableProgress: cfg.DisableProgress,
 		skipToCloud:     cfg.SkipToCloud,
-	}, nil
+		printMode:       cfg.PrintMode,
+	}
+
+	if cfg.OutputLogs {
+		mode := "TUI"
+		if cfg.PrintMode {
+			mode = "Headless"
+		}
+		logger, err := NewAgentLogger(cfg.WorkDir, mode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create agent logger: %w", err)
+		}
+		a.logger = logger
+	}
+
+	return a, nil
 }
 
 // SetTracker sets the analytics tracker for the agent
@@ -135,11 +156,19 @@ func (a *Agent) trackInterrupted(phaseName string, phasesCompleted int) {
 	})
 }
 
-// Run executes the agent with TUI
+// Run executes the agent with TUI or in headless mode
 func (a *Agent) Run(parentCtx context.Context) error {
 	// Create cancellable context
 	a.ctx, a.cancel = context.WithCancel(parentCtx)
 	defer a.cancel()
+
+	if a.logger != nil {
+		fmt.Printf("Logs will be written to: %s\n\n", a.logger.FilePath())
+	}
+
+	if a.printMode {
+		return a.runHeadless()
+	}
 
 	a.tuiModel = NewTUIModel(a.ctx, a.cancel, a.phaseManager.GetPhaseNames())
 	a.program = tea.NewProgram(a.tuiModel, tea.WithAltScreen())
@@ -227,10 +256,10 @@ func (a *Agent) runAgent() error {
 							a.phaseManager = NewPhaseManager()
 							a.tuiModel.SendAgentText(a.program, "Starting fresh setup...\n", false)
 						} else {
-							return nil
+							return a.setCompleted()
 						}
 					case <-a.ctx.Done():
-						return fmt.Errorf("interrupted")
+						return a.setCancelled()
 					}
 					break
 				}
@@ -260,7 +289,7 @@ func (a *Agent) runAgent() error {
 			}
 			_ = a.saveProgress(completedPhases, phaseName, "Agent was interrupted.")
 			a.trackInterrupted(phaseName, len(completedPhases))
-			return fmt.Errorf("interrupted")
+			return a.setCancelled()
 		default:
 		}
 
@@ -272,6 +301,9 @@ func (a *Agent) runAgent() error {
 		// Notify TUI of phase change
 		phaseIdx := a.phaseManager.currentIdx + 1
 		a.tuiModel.SendPhaseChange(a.program, phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
+		if a.logger != nil {
+			a.logger.LogPhaseStart(phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
+		}
 
 		// Run phase with timeout
 		phaseCtx, phaseCancel := context.WithTimeout(a.ctx, PhaseTimeout)
@@ -282,7 +314,7 @@ func (a *Agent) runAgent() error {
 			if a.ctx.Err() != nil {
 				_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Agent was interrupted during %s phase.", phase.Name))
 				a.trackInterrupted(phase.Name, len(completedPhases))
-				return fmt.Errorf("interrupted")
+				return a.setCancelled()
 			}
 
 			// Special handling for abort_setup - graceful exit (not an error)
@@ -312,7 +344,7 @@ func (a *Agent) runAgent() error {
 				a.tuiModel.SendAgentText(a.program, "\n\n🟠 Setup aborted. See message above for details.\n", false)
 				a.tuiModel.SendAborted(a.program, "")
 				time.Sleep(500 * time.Millisecond)
-				return nil // Not an error - graceful exit
+				return a.setCompleted() // Not an error - graceful exit
 			}
 
 			if phase.Required {
@@ -332,7 +364,7 @@ func (a *Agent) runAgent() error {
 				// Fatal error for required phases - will auto-quit
 				a.tuiModel.SendFatalError(a.program, err)
 				time.Sleep(100 * time.Millisecond)
-				return fmt.Errorf("required phase %s failed: %w", phase.Name, err)
+				return a.setFailed(fmt.Errorf("required phase %s failed: %w", phase.Name, err))
 			}
 
 			// Non-fatal error for optional phases
@@ -365,7 +397,7 @@ func (a *Agent) runAgent() error {
 		})
 		a.tuiModel.SendCompleted(a.program, a.workDir)
 		time.Sleep(500 * time.Millisecond)
-		return nil
+		return a.setCompleted()
 	}
 
 	_ = a.saveProgress(completedPhases, "", "Local setup completed successfully.")
@@ -406,7 +438,7 @@ func (a *Agent) runAgent() error {
 						}
 						_ = a.saveProgress(completedPhases, phaseName, "Agent was interrupted during cloud setup.")
 						a.trackInterrupted(phaseName, len(completedPhases))
-						return fmt.Errorf("interrupted")
+						return a.setCancelled()
 					default:
 					}
 
@@ -418,6 +450,9 @@ func (a *Agent) runAgent() error {
 					// Notify TUI of phase change
 					phaseIdx := a.phaseManager.currentIdx + 1
 					a.tuiModel.SendPhaseChange(a.program, phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
+					if a.logger != nil {
+						a.logger.LogPhaseStart(phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
+					}
 
 					// Run phase with timeout
 					phaseCtx, phaseCancel := context.WithTimeout(a.ctx, PhaseTimeout)
@@ -428,7 +463,7 @@ func (a *Agent) runAgent() error {
 						if a.ctx.Err() != nil {
 							_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Agent was interrupted during %s phase.", phase.Name))
 							a.trackInterrupted(phase.Name, len(completedPhases))
-							return fmt.Errorf("interrupted")
+							return a.setCancelled()
 						}
 
 						// Special handling for abort_setup
@@ -443,7 +478,7 @@ func (a *Agent) runAgent() error {
 							a.tuiModel.SendAgentText(a.program, "\n\n🟠 Cloud setup aborted. See message above for details.\n", false)
 							a.tuiModel.SendAborted(a.program, "")
 							time.Sleep(500 * time.Millisecond)
-							return nil
+							return a.setCompleted()
 						}
 
 						if phase.Required {
@@ -454,7 +489,7 @@ func (a *Agent) runAgent() error {
 							})
 							a.tuiModel.SendFatalError(a.program, err)
 							time.Sleep(100 * time.Millisecond)
-							return fmt.Errorf("required cloud phase %s failed: %w", phase.Name, err)
+							return a.setFailed(fmt.Errorf("required cloud phase %s failed: %w", phase.Name, err))
 						}
 
 						a.tuiModel.SendError(a.program, err)
@@ -482,14 +517,14 @@ func (a *Agent) runAgent() error {
 				a.trackEvent("drift_cli:setup_agent:cloud_skipped", nil)
 			}
 		case <-a.ctx.Done():
-			return fmt.Errorf("interrupted")
+			return a.setCancelled()
 		}
 	}
 
 	a.tuiModel.SendCompleted(a.program, a.workDir)
 	time.Sleep(500 * time.Millisecond)
 
-	return nil
+	return a.setCompleted()
 }
 
 func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
@@ -523,6 +558,9 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		}
 
 		a.tuiModel.SendThinking(a.program, true)
+		if a.logger != nil {
+			a.logger.LogThinking(true)
+		}
 
 		var streamedText strings.Builder
 
@@ -578,6 +616,9 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		for _, content := range cleanedContent {
 			if content.Type == "text" && strings.TrimSpace(content.Text) != "" {
 				a.tuiModel.SendAgentText(a.program, content.Text, false)
+				if a.logger != nil {
+					a.logger.LogMessage(content.Text)
+				}
 			}
 		}
 
@@ -715,6 +756,9 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 		// Format input for display
 		inputStr := string(c.Input)
 		a.tuiModel.SendToolStart(a.program, c.Name, inputStr)
+		if a.logger != nil {
+			a.logger.LogToolStart(c.Name, inputStr)
+		}
 
 		// Extract sidebar info from tool inputs
 		a.extractSidebarInfo(c.Name, inputStr)
@@ -783,6 +827,9 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 		executor, ok := a.executors[c.Name]
 		if !ok {
 			a.tuiModel.SendToolComplete(a.program, c.Name, false, "unknown tool")
+			if a.logger != nil {
+				a.logger.LogToolComplete(c.Name, false, "unknown tool")
+			}
 			results = append(results, Content{
 				Type:      "tool_result",
 				ToolUseID: c.ID,
@@ -811,6 +858,9 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 		case <-toolCtx.Done():
 			toolCancel()
 			a.tuiModel.SendToolComplete(a.program, c.Name, false, "timeout")
+			if a.logger != nil {
+				a.logger.LogToolComplete(c.Name, false, "timeout")
+			}
 			results = append(results, Content{
 				Type:      "tool_result",
 				ToolUseID: c.ID,
@@ -823,10 +873,16 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 				// Special handling for abort_setup - return the error to stop the agent
 				if errors.Is(res.err, agenttools.ErrSetupAborted) {
 					a.tuiModel.SendToolComplete(a.program, c.Name, true, res.result)
+					if a.logger != nil {
+						a.logger.LogToolComplete(c.Name, true, res.result)
+					}
 					return nil, res.err
 				}
 
 				a.tuiModel.SendToolComplete(a.program, c.Name, false, res.err.Error())
+				if a.logger != nil {
+					a.logger.LogToolComplete(c.Name, false, res.err.Error())
+				}
 				results = append(results, Content{
 					Type:      "tool_result",
 					ToolUseID: c.ID,
@@ -835,6 +891,9 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 				})
 			} else {
 				a.tuiModel.SendToolComplete(a.program, c.Name, true, res.result)
+				if a.logger != nil {
+					a.logger.LogToolComplete(c.Name, true, res.result)
+				}
 				results = append(results, Content{
 					Type:      "tool_result",
 					ToolUseID: c.ID,
@@ -868,6 +927,9 @@ func (a *Agent) handleAskUser(c Content) Content {
 	response := a.tuiModel.RequestUserInput(a.program, params.Question)
 
 	if response == "" {
+		if a.logger != nil {
+			a.logger.LogUserInput(params.Question, "(cancelled)")
+		}
 		return Content{
 			Type:      "tool_result",
 			ToolUseID: c.ID,
@@ -876,6 +938,9 @@ func (a *Agent) handleAskUser(c Content) Content {
 		}
 	}
 
+	if a.logger != nil {
+		a.logger.LogUserInput(params.Question, response)
+	}
 	a.tuiModel.SendToolComplete(a.program, c.Name, true, response)
 	return Content{
 		Type:      "tool_result",
@@ -910,6 +975,9 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 	selectedID := a.tuiModel.RequestUserSelect(a.program, params.Question, params.Options)
 
 	if selectedID == "" {
+		if a.logger != nil {
+			a.logger.LogUserSelect(params.Question, "", "(cancelled)")
+		}
 		return Content{
 			Type:      "tool_result",
 			ToolUseID: c.ID,
@@ -927,6 +995,9 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 		}
 	}
 
+	if a.logger != nil {
+		a.logger.LogUserSelect(params.Question, selectedID, selectedLabel)
+	}
 	a.tuiModel.SendToolComplete(a.program, c.Name, true, selectedLabel)
 
 	result := map[string]string{
@@ -1127,6 +1198,30 @@ func (a *Agent) updateSidebarFromState() {
 
 func (a *Agent) cleanup() {
 	a.processManager.StopAll()
+	if a.logger != nil {
+		_ = a.logger.Close(a.finalStatus, a.finalError)
+	}
+}
+
+// setCompleted marks the agent as successfully completed and returns nil
+func (a *Agent) setCompleted() error {
+	a.finalStatus = StatusCompleted
+	a.finalError = nil
+	return nil
+}
+
+// setCancelled marks the agent as cancelled by user and returns an "interrupted" error
+func (a *Agent) setCancelled() error {
+	a.finalStatus = StatusCancelled
+	a.finalError = nil
+	return fmt.Errorf("interrupted")
+}
+
+// setFailed marks the agent as failed and returns the error
+func (a *Agent) setFailed(err error) error {
+	a.finalStatus = StatusFailed
+	a.finalError = err
+	return err
 }
 
 // generateSessionID creates a unique short session ID for this agent run
