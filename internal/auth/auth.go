@@ -88,7 +88,8 @@ func (a *Authenticator) isValid() bool {
 	return time.Now().Add(30 * time.Second).Before(a.ExpiresAt)
 }
 
-func (a *Authenticator) saveTokenFile() error {
+// SaveTokenFile saves the token to the auth file
+func (a *Authenticator) SaveTokenFile() error {
 	dir := filepath.Dir(a.authFilePath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cannot create config dir %q: %w", dir, err)
@@ -122,7 +123,7 @@ func (a *Authenticator) Login(c context.Context) error {
 
 		if a.RefreshToken != "" {
 			if err := a.refreshAccessToken(c); err == nil {
-				if err := a.saveTokenFile(); err != nil {
+				if err := a.SaveTokenFile(); err != nil {
 					return fmt.Errorf("write token file: %w", err)
 				}
 				return nil
@@ -134,7 +135,7 @@ func (a *Authenticator) Login(c context.Context) error {
 		}
 	}
 
-	dcr, err := a.auth0RequestDeviceCode(c)
+	dcr, err := a.RequestDeviceCode(c)
 	if err != nil {
 		return err
 	}
@@ -148,24 +149,20 @@ func (a *Authenticator) Login(c context.Context) error {
 	fmt.Printf("Your user code is %q (expires in %d seconds)\n", dcr.UserCode, dcr.ExpiresIn)
 
 	// Try to open the browser automatically
-	browserURL := dcr.VerificationURIComplete
-	if browserURL == "" {
-		browserURL = dcr.VerificationURI
-	}
-	_ = openBrowser(browserURL)
+	_ = openBrowser(dcr.VerificationURL())
 
 	ctx, cancel := context.WithTimeout(c, time.Duration(dcr.ExpiresIn)*time.Second)
 	defer cancel()
 
-	if err = a.auth0PollForToken(ctx, dcr); err != nil {
+	if err = a.PollForToken(ctx, dcr); err != nil {
 		return fmt.Errorf("polling token failed: %w", err)
 	}
 
-	if err = a.fetchUserEmail(c); err != nil {
+	if err = a.FetchUserEmail(c); err != nil {
 		return err
 	}
 
-	if err := a.saveTokenFile(); err != nil {
+	if err := a.SaveTokenFile(); err != nil {
 		return fmt.Errorf("write token file: %w", err)
 	}
 	return nil
@@ -192,7 +189,7 @@ func (a *Authenticator) TryExistingAuth(ctx context.Context) error {
 			return fmt.Errorf("token refresh failed: %w", err)
 		}
 		// Save the refreshed token
-		if err := a.saveTokenFile(); err != nil {
+		if err := a.SaveTokenFile(); err != nil {
 			return fmt.Errorf("failed to save refreshed token: %w", err)
 		}
 		return nil
@@ -216,7 +213,8 @@ func (a *Authenticator) Logout() error {
 	return nil
 }
 
-type deviceCodeResp struct {
+// DeviceCodeResponse contains the response from a device code request
+type DeviceCodeResponse struct {
 	DeviceCode              string `json:"device_code"`
 	UserCode                string `json:"user_code"`
 	VerificationURI         string `json:"verification_uri"`
@@ -226,6 +224,14 @@ type deviceCodeResp struct {
 
 	Error            string `json:"error,omitempty"`
 	ErrorDescription string `json:"error_description,omitempty"`
+}
+
+// VerificationURL returns the best URL for device verification
+func (d DeviceCodeResponse) VerificationURL() string {
+	if d.VerificationURIComplete != "" {
+		return d.VerificationURIComplete
+	}
+	return d.VerificationURI
 }
 
 type tokenResp struct {
@@ -239,7 +245,10 @@ type tokenResp struct {
 	ErrorDescription string `json:"error_description,omitempty"`
 }
 
-func (a *Authenticator) auth0RequestDeviceCode(ctx context.Context) (deviceCodeResp, error) {
+// RequestDeviceCode requests a device code for authentication.
+// This is the first step of the device code flow - returns the code and URL
+// for the user to complete authentication in their browser.
+func (a *Authenticator) RequestDeviceCode(ctx context.Context) (DeviceCodeResponse, error) {
 	form := url.Values{}
 	form.Set("client_id", a.clientID)
 	if a.scope != "" {
@@ -249,7 +258,7 @@ func (a *Authenticator) auth0RequestDeviceCode(ctx context.Context) (deviceCodeR
 		form.Set("audience", a.audience)
 	}
 
-	var dcr deviceCodeResp
+	var dcr DeviceCodeResponse
 
 	endpoint := fmt.Sprintf("https://%s/oauth/device/code", a.domain)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
@@ -278,7 +287,9 @@ func (a *Authenticator) auth0RequestDeviceCode(ctx context.Context) (deviceCodeR
 	return dcr, nil
 }
 
-func (a *Authenticator) auth0PollForToken(ctx context.Context, dcr deviceCodeResp) error {
+// PollForToken polls Auth0 for token completion after a device code request.
+// This blocks until the user completes authentication or the context is cancelled.
+func (a *Authenticator) PollForToken(ctx context.Context, dcr DeviceCodeResponse) error {
 	endpoint := fmt.Sprintf("https://%s/oauth/token", a.domain)
 	interval := time.Second * time.Duration(dcr.Interval)
 	if interval <= 0 {
@@ -310,6 +321,11 @@ func (a *Authenticator) auth0PollForToken(ctx context.Context, dcr deviceCodeRes
 		}
 
 		switch tr.Error {
+		case "":
+			a.AccessToken = tr.AccessToken
+			a.RefreshToken = tr.RefreshToken
+			a.ExpiresAt = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
+			return nil
 		case "authorization_pending":
 			select {
 			case <-time.After(interval):
@@ -323,19 +339,22 @@ func (a *Authenticator) auth0PollForToken(ctx context.Context, dcr deviceCodeRes
 			case <-ctx.Done():
 				return ctx.Err()
 			}
+		case "access_denied":
+			return errors.New("authentication was denied or cancelled. Please try again.")
+		case "expired_token":
+			return errors.New("the authentication request expired. Please try again.")
 		default:
-			if tr.Error != "" {
-				return fmt.Errorf("unknown token error %d: %s", resp.StatusCode, string(body))
+			if tr.ErrorDescription != "" {
+				return fmt.Errorf("authentication failed (%s): %s", tr.Error, tr.ErrorDescription)
 			}
-			a.AccessToken = tr.AccessToken
-			a.RefreshToken = tr.RefreshToken
-			a.ExpiresAt = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
-			return nil
+			return fmt.Errorf("authentication failed: %s", tr.Error)
 		}
 	}
 }
 
-func (a *Authenticator) fetchUserEmail(ctx context.Context) error {
+// FetchUserEmail fetches the user's email from the Auth0 userinfo endpoint.
+// The authenticator must have a valid AccessToken set.
+func (a *Authenticator) FetchUserEmail(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("https://%s/userinfo", a.domain), nil)
 	if err != nil {
 		return err

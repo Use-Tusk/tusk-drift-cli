@@ -15,10 +15,11 @@ import (
 )
 
 var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Authenticate with Tusk Cloud",
-	Long:  `Authenticate with Tusk Cloud using Auth0 SSO device authorization flow.`,
-	RunE:  login,
+	Use:          "login",
+	Short:        "Authenticate with Tusk Cloud",
+	Long:         `Authenticate with Tusk Cloud using Auth0 SSO device authorization flow.`,
+	RunE:         login,
+	SilenceUsage: true,
 }
 
 func init() {
@@ -37,7 +38,7 @@ func login(cmd *cobra.Command, args []string) error {
 
 	err = authenticator.Login(context.Background())
 	if err != nil {
-		return fmt.Errorf("Failed to login: %w", err)
+		return fmt.Errorf("❌ Login failed: %w", err)
 	}
 
 	fmt.Printf("✅ Authenticated as %s\n", authenticator.Email)

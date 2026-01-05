@@ -1008,5 +1008,5 @@ func countPassedFailed(results []runner.TestResult) (passed, failed int) {
 			failed++
 		}
 	}
-	return
+	return passed, failed
 }

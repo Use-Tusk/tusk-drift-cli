@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -78,7 +80,9 @@ type (
 		err error
 	}
 
-	completedMsg struct{}
+	completedMsg struct {
+		removableFiles []string // Files that can be safely removed from .tusk/
+	}
 
 	abortedMsg struct {
 		reason string
@@ -100,6 +104,16 @@ type (
 		responseCh chan bool
 	}
 
+	cloudSetupPromptMsg struct {
+		responseCh chan bool
+	}
+
+	userSelectRequestMsg struct {
+		question   string
+		options    []SelectOption
+		responseCh chan string // Returns the selected option ID
+	}
+
 	permissionRequestMsg struct {
 		toolName   string
 		preview    string
@@ -117,6 +131,12 @@ type (
 		value string
 	}
 )
+
+// SelectOption represents a selectable option for ask_user_select
+type SelectOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
 
 // TUIModel is the bubbletea model for the agent TUI
 type TUIModel struct {
@@ -155,6 +175,13 @@ type TUIModel struct {
 	portConflictCh       chan bool
 	rerunConfirmMode     bool
 	rerunConfirmCh       chan bool
+	cloudSetupPromptMode bool
+	cloudSetupPromptCh   chan bool
+	userSelectMode       bool
+	userSelectPrompt     string
+	userSelectOptions    []SelectOption
+	userSelectIndex      int
+	userSelectCh         chan string
 	permissionMode       bool
 	permissionTool       string
 	permissionPreview    string
@@ -198,7 +225,7 @@ type todoItem struct {
 }
 
 // NewTUIModel creates a new TUI model
-func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
+func NewTUIModel(ctx context.Context, cancel context.CancelFunc, phaseNames []string) *TUIModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(styles.PrimaryColor))
@@ -221,11 +248,10 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle() // No highlight on cursor line
 	ta.FocusedStyle.Base = lipgloss.NewStyle()       // Clean base style
 
-	phases := defaultPhases()
-	todoItems := make([]todoItem, len(phases))
-	for i, phase := range phases {
+	todoItems := make([]todoItem, len(phaseNames))
+	for i, name := range phaseNames {
 		todoItems[i] = todoItem{
-			text:   phase.Name,
+			text:   name,
 			done:   false,
 			active: i == 0, // First phase active
 		}
@@ -236,7 +262,7 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc) *TUIModel {
 		progress:          p,
 		maxLogs:           5000,
 		logs:              make([]logEntry, 0),
-		totalPhases:       len(phases),
+		totalPhases:       len(phaseNames),
 		ctx:               ctx,
 		cancel:            cancel,
 		autoScroll:        true,
@@ -357,8 +383,14 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.addLog("tool-start", displayName, msg.toolName)
 
+			// Skip showing input for tools where the UI will show it interactively
+			skipInputTools := map[string]bool{
+				"ask_user":        true,
+				"ask_user_select": true,
+			}
+
 			// Show the input on separate lines if it's meaningful
-			if msg.input != "" && msg.input != "{}" {
+			if msg.input != "" && msg.input != "{}" && !skipInputTools[msg.toolName] {
 				formattedInput := formatToolInput(msg.input, m.width-10)
 				for line := range strings.SplitSeq(formattedInput, "\n") {
 					if strings.TrimSpace(line) != "" {
@@ -384,8 +416,16 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addLog("error", fmt.Sprintf("   ✗ %s failed", displayName), msg.toolName)
 		}
 		// Show truncated output, preserving indentation
-		// Skip output for ask_user - we already showed the user's response when they pressed Enter
-		if msg.output != "" && msg.toolName != "ask_user" {
+		// Skip output for certain tools
+		skipOutputTools := map[string]bool{
+			"ask_user":             true,
+			"ask_user_select":      true,
+			"cloud_check_auth":     true,
+			"cloud_login":          true,
+			"cloud_wait_for_login": true,
+			"cloud_get_clients":    true,
+		}
+		if msg.output != "" && !skipOutputTools[msg.toolName] {
 			outputLines := strings.Split(msg.output, "\n")
 			maxLines := 4
 			for i, line := range outputLines {
@@ -471,6 +511,26 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case userSelectRequestMsg:
+		m.userSelectMode = true
+		m.userSelectPrompt = msg.question
+		m.userSelectOptions = msg.options
+		m.userSelectIndex = 0
+		m.userSelectCh = msg.responseCh
+		m.updateViewportSize()
+		m.addLog("spacing", "", "")
+		// Wrap the question text for readability
+		maxWidth := min(max(m.width-8, 40), 120)
+		wrapped := wrapText(msg.question, maxWidth)
+		lines := strings.Split(wrapped, "\n")
+		for i, line := range lines {
+			if i == 0 {
+				m.addLog("agent", "🤖 "+line, "")
+			} else {
+				m.addLog("agent", "   "+line, "")
+			}
+		}
+
 	case portConflictMsg:
 		m.portConflictMode = true
 		m.portConflictPort = msg.port
@@ -490,6 +550,19 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addLog("plain", "If you'd like to rerun the setup from scratch, press [y].", "")
 		m.addLog("plain", "Otherwise, press [q] or [Esc] to exit.", "")
 		cmds = append(cmds, m.progress.SetPercent(1.0))
+
+	case cloudSetupPromptMsg:
+		m.cloudSetupPromptMode = true
+		m.cloudSetupPromptCh = msg.responseCh
+		m.addLog("spacing", "", "")
+		m.addLog("plain", "───────────────────────────────────────────────────────────", "")
+		m.addLog("spacing", "", "")
+		m.addLog("success", "✅ Local setup complete!", "")
+		m.addLog("spacing", "", "")
+		m.addLog("plain", "Would you like to continue with Tusk Drift Cloud setup?", "")
+		m.addLog("plain", "This will connect your repository and enable cloud features.", "")
+		m.addLog("spacing", "", "")
+		m.addLog("dim", "Press [y] to continue with cloud setup, or [n] to finish.", "")
 
 	case permissionRequestMsg:
 		m.permissionMode = true
@@ -524,10 +597,13 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addLog("spacing", "", "")
 		m.addLog("plain", "───────────────────────────────────────────────────────────", "")
 		m.addLog("spacing", "", "")
-		m.addLog("plain", "You can safely remove these files from your .tusk directory:", "")
-		m.addLog("plain", "  • PROGRESS.md - Setup progress tracking", "")
-		m.addLog("plain", "  • SETUP_REPORT.md - Setup summary and test results", "")
-		m.addLog("spacing", "", "")
+		if len(msg.removableFiles) > 0 {
+			m.addLog("plain", "You can safely remove these files from your .tusk directory:", "")
+			for _, file := range msg.removableFiles {
+				m.addLog("plain", "  • "+file, "")
+			}
+			m.addLog("spacing", "", "")
+		}
 		cmds = append(cmds, m.progress.SetPercent(1.0))
 		// Mark all todos as done
 		for i := range m.todoItems {
@@ -723,6 +799,73 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.cloudSetupPromptMode {
+		switch msg.String() {
+		case "y", "Y":
+			if m.cloudSetupPromptCh != nil {
+				m.cloudSetupPromptCh <- true
+			}
+			m.cloudSetupPromptMode = false
+			m.addLog("spacing", "", "")
+			m.addLog("dim", "   Continuing with cloud setup...", "")
+			return m, nil
+		case "n", "N", "q", "esc":
+			if m.cloudSetupPromptCh != nil {
+				m.cloudSetupPromptCh <- false
+			}
+			m.cloudSetupPromptMode = false
+			m.addLog("spacing", "", "")
+			m.addLog("dim", "   Skipping cloud setup.", "")
+			return m, nil
+		case "ctrl+c":
+			if m.cloudSetupPromptCh != nil {
+				m.cloudSetupPromptCh <- false
+			}
+			m.cloudSetupPromptMode = false
+			return m, m.initiateShutdown()
+		}
+		return m, nil
+	}
+
+	if m.userSelectMode {
+		switch msg.String() {
+		case "up", "k":
+			if m.userSelectIndex > 0 {
+				m.userSelectIndex--
+			}
+			return m, nil
+		case "down", "j":
+			if m.userSelectIndex < len(m.userSelectOptions)-1 {
+				m.userSelectIndex++
+			}
+			return m, nil
+		case "enter":
+			if len(m.userSelectOptions) > 0 && m.userSelectCh != nil {
+				selected := m.userSelectOptions[m.userSelectIndex]
+				m.userSelectCh <- selected.ID
+				m.addLog("dim", "   > "+selected.Label, "")
+			}
+			m.userSelectMode = false
+			m.updateViewportSize()
+			return m, nil
+		case "esc":
+			if m.userSelectCh != nil {
+				m.userSelectCh <- ""
+			}
+			m.userSelectMode = false
+			m.updateViewportSize()
+			m.addLog("dim", "   (cancelled)", "")
+			return m, nil
+		case "ctrl+c":
+			if m.userSelectCh != nil {
+				close(m.userSelectCh)
+			}
+			m.userSelectMode = false
+			return m, m.initiateShutdown()
+		}
+		return m, nil
+	}
+
 	if m.permissionDenyMode {
 		switch msg.String() {
 		case "enter":
@@ -890,6 +1033,8 @@ func (m *TUIModel) updateViewportSize() {
 	case m.userInputMode:
 		textareaHeight := m.userInputTextarea.Height()
 		footerHeight = textareaHeight + 1 // textarea + help text
+	case m.userSelectMode:
+		footerHeight = len(m.userSelectOptions) + 4 // header + options + empty line + help text
 	case m.permissionMode:
 		footerHeight = 2 // prompt + help text
 	case m.permissionDenyMode:
@@ -1137,6 +1282,31 @@ func (m *TUIModel) renderFooter() string {
 	case m.rerunConfirmMode:
 		helpText = components.Footer(m.width, "y: rerun setup • q/Esc: exit")
 		return helpText
+	case m.cloudSetupPromptMode:
+		helpText = components.Footer(m.width, "y: continue with cloud setup • n: skip")
+		return helpText
+	case m.userSelectMode:
+		color := lipgloss.Color(styles.PrimaryColor)
+		headerStyle := lipgloss.NewStyle().
+			Foreground(color).
+			Bold(true)
+		selectedStyle := lipgloss.NewStyle().
+			Foreground(color).
+			Bold(true)
+		normalStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("250"))
+
+		var optionLines []string
+		optionLines = append(optionLines, headerStyle.Render("Select an option:\n"))
+		for i, opt := range m.userSelectOptions {
+			if i == m.userSelectIndex {
+				optionLines = append(optionLines, selectedStyle.Render("  › "+opt.Label))
+			} else {
+				optionLines = append(optionLines, normalStyle.Render("    "+opt.Label))
+			}
+		}
+		helpText = components.Footer(m.width, "↑/↓: navigate • Enter: select • Esc: cancel")
+		return strings.Join(optionLines, "\n") + "\n\n" + helpText
 	case m.permissionDenyMode:
 		inputStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("86")).
@@ -1315,8 +1485,27 @@ func (m *TUIModel) SendFatalError(program *tea.Program, err error) {
 	program.Send(fatalErrorMsg{})
 }
 
-func (m *TUIModel) SendCompleted(program *tea.Program) {
-	program.Send(completedMsg{})
+func (m *TUIModel) SendCompleted(program *tea.Program, workDir string) {
+	// Check which cleanup files exist
+	var removableFiles []string
+
+	filesToCheck := []struct {
+		filename    string
+		description string
+	}{
+		{"PROGRESS.md", "PROGRESS.md - Setup progress tracking"},
+		{"SETUP_REPORT.md", "SETUP_REPORT.md - Setup summary and test results"},
+		{"CLOUD_SETUP_REPORT.md", "CLOUD_SETUP_REPORT.md - Cloud setup summary"},
+	}
+
+	tuskDir := filepath.Join(workDir, ".tusk")
+	for _, f := range filesToCheck {
+		if _, err := os.Stat(filepath.Join(tuskDir, f.filename)); err == nil {
+			removableFiles = append(removableFiles, f.description)
+		}
+	}
+
+	program.Send(completedMsg{removableFiles: removableFiles})
 }
 
 func (m *TUIModel) SendAborted(program *tea.Program, reason string) {
@@ -1331,9 +1520,65 @@ func (m *TUIModel) SendRerunConfirm(program *tea.Program, responseCh chan bool) 
 	program.Send(rerunConfirmMsg{responseCh: responseCh})
 }
 
+// SendCloudSetupPrompt prompts the user whether to continue with cloud setup
+func (m *TUIModel) SendCloudSetupPrompt(program *tea.Program, responseCh chan bool) {
+	program.Send(cloudSetupPromptMsg{responseCh: responseCh})
+}
+
+// UpdateTodoItems updates the todo list with new phase names (used when adding cloud phases)
+func (m *TUIModel) UpdateTodoItems(program *tea.Program, phaseNames []string) {
+	m.todoMutex.Lock()
+	defer m.todoMutex.Unlock()
+
+	// Find the current active phase
+	currentActiveIdx := -1
+	for i, item := range m.todoItems {
+		if item.active {
+			currentActiveIdx = i
+			break
+		}
+	}
+
+	// Create new todo items
+	newItems := make([]todoItem, len(phaseNames))
+	for i, name := range phaseNames {
+		done := false
+		active := false
+		// Preserve done status for existing items
+		if i < len(m.todoItems) {
+			done = m.todoItems[i].done
+		}
+		// Keep current active item active
+		if i == currentActiveIdx {
+			active = true
+		}
+		newItems[i] = todoItem{
+			text:   name,
+			done:   done,
+			active: active,
+		}
+	}
+	m.todoItems = newItems
+	m.totalPhases = len(phaseNames)
+}
+
 func (m *TUIModel) RequestUserInput(program *tea.Program, question string) string {
 	responseCh := make(chan string, 1)
 	program.Send(userInputRequestMsg{question: question, responseCh: responseCh})
+
+	select {
+	case response := <-responseCh:
+		return response
+	case <-m.ctx.Done():
+		return ""
+	}
+}
+
+// RequestUserSelect asks the user to select from a list of options.
+// Returns the ID of the selected option, or empty string if cancelled.
+func (m *TUIModel) RequestUserSelect(program *tea.Program, question string, options []SelectOption) string {
+	responseCh := make(chan string, 1)
+	program.Send(userSelectRequestMsg{question: question, options: options, responseCh: responseCh})
 
 	select {
 	case response := <-responseCh:

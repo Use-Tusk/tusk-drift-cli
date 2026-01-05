@@ -61,6 +61,7 @@ type Agent struct {
 
 	skipPermissions bool
 	disableProgress bool
+	skipToCloud     bool
 
 	// TUI
 	tuiModel *TUIModel
@@ -83,6 +84,12 @@ func New(cfg Config) (*Agent, error) {
 
 	pm := NewProcessManagerWithOptions(cfg.WorkDir, cfg.DisableSandbox, cfg.Debug)
 	phaseMgr := NewPhaseManager()
+
+	// If skipping to cloud, start with cloud phases only
+	if cfg.SkipToCloud {
+		phaseMgr.SetCloudOnlyMode()
+	}
+
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 
 	return &Agent{
@@ -94,6 +101,7 @@ func New(cfg Config) (*Agent, error) {
 		workDir:         cfg.WorkDir,
 		skipPermissions: cfg.SkipPermissions,
 		disableProgress: cfg.DisableProgress,
+		skipToCloud:     cfg.SkipToCloud,
 	}, nil
 }
 
@@ -133,7 +141,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	a.ctx, a.cancel = context.WithCancel(parentCtx)
 	defer a.cancel()
 
-	a.tuiModel = NewTUIModel(a.ctx, a.cancel)
+	a.tuiModel = NewTUIModel(a.ctx, a.cancel, a.phaseManager.GetPhaseNames())
 	a.program = tea.NewProgram(a.tuiModel, tea.WithAltScreen())
 
 	// Suppress slog output during TUI mode to prevent corrupting the display
@@ -347,9 +355,22 @@ func (a *Agent) runAgent() error {
 		}
 	}
 
-	_ = a.saveProgress(completedPhases, "", "Setup completed successfully.")
+	if a.skipToCloud {
+		// Cloud loop already completed, just send the completed message
+		_ = a.saveProgress(completedPhases, "", "Cloud setup completed successfully.")
+		a.trackEvent("drift_cli:setup_agent:cloud_completed", map[string]any{
+			"phases_completed": len(completedPhases),
+			"duration_ms":      time.Since(a.startTime).Milliseconds(),
+			"skip_to_cloud":    true,
+		})
+		a.tuiModel.SendCompleted(a.program, a.workDir)
+		time.Sleep(500 * time.Millisecond)
+		return nil
+	}
 
-	a.trackEvent("drift_cli:setup_agent:completed", map[string]any{
+	_ = a.saveProgress(completedPhases, "", "Local setup completed successfully.")
+
+	a.trackEvent("drift_cli:setup_agent:local_completed", map[string]any{
 		"phases_completed":       len(completedPhases),
 		"duration_ms":            time.Since(a.startTime).Milliseconds(),
 		"project_type":           a.phaseManager.state.ProjectType,
@@ -358,7 +379,114 @@ func (a *Agent) runAgent() error {
 		"compatibility_warnings": a.phaseManager.state.CompatibilityWarnings,
 	})
 
-	a.tuiModel.SendCompleted(a.program)
+	// Check if we should prompt for cloud setup
+	// Only prompt if we haven't already done cloud setup
+	if !a.phaseManager.HasCloudPhases() {
+		// Prompt user to continue with cloud setup
+		responseCh := make(chan bool)
+		a.tuiModel.SendCloudSetupPrompt(a.program, responseCh)
+
+		select {
+		case continueCloud := <-responseCh:
+			if continueCloud {
+				// Add cloud phases and continue
+				a.phaseManager.AddCloudPhases()
+				a.tuiModel.UpdateTodoItems(a.program, a.phaseManager.GetPhaseNames())
+
+				a.trackEvent("drift_cli:setup_agent:cloud_started", nil)
+
+				// Run cloud phases
+				for !a.phaseManager.IsComplete() {
+					select {
+					case <-a.ctx.Done():
+						phase := a.phaseManager.CurrentPhase()
+						phaseName := ""
+						if phase != nil {
+							phaseName = phase.Name
+						}
+						_ = a.saveProgress(completedPhases, phaseName, "Agent was interrupted during cloud setup.")
+						a.trackInterrupted(phaseName, len(completedPhases))
+						return fmt.Errorf("interrupted")
+					default:
+					}
+
+					phase := a.phaseManager.CurrentPhase()
+					if phase == nil {
+						break
+					}
+
+					// Notify TUI of phase change
+					phaseIdx := a.phaseManager.currentIdx + 1
+					a.tuiModel.SendPhaseChange(a.program, phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
+
+					// Run phase with timeout
+					phaseCtx, phaseCancel := context.WithTimeout(a.ctx, PhaseTimeout)
+					err := a.runPhase(phaseCtx, phase)
+					phaseCancel()
+
+					if err != nil {
+						if a.ctx.Err() != nil {
+							_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Agent was interrupted during %s phase.", phase.Name))
+							a.trackInterrupted(phase.Name, len(completedPhases))
+							return fmt.Errorf("interrupted")
+						}
+
+						// Special handling for abort_setup
+						if errors.Is(err, agenttools.ErrSetupAborted) {
+							var abortErr *agenttools.AbortError
+							if errors.As(err, &abortErr) {
+								a.trackEvent("drift_cli:setup_agent:cloud_aborted", map[string]any{
+									"phase":  phase.Name,
+									"reason": abortErr.Reason,
+								})
+							}
+							a.tuiModel.SendAgentText(a.program, "\n\n🟠 Cloud setup aborted. See message above for details.\n", false)
+							a.tuiModel.SendAborted(a.program, "")
+							time.Sleep(500 * time.Millisecond)
+							return nil
+						}
+
+						if phase.Required {
+							_ = a.saveProgress(completedPhases, phase.Name, fmt.Sprintf("Cloud phase failed with error: %v", err))
+							a.trackEvent("drift_cli:setup_agent:cloud_phase_failed", map[string]any{
+								"phase": phase.Name,
+								"error": err.Error(),
+							})
+							a.tuiModel.SendFatalError(a.program, err)
+							time.Sleep(100 * time.Millisecond)
+							return fmt.Errorf("required cloud phase %s failed: %w", phase.Name, err)
+						}
+
+						a.tuiModel.SendError(a.program, err)
+						_, _ = a.phaseManager.AdvancePhase()
+					} else {
+						a.trackEvent("drift_cli:setup_agent:cloud_phase_completed", map[string]any{
+							"phase": phase.Name,
+						})
+						completedPhases = append(completedPhases, phase.Name)
+						nextPhase := a.phaseManager.CurrentPhase()
+						nextPhaseName := ""
+						if nextPhase != nil {
+							nextPhaseName = nextPhase.Name
+						}
+						_ = a.saveProgress(completedPhases, nextPhaseName, "")
+					}
+				}
+
+				_ = a.saveProgress(completedPhases, "", "Cloud setup completed successfully.")
+				a.trackEvent("drift_cli:setup_agent:cloud_completed", map[string]any{
+					"phases_completed": len(completedPhases),
+					"duration_ms":      time.Since(a.startTime).Milliseconds(),
+				})
+			} else {
+				a.trackEvent("drift_cli:setup_agent:cloud_skipped", nil)
+			}
+		case <-a.ctx.Done():
+			return fmt.Errorf("interrupted")
+		}
+	}
+
+	a.tuiModel.SendCompleted(a.program, a.workDir)
 	time.Sleep(500 * time.Millisecond)
 
 	return nil
@@ -591,9 +719,14 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 		// Extract sidebar info from tool inputs
 		a.extractSidebarInfo(c.Name, inputStr)
 
-		// Special handling for ask_user
+		// Special handling for ask_user and ask_user_select
 		if c.Name == "ask_user" {
 			result := a.handleAskUser(c)
+			results = append(results, result)
+			continue
+		}
+		if c.Name == "ask_user_select" {
+			result := a.handleAskUserSelect(c)
 			results = append(results, result)
 			continue
 		}
@@ -748,6 +881,63 @@ func (a *Agent) handleAskUser(c Content) Content {
 		Type:      "tool_result",
 		ToolUseID: c.ID,
 		Content:   response,
+	}
+}
+
+func (a *Agent) handleAskUserSelect(c Content) Content {
+	var params struct {
+		Question string         `json:"question"`
+		Options  []SelectOption `json:"options"`
+	}
+	if err := json.Unmarshal(c.Input, &params); err != nil {
+		return Content{
+			Type:      "tool_result",
+			ToolUseID: c.ID,
+			Content:   fmt.Sprintf("Error: invalid input: %v", err),
+			IsError:   true,
+		}
+	}
+
+	if len(params.Options) == 0 {
+		return Content{
+			Type:      "tool_result",
+			ToolUseID: c.ID,
+			Content:   "Error: no options provided",
+			IsError:   true,
+		}
+	}
+
+	selectedID := a.tuiModel.RequestUserSelect(a.program, params.Question, params.Options)
+
+	if selectedID == "" {
+		return Content{
+			Type:      "tool_result",
+			ToolUseID: c.ID,
+			Content:   "User cancelled selection",
+			IsError:   true,
+		}
+	}
+
+	// Find the label for the selected option
+	var selectedLabel string
+	for _, opt := range params.Options {
+		if opt.ID == selectedID {
+			selectedLabel = opt.Label
+			break
+		}
+	}
+
+	a.tuiModel.SendToolComplete(a.program, c.Name, true, selectedLabel)
+
+	result := map[string]string{
+		"selected_id":    selectedID,
+		"selected_label": selectedLabel,
+	}
+	resultJSON, _ := json.Marshal(result)
+	return Content{
+		Type:      "tool_result",
+		ToolUseID: c.ID,
+		Content:   string(resultJSON),
 	}
 }
 
@@ -1176,6 +1366,19 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 		}
 		if state.ComplexTestPassed {
 			sb.WriteString("- ✓ Complex test passed (endpoint with external calls)\n")
+		}
+		// Cloud setup progress
+		if state.IsAuthenticated {
+			sb.WriteString("- ✓ Authenticated with Tusk Cloud\n")
+		}
+		if state.GitRepoOwner != "" && state.GitRepoName != "" {
+			sb.WriteString(fmt.Sprintf("- ✓ Repository detected: %s/%s\n", state.GitRepoOwner, state.GitRepoName))
+		}
+		if state.CloudServiceID != "" {
+			sb.WriteString(fmt.Sprintf("- ✓ Cloud service created (ID: %s)\n", state.CloudServiceID))
+		}
+		if state.ApiKeyCreated {
+			sb.WriteString("- ✓ API key created\n")
 		}
 	}
 	sb.WriteString("\n")

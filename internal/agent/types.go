@@ -83,6 +83,23 @@ type State struct {
 	// Error tracking
 	Errors   []PhaseError `json:"errors"`
 	Warnings []string     `json:"warnings"`
+
+	// Cloud setup state
+	IsAuthenticated       bool    `json:"is_authenticated"`
+	UserEmail             string  `json:"user_email"`
+	UserId                string  `json:"user_id"`
+	BearerToken           string  `json:"bearer_token,omitempty"`
+	SelectedClientID      string  `json:"selected_client_id"`
+	SelectedClientName    string  `json:"selected_client_name"`
+	GitRepoOwner          string  `json:"git_repo_owner"`
+	GitRepoName           string  `json:"git_repo_name"`
+	CodeHostingType       string  `json:"code_hosting_type"` // "github" or "gitlab"
+	CloudServiceID        string  `json:"cloud_service_id"`
+	ApiKeyCreated         bool    `json:"api_key_created"`
+	ApiKeyValue           string  `json:"api_key_value,omitempty"` // Only set during session, not persisted
+	SamplingRate          float64 `json:"sampling_rate"`
+	ExportSpans           bool    `json:"export_spans"`
+	EnableEnvVarRecording bool    `json:"enable_env_var_recording"`
 }
 
 // PhaseError represents an error that occurred during a phase
@@ -102,5 +119,6 @@ type Config struct {
 	SkipPermissions bool // Skip permission prompts for consequential actions
 	DisableSandbox  bool // Disable fence sandboxing for commands
 	DisableProgress bool // Don't save or resume from PROGRESS.md
+	SkipToCloud     bool // Skip local setup and go directly to cloud setup (for testing)
 	Debug           bool // Enable debug mode for fence sandbox
 }
