@@ -67,7 +67,9 @@ type Model struct {
 	DockerAppName            string
 	DockerComposeServiceName string // For docker compose override, may not be the same as ServiceName
 
-	SDKCompatible bool
+	SDKCompatible          bool
+	SDKPackagesDescription string // Dynamically fetched from SDK manifest
+	ProjectType            string // Detected project type: "nodejs", "python", or ""
 
 	Err           error
 	ValidationErr error

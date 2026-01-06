@@ -25,12 +25,22 @@ func RunOnboardingWizard() error {
 		inputs[i] = in
 	}
 
+	projectType := detectProjectType()
+
+	// Only fetch SDK manifest for Node.js projects (Python SDK not yet ready)
+	var sdkDescription string
+	if projectType == "nodejs" { // TODO-PYTHON: Add case for Python
+		sdkDescription = FetchSDKPackagesDescription()
+	}
+
 	m := &Model{
-		stepIdx:           0, // stepValidateRepo
-		inputs:            inputs,
-		SamplingRate:      "1.0",
-		ReadinessTimeout:  "30s",
-		ReadinessInterval: "1s",
+		stepIdx:                0, // stepValidateRepo
+		inputs:                 inputs,
+		SamplingRate:           "1.0",
+		ReadinessTimeout:       "30s",
+		ReadinessInterval:      "1s",
+		SDKPackagesDescription: sdkDescription,
+		ProjectType:            projectType,
 	}
 	m.flow = NewFlow(stepsList())
 

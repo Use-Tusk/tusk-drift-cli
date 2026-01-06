@@ -13,7 +13,7 @@ func getSupportMessage() string {
 		"Help us prioritize and bring Tusk Drift to your service!\n" +
 		"Fill up this form to request support: " + styles.LinkStyle.Render("https://tally.so/r/w456Xo") + "\n\n" +
 		"You may also:\n" +
-		"  • create an issue at " + styles.LinkStyle.Render("https://github.com/Use-Tusk/drift-node-sdk/issues") + "\n" +
+		"  • create an issue at " + styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/issues") + "\n" +
 		"  • contact " + styles.LinkStyle.Render("support@usetusk.ai")
 }
 
@@ -66,6 +66,7 @@ func (m *Model) startCommandQuestion() string {
 	}
 }
 
+// TODO-PYTHON: Add Python start command defaults
 func (m *Model) startCommandDescription() string {
 	switch m.DockerType {
 	case dockerTypeCompose:
@@ -103,6 +104,7 @@ func (m *Model) startCommandDefault() string {
         -e TUSK_DRIFT_MODE=REPLAY \
         %s`, appName, trimFirstToken(port), trimFirstToken(port), imageName)
 	default:
+		// TODO-PYTHON: Add Python start command default
 		return "npm run start"
 	}
 }

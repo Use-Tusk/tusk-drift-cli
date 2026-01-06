@@ -75,3 +75,32 @@ func inferServiceNameFromDir() string {
 func getwdSafe() (string, error) {
 	return os.Getwd()
 }
+
+// hasPythonProject checks for common Python project markers
+func hasPythonProject() bool {
+	markers := []string{
+		"requirements.txt",
+		"setup.py",
+		"setup.cfg",
+		"pyproject.toml",
+		"Pipfile",
+		"poetry.lock",
+	}
+	for _, marker := range markers {
+		if fi, err := os.Stat(marker); err == nil && !fi.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// detectProjectType returns the detected project type: "nodejs", "python", or ""
+func detectProjectType() string {
+	if hasPackageJSON() {
+		return "nodejs"
+	}
+	if hasPythonProject() {
+		return "python"
+	}
+	return ""
+}
