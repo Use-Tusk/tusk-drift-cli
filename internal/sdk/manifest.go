@@ -47,7 +47,7 @@ func FetchManifestFromURL(manifestURL string) (string, error) {
 	}
 
 	isTrusted := false
-	host := strings.ToLower(parsedURL.Host)
+	host := strings.ToLower(parsedURL.Hostname())
 	for _, trustedHost := range trustedManifestHosts {
 		if host == trustedHost || strings.HasSuffix(host, "."+trustedHost) {
 			isTrusted = true
