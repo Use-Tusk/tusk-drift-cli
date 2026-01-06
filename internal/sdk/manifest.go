@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -39,10 +40,16 @@ func GetManifestURLForProjectType(projectType string) string {
 
 // FetchManifestFromURL fetches an SDK manifest from a URL
 // Returns the raw JSON string
-func FetchManifestFromURL(url string) (string, error) {
+func FetchManifestFromURL(manifestURL string) (string, error) {
+	parsedURL, err := url.Parse(manifestURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+
 	isTrusted := false
-	for _, host := range trustedManifestHosts {
-		if strings.Contains(url, host) {
+	host := strings.ToLower(parsedURL.Host)
+	for _, trustedHost := range trustedManifestHosts {
+		if host == trustedHost || strings.HasSuffix(host, "."+trustedHost) {
 			isTrusted = true
 			break
 		}
@@ -55,7 +62,7 @@ func FetchManifestFromURL(url string) (string, error) {
 		Timeout: 15 * time.Second,
 	}
 
-	resp, err := client.Get(url)
+	resp, err := client.Get(manifestURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch manifest: %w", err)
 	}

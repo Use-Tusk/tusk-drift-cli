@@ -65,8 +65,9 @@ If your service uses other packages or you're unsure, select "n" and we'll help 
 
 Are the above packages compatible with your service? (y/n)`
 }
-func (SDKCompatibilityStep) Help(*Model) string { return "y: yes • n: no • esc: quit" }
-func (SDKCompatibilityStep) Clear(m *Model)     { m.SDKCompatible = false }
+func (SDKCompatibilityStep) Help(*Model) string       { return "y: yes • n: no • esc: quit" }
+func (SDKCompatibilityStep) ShouldSkip(m *Model) bool { return m.SDKPackagesDescription == "" }
+func (SDKCompatibilityStep) Clear(m *Model)           { m.SDKCompatible = false }
 
 type RecordingIntroStep struct{ BaseStep }
 
