@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Use-Tusk/fence/pkg/fence"
@@ -49,12 +50,14 @@ func (e *Executor) StartService() error {
 		e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
 
 		if err := e.fenceManager.Initialize(); err != nil {
-			slog.Warn("Failed to initialize fence sandbox, continuing without sandboxing", "error", err)
+			fmt.Fprintf(os.Stderr, "⚠️  Sandbox unavailable: %s\n", friendlySandboxError(err))
+			fmt.Fprintf(os.Stderr, "   Tests will run without network isolation (real connections allowed)\n\n")
 			e.fenceManager = nil
 		} else {
 			wrappedCmd, err := e.fenceManager.WrapCommand(command)
 			if err != nil {
-				slog.Warn("Failed to wrap command with fence, continuing without sandboxing", "error", err)
+				fmt.Fprintf(os.Stderr, "⚠️  Sandbox unavailable: %s\n", friendlySandboxError(err))
+				fmt.Fprintf(os.Stderr, "   Tests will run without network isolation (real connections allowed)\n\n")
 				e.fenceManager.Cleanup()
 				e.fenceManager = nil
 			} else {
@@ -335,4 +338,25 @@ func (e *Executor) cleanupLogFiles() {
 		_ = e.serviceLogFile.Close()
 		e.serviceLogFile = nil
 	}
+}
+
+// friendlySandboxError extracts a user-friendly error message for sandbox initialization failures.
+func friendlySandboxError(err error) string {
+	errStr := err.Error()
+
+	// Check for common issues and provide actionable messages
+	if strings.Contains(errStr, "socat") {
+		return "socat not installed (run: sudo apt install socat)"
+	}
+	if strings.Contains(errStr, "bubblewrap") || strings.Contains(errStr, "bwrap") {
+		return "bubblewrap not installed (run: sudo apt install bubblewrap)"
+	}
+
+	// Generic fallback - extract the most relevant part
+	if strings.Contains(errStr, ": ") {
+		// Get the innermost error message
+		parts := strings.Split(errStr, ": ")
+		return parts[len(parts)-1]
+	}
+	return errStr
 }
