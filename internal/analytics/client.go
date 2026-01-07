@@ -218,13 +218,28 @@ func (c *Client) baseProperties() map[string]any {
 		authenticated = true
 	}
 
-	return map[string]any{
+	props := map[string]any{
 		"cli_version":   version.Version,
 		"os":            runtime.GOOS,
 		"arch":          runtime.GOARCH,
 		"authenticated": authenticated,
 		"auth_type":     c.getAuthType(),
 	}
+
+	if os.Getenv("CODESPACES") == "true" {
+		props["codespace"] = true
+		if user := os.Getenv("GITHUB_USER"); user != "" {
+			props["codespace_user"] = user
+		}
+		if repo := os.Getenv("GITHUB_REPOSITORY"); repo != "" {
+			props["codespace_repo"] = repo
+		}
+		if name := os.Getenv("CODESPACE_NAME"); name != "" {
+			props["codespace_name"] = name
+		}
+	}
+
+	return props
 }
 
 // getAuthType returns the authentication type for analytics.
