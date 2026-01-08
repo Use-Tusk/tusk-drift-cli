@@ -14,7 +14,7 @@ Collect the details needed to set up Tusk Drift for this Node.js project.
 | health_endpoint | Grep for /health, /healthz, /liveness routes | "/health" |
 | docker_type | Check for Dockerfile or docker-compose.yml | "none" |
 | service_name | package.json "name" or directory name | "my-service" |
-| framework | Check dependencies: next, express, fastify, etc. | "next" |
+| framework | Check dependencies: next, express, fastify, etc. | "express" |
 
 ### Instructions
 
