@@ -613,8 +613,10 @@ func (ct *CloudTools) CreateObservableService(input json.RawMessage) (string, er
 		authOptions.TuskClientID = params.ClientID
 	}
 
-	// Determine service type (currently only Node.js is supported in the schema)
 	serviceType := backend.ServiceType_SERVICE_TYPE_NODE
+	if params.ProjectType == "python" {
+		serviceType = backend.ServiceType_SERVICE_TYPE_PYTHON
+	}
 
 	var appDirPtr *string
 	if params.AppDir != "" {

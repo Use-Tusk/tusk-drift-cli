@@ -174,6 +174,20 @@ func configExists() bool {
 	return err == nil
 }
 
+// detectProjectType returns the detected project type: "nodejs", "python", or ""
+func detectProjectType() string {
+	if _, err := os.Stat("package.json"); err == nil {
+		return "nodejs"
+	}
+	pythonMarkers := []string{"requirements.txt", "setup.py", "setup.cfg", "pyproject.toml", "Pipfile"}
+	for _, marker := range pythonMarkers {
+		if _, err := os.Stat(marker); err == nil {
+			return "python"
+		}
+	}
+	return ""
+}
+
 func loadExistingConfig(m *Model) error {
 	cfg, err := config.Get()
 	if err != nil {

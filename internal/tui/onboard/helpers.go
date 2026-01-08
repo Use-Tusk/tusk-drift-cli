@@ -66,7 +66,6 @@ func (m *Model) startCommandQuestion() string {
 	}
 }
 
-// TODO-PYTHON: Add Python start command defaults
 func (m *Model) startCommandDescription() string {
 	switch m.DockerType {
 	case dockerTypeCompose:
@@ -74,6 +73,9 @@ func (m *Model) startCommandDescription() string {
 	case dockerTypeFile:
 		return "Default includes required environment variables and host mapping"
 	default:
+		if m.ProjectType == "python" {
+			return "e.g., python app.py, flask run, uvicorn main:app"
+		}
 		return "e.g., npm run start"
 	}
 }
@@ -104,7 +106,9 @@ func (m *Model) startCommandDefault() string {
         -e TUSK_DRIFT_MODE=REPLAY \
         %s`, appName, trimFirstToken(port), trimFirstToken(port), imageName)
 	default:
-		// TODO-PYTHON: Add Python start command default
+		if m.ProjectType == "python" {
+			return "python app.py"
+		}
 		return "npm run start"
 	}
 }

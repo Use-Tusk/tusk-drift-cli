@@ -422,21 +422,21 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 		},
 		ToolAbortSetup: {
 			Name:        ToolAbortSetup,
-			Description: "Abort the setup process gracefully. Use when you detect an unsupported project type (e.g., not Node.js) or when setup cannot proceed for a valid reason. Provide a clear reason for the user.",
+			Description: "Abort the setup process gracefully. Use when you detect an unsupported project type (not Node.js or Python) or when setup cannot proceed for a valid reason. Provide a clear reason for the user.",
 			InputSchema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"reason": {
-						"type": "string",
-						"description": "Clear explanation of why setup cannot proceed (e.g., 'Tusk Drift currently only supports Node.js projects. Detected: Python project (found requirements.txt)')"
-					},
-					"project_type": {
-						"type": "string",
-						"description": "The detected project type if aborting due to unsupported language (e.g., 'python', 'go', 'java', 'ruby', 'rust')"
-					}
+			"type": "object",
+			"properties": {
+				"reason": {
+					"type": "string",
+					"description": "Clear explanation of why setup cannot proceed (e.g., 'Tusk Drift currently only supports Node.js and Python projects. Detected: Go project (found go.mod)')"
 				},
-				"required": ["reason"]
-			}`),
+				"project_type": {
+					"type": "string",
+					"description": "The detected project type if aborting due to unsupported language (e.g., 'go', 'java', 'ruby', 'rust')"
+				}
+			},
+			"required": ["reason"]
+		}`),
 		},
 
 		// Cloud setup tools

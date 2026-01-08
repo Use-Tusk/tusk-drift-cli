@@ -11,7 +11,7 @@ import (
 func (m *Model) Init() tea.Cmd {
 	// Auto-advance past validation if in valid directory
 	if m.stepIdx == 0 && m.flow.Current(m.stepIdx).ID() == stepValidateRepo {
-		if hasPackageJSON() { // TODO-PYTHON: Add `|| hasPythonProject()`
+		if hasPackageJSON() || hasPythonProject() {
 			m.advance()
 		}
 	}
@@ -65,7 +65,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 
 			case stepValidateRepo:
-				if hasPackageJSON() { // TODO-PYTHON: Add `|| hasPythonProject()`
+				if hasPackageJSON() || hasPythonProject() {
 					m.advance()
 					return m, nil
 				}

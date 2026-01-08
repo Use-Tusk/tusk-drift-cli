@@ -87,8 +87,10 @@ func createObservableService(m *Model) tea.Cmd {
 			authOptions.TuskClientID = m.SelectedClient.ID
 		}
 
-		// TODO: update this when we support more SDKs
 		serviceType := backend.ServiceType_SERVICE_TYPE_NODE
+		if detectProjectType() == "python" {
+			serviceType = backend.ServiceType_SERVICE_TYPE_PYTHON
+		}
 
 		appDir, err := getAppDir()
 		if err != nil {

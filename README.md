@@ -19,6 +19,7 @@ Tusk Drift is an API test record/replay system that lets you run realistic tests
 SDKs:
 
 - [Node.js](https://github.com/Use-Tusk/drift-node-sdk)
+- [Python](https://github.com/Use-Tusk/drift-python-sdk)
 - ...more to come!
 
 ## Features

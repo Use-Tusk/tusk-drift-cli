@@ -16,16 +16,12 @@ func (m *Model) View() string {
 	var body strings.Builder
 	switch m.flow.Current(m.stepIdx).ID() {
 	case stepValidateRepo:
-		if hasPackageJSON() { // TODO-PYTHON: Add `|| hasPythonProject()`
+		if hasPackageJSON() || hasPythonProject() {
 			return ""
 		}
 		wd, _ := getwdSafe()
 		body.WriteString(styles.ErrorStyle.Render("❌ Unable to initialize Tusk Drift in this directory") + "\n\n")
 		switch {
-		case hasPythonProject(): // TODO-PYTHON: Remove this case
-			body.WriteString("This appears to be a Python project.\n\n")
-			body.WriteString(styles.WarningStyle.Render("The Tusk Drift Python SDK is not yet ready.") + "\n\n")
-			body.WriteString(getSupportMessage() + "\n")
 		case hasJavaScriptFiles():
 			body.WriteString("It looks like you have JavaScript/TypeScript files here, but no package.json.\n")
 			body.WriteString("You may be in a subdirectory of your project.\n\n")
@@ -39,8 +35,7 @@ func (m *Model) View() string {
 			body.WriteString("  • Initialize a new Node.js project with " + styles.SuccessStyle.Render("npm init") + "\n")
 		default:
 			body.WriteString("This doesn't appear to be a supported project type.\n\n")
-			body.WriteString("Tusk Drift currently supports Node.js services only.\n")
-			body.WriteString("Python support is coming soon!\n\n")
+			body.WriteString("Tusk Drift currently supports Node.js and Python services.\n\n")
 			body.WriteString(getSupportMessage() + "\n")
 		}
 
@@ -122,6 +117,10 @@ func (m *Model) View() string {
 			body.WriteString(m.Err.Error() + "\n")
 		} else {
 			body.WriteString(styles.SuccessStyle.Render(fmt.Sprintf("✅ Configuration saved to %s/%s", configDir, configFile)) + "\n\n")
+			sdkLink := "https://github.com/Use-Tusk/drift-node-sdk#installation"
+			if m.ProjectType == "python" {
+				sdkLink = "https://github.com/Use-Tusk/drift-python-sdk#installation"
+			}
 			next := fmt.Sprintf(`Next steps:
 
 1. Follow the instructions to get started with the SDK in your service:
@@ -129,7 +128,7 @@ func (m *Model) View() string {
    • Install the SDK
    • Initialize the SDK on your service
    • Record your first traces
-`, styles.LinkStyle.Render("https://github.com/Use-Tusk/drift-node-sdk#installation"))
+`, styles.LinkStyle.Render(sdkLink))
 			switch m.DockerType {
 			case dockerTypeCompose:
 				next += fmt.Sprintf(`

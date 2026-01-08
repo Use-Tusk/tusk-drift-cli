@@ -13,7 +13,7 @@ import (
 // SDK manifest URLs
 const (
 	NodeSDKManifestURL   = "https://unpkg.com/@use-tusk/drift-node-sdk@latest/dist/instrumentation-manifest.json"
-	PythonSDKManifestURL = "https://raw.githubusercontent.com/Use-Tusk/drift-python-sdk/main/instrumentation-manifest.json" // TODO: Use actual URL once published
+	PythonSDKManifestURL = "https://use-tusk.github.io/drift-python-sdk/instrumentation-manifest.json"
 )
 
 // Trusted CDN hosts for SDK manifests
@@ -23,6 +23,7 @@ var trustedManifestHosts = []string{
 	"registry.npmjs.org",
 	"raw.githubusercontent.com",
 	"pypi.org",
+	"use-tusk.github.io",
 }
 
 // GetManifestURLForProjectType returns the SDK manifest URL for a given project type.
