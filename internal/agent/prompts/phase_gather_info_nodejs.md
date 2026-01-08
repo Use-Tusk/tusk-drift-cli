@@ -14,6 +14,7 @@ Collect the details needed to set up Tusk Drift for this Node.js project.
 | health_endpoint | Grep for /health, /healthz, /liveness routes | "/health" |
 | docker_type | Check for Dockerfile or docker-compose.yml | "none" |
 | service_name | package.json "name" or directory name | "my-service" |
+| framework | Check dependencies: next, express, fastify, etc. | "next" |
 
 ### Instructions
 
@@ -36,6 +37,11 @@ Collect the details needed to set up Tusk Drift for this Node.js project.
    - Set to "compose" if docker-compose.yml exists  
    - Set to "none" if service can run without Docker (even if Dockerfile exists)
 8. **Service Name**: Use package.json "name" or fall back to directory name
+9. **Framework**: Check package.json dependencies to detect:
+   - Next.js: `next` in dependencies
+   - Express: `express` in dependencies
+   - Fastify: `fastify` in dependencies
+   - Other/Generic: if none of the above match
 
 ### Edge Cases
 
@@ -57,7 +63,8 @@ Call `transition_phase` with all gathered information:
     "port": "3000",
     "health_endpoint": "/health",
     "docker_type": "none",
-    "service_name": "my-service"
+    "service_name": "my-service",
+    "framework": "express"
   }
 }
 ```
