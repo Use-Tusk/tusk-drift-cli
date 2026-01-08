@@ -22,29 +22,37 @@ type Instrumentation struct {
 }
 
 // FetchSDKPackagesDescription fetches the SDK manifest and formats it for display
-// TODO-PYTHON: Accept project type and handle Python manifest
-func FetchSDKPackagesDescription() string {
-	manifestJSON, err := sdk.FetchManifestFromURL(sdk.NodeSDKManifestURL)
+func FetchSDKPackagesDescription(projectType string) string {
+	manifestURL := sdk.GetManifestURLForProjectType(projectType)
+	if manifestURL == "" {
+		return ""
+	}
+
+	manifestJSON, err := sdk.FetchManifestFromURL(manifestURL)
 	if err != nil {
-		return fallbackSDKPackagesDescription()
+		return fallbackSDKPackagesDescription(projectType)
 	}
 
 	var manifest Manifest
 	if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
-		return fallbackSDKPackagesDescription()
+		return fallbackSDKPackagesDescription(projectType)
 	}
 
-	return formatManifestForDisplay(&manifest)
+	return formatManifestForDisplay(&manifest, projectType)
 }
 
 // formatManifestForDisplay converts the manifest into a human-readable bullet list
-func formatManifestForDisplay(manifest *Manifest) string {
+func formatManifestForDisplay(manifest *Manifest, projectType string) string {
 	if len(manifest.Instrumentations) == 0 {
-		return fallbackSDKPackagesDescription()
+		return fallbackSDKPackagesDescription(projectType)
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Tusk Drift Node SDK (v%s) currently supports:\n", manifest.SDKVersion))
+	sdkName := "Node"
+	if projectType == "python" {
+		sdkName = "Python"
+	}
+	sb.WriteString(fmt.Sprintf("Tusk Drift %s SDK (v%s) currently supports:\n", sdkName, manifest.SDKVersion))
 
 	for _, inst := range manifest.Instrumentations {
 		versions := formatVersions(inst.SupportedVersions)
@@ -66,7 +74,19 @@ func formatVersions(versions []string) string {
 }
 
 // fallbackSDKPackagesDescription returns the hardcoded list if fetching fails
-func fallbackSDKPackagesDescription() string {
+func fallbackSDKPackagesDescription(projectType string) string {
+	if projectType == "python" {
+		return `Tusk Drift Python SDK currently supports:
+  • HTTP/HTTPS: All versions (Python built-in urllib, requests, httpx, aiohttp)
+  • Flask: flask@2.x-3.x
+  • FastAPI: fastapi@0.100+
+  • psycopg2: psycopg2@2.9+
+  • asyncpg: asyncpg@0.27+
+  • SQLAlchemy: sqlalchemy@2.x
+  • PyMongo: pymongo@4.x
+  • Redis: redis@4.x-5.x
+`
+	}
 	return `Tusk Drift Node SDK currently supports:
   • HTTP/HTTPS: All versions (Node.js built-in)
   • GRPC: @grpc/grpc-js@1.x (Outbound requests only)

@@ -24,7 +24,6 @@ var PhaseGatherInfoNodejsPrompt string
 var PhaseInstrumentSDKNodejsPrompt string
 
 // Python specific prompts
-// TODO: Relook at this once Python SDK is published
 //
 //go:embed prompts/phase_check_compatibility_python.md
 var PhaseCheckCompatibilityPythonPrompt string

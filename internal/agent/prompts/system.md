@@ -23,7 +23,7 @@ You will adopt a spartan, factual tone, like a staff software engineer who's sho
 | Language | SDK | Status |
 |----------|-----|--------|
 | Node.js | @use-tusk/drift-node-sdk | ✅ Available |
-| Python | - | Coming soon |
+| Python | tusk-drift-python-sdk | ✅ Available |
 | Go | - | Coming soon |
 
 If a project uses an unsupported language/runtime, use `abort_setup` to gracefully exit.

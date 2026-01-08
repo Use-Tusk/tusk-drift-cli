@@ -27,11 +27,8 @@ func RunOnboardingWizard() error {
 
 	projectType := detectProjectType()
 
-	// Only fetch SDK manifest for Node.js projects (Python SDK not yet ready)
-	var sdkDescription string
-	if projectType == "nodejs" { // TODO-PYTHON: Add case for Python
-		sdkDescription = FetchSDKPackagesDescription()
-	}
+	// Fetch SDK manifest for supported project types
+	sdkDescription := FetchSDKPackagesDescription(projectType)
 
 	m := &Model{
 		stepIdx:                0, // stepValidateRepo

@@ -44,7 +44,7 @@ const (
 // RecoveryGuidance returns a message explaining how to resume after a failure
 func RecoveryGuidance() string {
 	return `Progress has been saved to .tusk/PROGRESS.md
-Run 'tusk exp init' again to continue where you left off.
+Run 'tusk exp setup' again to continue where you left off.
 
 If issues persist, contact support@usetusk.ai`
 }

@@ -7,7 +7,7 @@ Identify the project's language/runtime by checking for common project markers.
 | Language | Markers | SDK Available |
 |----------|---------|---------------|
 | Node.js | package.json | ✅ Yes |
-| Python | requirements.txt, pyproject.toml, setup.py, Pipfile | ❌ Coming soon |
+| Python | requirements.txt, pyproject.toml, setup.py, Pipfile | ✅ Yes |
 | Go | go.mod | ❌ Coming soon |
 | Java | pom.xml, build.gradle | ❌ Coming soon |
 | Ruby | Gemfile | ❌ Coming soon |
