@@ -88,7 +88,7 @@ func New(cfg Config) (*Agent, error) {
 		return nil, err
 	}
 
-	pm := NewProcessManagerWithOptions(cfg.WorkDir, cfg.DisableSandbox, cfg.Debug)
+	pm := NewProcessManager(cfg.WorkDir)
 	phaseMgr := NewPhaseManager()
 
 	// If skipping to cloud, start with cloud phases only

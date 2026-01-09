@@ -117,10 +117,8 @@ type Config struct {
 	MaxTokens       int
 	WorkDir         string
 	SkipPermissions bool // Skip permission prompts for consequential actions
-	DisableSandbox  bool // Disable fence sandboxing for commands
 	DisableProgress bool // Don't save or resume from PROGRESS.md
 	SkipToCloud     bool // Skip local setup and go directly to cloud setup (for testing)
-	Debug           bool // Enable debug mode for fence sandbox
 	PrintMode       bool // Headless mode - no TUI, stream to stdout
 	OutputLogs      bool // Output all logs to a file in .tusk/logs/
 }
