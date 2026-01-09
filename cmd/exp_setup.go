@@ -14,7 +14,6 @@ var (
 	expAPIKey          string
 	expModel           string
 	expSkipPermissions bool
-	expDisableSandbox  bool
 	expDisableProgress bool
 	expSkipToCloud     bool
 	expPrintMode       bool
@@ -51,7 +50,6 @@ func init() {
 	expSetupCmd.Flags().StringVar(&expAPIKey, "api-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY env var)")
 	expSetupCmd.Flags().StringVar(&expModel, "model", "claude-sonnet-4-20250514", "Claude model to use")
 	expSetupCmd.Flags().BoolVar(&expSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
-	expSetupCmd.Flags().BoolVar(&expDisableSandbox, "disable-sandbox", false, "Disable command sandboxing (for MacOS/Linux only)")
 	expSetupCmd.Flags().BoolVar(&expDisableProgress, "disable-progress-state", false, "Disable progress state (saving to a PROGRESS.md file) or resuming from it")
 	expSetupCmd.Flags().BoolVar(&expSkipToCloud, "skip-to-cloud", false, "Skip local setup and go directly to cloud setup (for testing)")
 	expSetupCmd.Flags().BoolVar(&expPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout")
@@ -90,10 +88,8 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		Model:           expModel,
 		WorkDir:         workDir,
 		SkipPermissions: expSkipPermissions,
-		DisableSandbox:  expDisableSandbox,
 		DisableProgress: expDisableProgress,
 		SkipToCloud:     expSkipToCloud,
-		Debug:           debug,
 		PrintMode:       expPrintMode,
 		OutputLogs:      expOutputLogs,
 	}

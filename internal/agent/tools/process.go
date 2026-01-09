@@ -13,18 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/google/uuid"
 )
 
 // ProcessManager manages background processes
 type ProcessManager struct {
-	mu           sync.RWMutex
-	processes    map[string]*ManagedProcess
-	workDir      string
-	fenceManager *fence.Manager
-	fenceEnabled bool
-	debug        bool
+	mu        sync.RWMutex
+	processes map[string]*ManagedProcess
+	workDir   string
 }
 
 // ManagedProcess represents a background process
@@ -84,101 +80,13 @@ func (rb *RingBuffer) All() []string {
 	return result
 }
 
-// NewProcessManager creates a new ProcessManager
+// NewProcessManager creates a new ProcessManager.
+// Agent commands are not sandboxed - we rely on validateCommandSafety() for protection.
+// Replay sandboxing (to detect uninstrumented packages) is handled by runner.createReplayFenceConfig().
 func NewProcessManager(workDir string) *ProcessManager {
-	return NewProcessManagerWithOptions(workDir, false, false)
-}
-
-// NewProcessManagerWithOptions creates a new ProcessManager with options
-func NewProcessManagerWithOptions(workDir string, disableSandbox bool, debug bool) *ProcessManager {
-	pm := &ProcessManager{
+	return &ProcessManager{
 		processes: make(map[string]*ManagedProcess),
 		workDir:   workDir,
-		debug:     debug,
-	}
-
-	if disableSandbox {
-		pm.fenceEnabled = false
-		return pm
-	}
-
-	// Initialize fence for sandboxing RunCommand (security protection)
-	cfg := createFenceConfig(workDir)
-	pm.fenceManager = fence.NewManager(cfg, debug, false)
-	if err := pm.fenceManager.Initialize(); err != nil {
-		// Fence initialization failed - continue without sandboxing
-		// (esp when running on unsupported platforms or missing dependencies)
-		pm.fenceEnabled = false
-	} else {
-		pm.fenceEnabled = true
-	}
-
-	return pm
-}
-
-// IsSandboxEnabled returns whether sandboxing is enabled
-func (pm *ProcessManager) IsSandboxEnabled() bool {
-	return pm.fenceEnabled
-}
-
-// createFenceConfig creates the fence configuration for the agent.
-// This is used for RunCommand sandboxing (security protection for shell commands).
-// StartBackground is NOT sandboxed since it runs the user's service for confirm/record phases.
-func createFenceConfig(workDir string) *fence.Config {
-	return &fence.Config{
-		Network: fence.NetworkConfig{
-			AllowedDomains: []string{
-				// Package registries
-				"registry.npmjs.org",
-				"registry.yarnpkg.com",
-				"registry.npmmirror.com",
-				"pypi.org",
-				"files.pythonhosted.org",
-
-				// GitHub (for packages and git operations)
-				"*.github.com",
-				"*.githubusercontent.com",
-				"github.com",
-
-				// GitLab
-				"*.gitlab.com",
-				"gitlab.com",
-
-				// Common CDNs used by packages
-				"*.cloudflare.com",
-				"*.fastly.net",
-
-				// Node.js
-				"nodejs.org",
-
-				// SDK manifest CDNs
-				"unpkg.com",
-				"cdn.jsdelivr.net",
-
-				// Localhost for local services
-				"localhost",
-				"127.0.0.1",
-			},
-			AllowLocalBinding: true,
-		},
-		Filesystem: fence.FilesystemConfig{
-			AllowWrite: []string{
-				workDir,        // Project directory
-				".tusk",        // Tusk config directory
-				"node_modules", // npm packages
-				"/tmp",         // Temp files
-				"~/.npm",       // npm cache
-				"~/.cache",     // General cache directory
-			},
-			DenyWrite: []string{
-				"../*", // Prevent escaping project directory
-			},
-			DenyRead: []string{
-				// Don't allow reading sensitive files outside project
-				"/etc/shadow",
-				"/etc/passwd",
-			},
-		},
 	}
 }
 
@@ -191,14 +99,6 @@ type ProcessTools struct {
 // NewProcessTools creates a new ProcessTools instance
 func NewProcessTools(pm *ProcessManager, workDir string) *ProcessTools {
 	return &ProcessTools{pm: pm, workDir: workDir}
-}
-
-// wrapCommandWithFence wraps a command with fence sandboxing if enabled
-func (pt *ProcessTools) wrapCommandWithFence(command string) (string, error) {
-	if !pt.pm.fenceEnabled || pt.pm.fenceManager == nil {
-		return command, nil
-	}
-	return pt.pm.fenceManager.WrapCommand(command)
 }
 
 // validateCommandSafety checks if a command is safe to execute
@@ -297,15 +197,10 @@ func (pt *ProcessTools) RunCommand(input json.RawMessage) (string, error) {
 		timeout = time.Duration(params.TimeoutSeconds) * time.Second
 	}
 
-	wrappedCmd, err := pt.wrapCommandWithFence(params.Command)
-	if err != nil {
-		return "", fmt.Errorf("failed to sandbox command: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", wrappedCmd) //nolint:gosec // Command is validated by validateCommandSafety and sandboxed by fence
+	cmd := exec.CommandContext(ctx, "sh", "-c", params.Command) //nolint:gosec // Command is validated by validateCommandSafety
 	cmd.Dir = pt.workDir
 	cmd.Env = os.Environ()
 
@@ -536,11 +431,6 @@ func (pm *ProcessManager) StopAll() {
 	for handle, mp := range pm.processes {
 		killProcessGroupImmediate(mp)
 		delete(pm.processes, handle)
-	}
-
-	// Clean up global fence manager (used for RunCommand sandboxing)
-	if pm.fenceManager != nil {
-		pm.fenceManager.Cleanup()
 	}
 }
 
