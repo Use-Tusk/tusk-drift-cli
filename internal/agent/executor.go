@@ -393,7 +393,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				"properties": {
 					"filter": {
 						"type": "string",
-						"description": "Optional filter pattern for traces (regex)"
+						"description": "Optional filter using key=regex format. Keys: path, type, op, method, name, id. Examples: 'path=/api/users', 'type=GRAPHQL,op=^GetUser$', 'method=POST,path=/checkout'. Omit to run all tests."
 					},
 					"debug": {
 						"type": "boolean",
