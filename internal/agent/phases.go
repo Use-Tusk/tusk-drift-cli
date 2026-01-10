@@ -316,6 +316,14 @@ func (pm *PhaseManager) SetCloudOnlyMode() {
 	pm.currentIdx = 0
 }
 
+// SetEligibilityOnlyMode replaces all phases with the eligibility check phase
+func (pm *PhaseManager) SetEligibilityOnlyMode() {
+	pm.phases = []*Phase{
+		eligibilityCheckPhase(),
+	}
+	pm.currentIdx = 0
+}
+
 // PhaseTransitionTool creates the transition_phase tool executor
 func (pm *PhaseManager) PhaseTransitionTool() ToolExecutor {
 	return func(input json.RawMessage) (string, error) {
@@ -325,6 +333,29 @@ func (pm *PhaseManager) PhaseTransitionTool() ToolExecutor {
 		}
 		if err := json.Unmarshal(input, &params); err != nil {
 			return "", fmt.Errorf("invalid input: %w", err)
+		}
+
+		// Special validation for eligibility_check phase
+		currentPhase := pm.CurrentPhase()
+		if currentPhase != nil && currentPhase.ID == "eligibility_check" {
+			if reportData, ok := params.Results["eligibility_report"]; ok {
+				// Convert to JSON string for validation
+				reportJSON, err := json.Marshal(reportData)
+				if err != nil {
+					return "", fmt.Errorf("failed to serialize eligibility_report: %w", err)
+				}
+
+				// Parse and validate the report
+				_, err = ParseEligibilityReport(string(reportJSON))
+				if err != nil {
+					return "", fmt.Errorf("eligibility report validation failed: %w. Please fix the report structure and try again", err)
+				}
+
+				// Store validated report in state for later saving
+				pm.state.EligibilityReport = string(reportJSON)
+			} else {
+				return "", fmt.Errorf("eligibility_report is required in results for eligibility_check phase. Please provide the complete eligibility report with services and summary fields")
+			}
 		}
 
 		// Update state with results
@@ -736,5 +767,44 @@ func cloudSummaryPhase() *Phase {
 			ToolTransitionPhase,
 		),
 		Required: true,
+	}
+}
+
+// Eligibility Check Phase
+
+func eligibilityCheckPhase() *Phase {
+	return &Phase{
+		ID:           "eligibility_check",
+		Name:         "Eligibility Check",
+		Description:  "Discover services and check SDK compatibility",
+		Instructions: PhaseEligibilityCheckPrompt,
+		Tools: Tools(
+			ToolListDirectory,
+			ToolReadFile,
+			ToolGrep,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 100,
+		OnEnter: func(state *State) string {
+			// Fetch manifests for all supported languages
+			var manifestInfo strings.Builder
+			manifestInfo.WriteString("### SDK Manifests\n\n")
+
+			for _, lang := range []string{"nodejs", "python"} {
+				url := tools.GetManifestURLForProjectType(lang)
+				if url == "" {
+					continue
+				}
+				manifest, err := tools.FetchManifestFromURL(url)
+				if err != nil {
+					manifestInfo.WriteString(fmt.Sprintf("**%s**: Failed to fetch manifest - %s\n\n", lang, err))
+					continue
+				}
+				manifestInfo.WriteString(fmt.Sprintf("**%s Manifest**:\n```json\n%s\n```\n\n", lang, manifest))
+			}
+
+			return manifestInfo.String()
+		},
 	}
 }

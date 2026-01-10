@@ -96,6 +96,11 @@ func New(cfg Config) (*Agent, error) {
 		phaseMgr.SetCloudOnlyMode()
 	}
 
+	// If eligibility-only mode, use only the eligibility check phase
+	if cfg.EligibilityOnly {
+		phaseMgr.SetEligibilityOnlyMode()
+	}
+
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 
 	a := &Agent{
@@ -398,6 +403,37 @@ func (a *Agent) runAgent() error {
 			}
 			_ = a.saveProgress(completedPhases, nextPhaseName, "")
 		}
+	}
+
+	// Check if eligibility mode - write report and exit
+	if a.phaseManager.GetState().EligibilityReport != "" {
+		report, err := ParseEligibilityReport(a.phaseManager.GetState().EligibilityReport)
+		if err != nil {
+			// This shouldn't happen as we validated earlier, but handle gracefully
+			return a.setFailed(fmt.Errorf("failed to parse eligibility report: %w", err))
+		}
+
+		if err := WriteEligibilityReport(a.workDir, report); err != nil {
+			return a.setFailed(fmt.Errorf("failed to write eligibility report: %w", err))
+		}
+
+		a.trackEvent("drift_cli:setup_agent:eligibility_completed", map[string]any{
+			"total_services":       report.Summary.TotalServices,
+			"compatible":           report.Summary.Compatible,
+			"partially_compatible": report.Summary.PartiallyCompatible,
+			"not_compatible":       report.Summary.NotCompatible,
+			"duration_ms":          time.Since(a.startTime).Milliseconds(),
+		})
+
+		// Show completion message specific to eligibility mode
+		a.ui.AgentText(fmt.Sprintf("\n\nEligibility report saved to .tusk/eligibility-report.json\n\nSummary:\n- Total services: %d\n- Compatible: %d\n- Partially compatible: %d\n- Not compatible: %d\n",
+			report.Summary.TotalServices,
+			report.Summary.Compatible,
+			report.Summary.PartiallyCompatible,
+			report.Summary.NotCompatible), false)
+		a.ui.Completed(a.workDir)
+		time.Sleep(500 * time.Millisecond)
+		return a.setCompleted()
 	}
 
 	if a.skipToCloud {
