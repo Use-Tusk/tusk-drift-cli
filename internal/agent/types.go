@@ -84,6 +84,9 @@ type State struct {
 	Errors   []PhaseError `json:"errors"`
 	Warnings []string     `json:"warnings"`
 
+	// Eligibility mode
+	EligibilityReport string `json:"eligibility_report,omitempty"` // Raw JSON report
+
 	// Cloud setup state
 	IsAuthenticated       bool    `json:"is_authenticated"`
 	UserEmail             string  `json:"user_email"`
@@ -121,4 +124,5 @@ type Config struct {
 	SkipToCloud     bool // Skip local setup and go directly to cloud setup (for testing)
 	PrintMode       bool // Headless mode - no TUI, stream to stdout
 	OutputLogs      bool // Output all logs to a file in .tusk/logs/
+	EligibilityOnly bool // Only run eligibility check, output JSON and exit
 }

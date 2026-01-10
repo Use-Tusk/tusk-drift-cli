@@ -74,6 +74,11 @@ var PhaseCloudConfigureRecordingPrompt string
 //go:embed prompts/phase_cloud_summary.md
 var PhaseCloudSummaryPrompt string
 
+// Eligibility check prompt
+//
+//go:embed prompts/phase_eligibility_check.md
+var PhaseEligibilityCheckPrompt string
+
 // GetGatherInfoPrompt returns the appropriate gather info prompt for the project type.
 func GetGatherInfoPrompt(projectType string) string {
 	switch projectType {

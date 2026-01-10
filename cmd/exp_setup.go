@@ -18,6 +18,7 @@ var (
 	expSkipToCloud     bool
 	expPrintMode       bool
 	expOutputLogs      bool
+	expEligibilityOnly bool
 )
 
 var expCmd = &cobra.Command{
@@ -54,6 +55,7 @@ func init() {
 	expSetupCmd.Flags().BoolVar(&expSkipToCloud, "skip-to-cloud", false, "Skip local setup and go directly to cloud setup (for testing)")
 	expSetupCmd.Flags().BoolVar(&expPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout")
 	expSetupCmd.Flags().BoolVar(&expOutputLogs, "output-logs", false, "Output all logs (tool calls, messages) to .tusk/logs/setup-<datetime>.log")
+	expSetupCmd.Flags().BoolVar(&expEligibilityOnly, "eligibility-only", false, "Only check eligibility for SDK setup across all services in the directory tree, output JSON report and exit")
 }
 
 func runExpSetup(cmd *cobra.Command, args []string) error {
@@ -92,6 +94,7 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 		SkipToCloud:     expSkipToCloud,
 		PrintMode:       expPrintMode,
 		OutputLogs:      expOutputLogs,
+		EligibilityOnly: expEligibilityOnly,
 	}
 
 	a, err := agent.New(cfg)
