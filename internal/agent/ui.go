@@ -26,6 +26,7 @@ type AgentUI interface {
 	Error(err error)
 	FatalError(err error)
 	Completed(workDir string)
+	EligibilityCompleted(workDir string)
 	Aborted(reason string)
 
 	// Interactive prompts - all blocking, return results directly
@@ -47,9 +48,9 @@ type AgentUI interface {
 }
 
 // NewAgentUI creates the appropriate UI implementation based on the mode
-func NewAgentUI(ctx context.Context, cancel context.CancelFunc, headless bool, phaseNames []string) AgentUI {
+func NewAgentUI(ctx context.Context, cancel context.CancelFunc, headless bool, phaseNames []string, hideProgressBar bool) AgentUI {
 	if headless {
 		return NewHeadlessUI()
 	}
-	return NewTUIUI(ctx, cancel, phaseNames)
+	return NewTUIUI(ctx, cancel, phaseNames, hideProgressBar)
 }

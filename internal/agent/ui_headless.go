@@ -161,6 +161,13 @@ func (u *HeadlessUI) Completed(workDir string) {
 	fmt.Println(headlessDimStyle.Render("   Check .tusk/SETUP_REPORT.md for details."))
 }
 
+// EligibilityCompleted displays eligibility check completion message
+func (u *HeadlessUI) EligibilityCompleted(workDir string) {
+	fmt.Println()
+	fmt.Println(headlessSuccessStyle.Render("✅ Eligibility check complete!"))
+	fmt.Println(headlessDimStyle.Render("   Check .tusk/eligibility-report.json for details."))
+}
+
 // Aborted displays abort message
 func (u *HeadlessUI) Aborted(reason string) {
 	fmt.Println()

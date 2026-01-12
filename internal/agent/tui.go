@@ -84,6 +84,8 @@ type (
 		removableFiles []string // Files that can be safely removed from .tusk/
 	}
 
+	eligibilityCompletedMsg struct{}
+
 	abortedMsg struct {
 		reason string
 	}
@@ -152,6 +154,7 @@ type TUIModel struct {
 	streamingText    string
 	lastAgentMessage string
 	lastToolComplete bool // Track if we just completed a tool (for showing thinking)
+	hideProgressBar  bool // Hide progress bar (e.g., for eligibility-only mode)
 
 	// Log state
 	logs       []logEntry
@@ -225,7 +228,7 @@ type todoItem struct {
 }
 
 // NewTUIModel creates a new TUI model
-func NewTUIModel(ctx context.Context, cancel context.CancelFunc, phaseNames []string) *TUIModel {
+func NewTUIModel(ctx context.Context, cancel context.CancelFunc, phaseNames []string, hideProgressBar bool) *TUIModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(styles.PrimaryColor))
@@ -271,6 +274,7 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc, phaseNames []st
 		sidebarOrder:      []string{},
 		todoItems:         todoItems,
 		userInputTextarea: ta,
+		hideProgressBar:   hideProgressBar,
 	}
 }
 
@@ -618,6 +622,20 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.addLog("spacing", "", "")
 		}
+		cmds = append(cmds, m.progress.SetPercent(1.0))
+		// Mark all todos as done
+		for i := range m.todoItems {
+			m.todoItems[i].done = true
+			m.todoItems[i].active = false
+		}
+
+	case eligibilityCompletedMsg:
+		m.completed = true
+		m.thinking = false
+		m.currentTool = ""
+		m.addLog("spacing", "", "")
+		m.addLog("success", "✅ Eligibility check complete!", "")
+		m.addLog("dim", "   Check .tusk/eligibility-report.json for details.", "")
 		cmds = append(cmds, m.progress.SetPercent(1.0))
 		// Mark all todos as done
 		for i := range m.todoItems {
@@ -1294,6 +1312,10 @@ func (m *TUIModel) renderHeader() string {
 	padding := max(m.width-statusWidth, 1)
 	statusLine := statusText + strings.Repeat(" ", padding)
 
+	if m.hideProgressBar {
+		return lipgloss.JoinVertical(lipgloss.Left, title, "", statusLine, "")
+	}
+
 	progressWidth := m.width - 2
 	progressWidth = max(progressWidth, 20)
 	m.progress.Width = progressWidth
@@ -1619,6 +1641,10 @@ func (m *TUIModel) SendCompleted(program *tea.Program, workDir string) {
 
 func (m *TUIModel) SendAborted(program *tea.Program, reason string) {
 	program.Send(abortedMsg{reason: reason})
+}
+
+func (m *TUIModel) SendEligibilityCompleted(program *tea.Program, workDir string) {
+	program.Send(eligibilityCompletedMsg{})
 }
 
 func (m *TUIModel) SendSidebarUpdate(program *tea.Program, key, value string) {

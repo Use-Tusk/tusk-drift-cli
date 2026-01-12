@@ -64,6 +64,7 @@ type Agent struct {
 	disableProgress bool
 	skipToCloud     bool
 	printMode       bool
+	eligibilityOnly bool
 
 	// UI abstraction (TUI / headless)
 	ui     AgentUI
@@ -96,6 +97,11 @@ func New(cfg Config) (*Agent, error) {
 		phaseMgr.SetCloudOnlyMode()
 	}
 
+	// If eligibility-only mode, use only the eligibility check phase
+	if cfg.EligibilityOnly {
+		phaseMgr.SetEligibilityOnlyMode()
+	}
+
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 
 	a := &Agent{
@@ -109,6 +115,7 @@ func New(cfg Config) (*Agent, error) {
 		disableProgress: cfg.DisableProgress,
 		skipToCloud:     cfg.SkipToCloud,
 		printMode:       cfg.PrintMode,
+		eligibilityOnly: cfg.EligibilityOnly,
 	}
 
 	if cfg.OutputLogs {
@@ -167,7 +174,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	}
 
 	// Create UI based on mode
-	a.ui = NewAgentUI(a.ctx, a.cancel, a.printMode, a.phaseManager.GetPhaseNames())
+	a.ui = NewAgentUI(a.ctx, a.cancel, a.printMode, a.phaseManager.GetPhaseNames(), a.eligibilityOnly)
 
 	if a.printMode {
 		// Headless mode: set up signal handling and run directly
@@ -398,6 +405,37 @@ func (a *Agent) runAgent() error {
 			}
 			_ = a.saveProgress(completedPhases, nextPhaseName, "")
 		}
+	}
+
+	// Check if eligibility mode - write report and exit
+	if a.phaseManager.GetState().EligibilityReport != "" {
+		report, err := ParseEligibilityReport(a.phaseManager.GetState().EligibilityReport)
+		if err != nil {
+			// This shouldn't happen as we validated earlier, but handle gracefully
+			return a.setFailed(fmt.Errorf("failed to parse eligibility report: %w", err))
+		}
+
+		if err := WriteEligibilityReport(a.workDir, report); err != nil {
+			return a.setFailed(fmt.Errorf("failed to write eligibility report: %w", err))
+		}
+
+		a.trackEvent("drift_cli:setup_agent:eligibility_completed", map[string]any{
+			"total_services":       report.Summary.TotalServices,
+			"compatible":           report.Summary.Compatible,
+			"partially_compatible": report.Summary.PartiallyCompatible,
+			"not_compatible":       report.Summary.NotCompatible,
+			"duration_ms":          time.Since(a.startTime).Milliseconds(),
+		})
+
+		// Show completion message specific to eligibility mode
+		a.ui.AgentText(fmt.Sprintf("\n\nEligibility report saved to .tusk/eligibility-report.json\n\nSummary:\n- Total services: %d\n- Compatible: %d\n- Partially compatible: %d\n- Not compatible: %d\n",
+			report.Summary.TotalServices,
+			report.Summary.Compatible,
+			report.Summary.PartiallyCompatible,
+			report.Summary.NotCompatible), false)
+		a.ui.EligibilityCompleted(a.workDir)
+		time.Sleep(500 * time.Millisecond)
+		return a.setCompleted()
 	}
 
 	if a.skipToCloud {
@@ -1380,7 +1418,7 @@ func (a *Agent) findNextPhaseToRun(completedPhases []string) string {
 
 // saveProgress saves the current progress to the progress file
 func (a *Agent) saveProgress(completedPhases []string, currentPhase string, notes string) error {
-	if a.disableProgress {
+	if a.disableProgress || a.eligibilityOnly {
 		return nil
 	}
 
