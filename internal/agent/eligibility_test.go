@@ -394,7 +394,7 @@ func TestParseEligibilityReport_ValidJSON(t *testing.T) {
 		t.Errorf("expected valid JSON to parse, got error: %v", err)
 	}
 	if report == nil {
-		t.Error("expected non-nil report")
+		t.Fatal("expected non-nil report")
 	}
 	if report.Services["./backend"].Status != StatusCompatible {
 		t.Errorf("expected status compatible, got %s", report.Services["./backend"].Status)
