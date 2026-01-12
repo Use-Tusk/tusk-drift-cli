@@ -56,11 +56,37 @@ For each discovered service:
 1. **Determine runtime** from markers (nodejs, python, or other)
 2. **Get SDK manifest** for that runtime (provided in context)
 3. **Read dependencies** (package.json, requirements.txt, etc.)
-4. **Categorize each package** using the decision tree below
+4. **Filter to I/O packages only** (see below)
+5. **Categorize each I/O package** using the decision tree below
+
+#### Which Packages to Classify
+
+The Tusk Drift SDK records and replays **external I/O** (network calls, database queries, cache operations). Only classify packages that perform external I/O:
+
+**INCLUDE in classification:**
+
+- Web frameworks (express, fastapi, flask) - handle incoming HTTP
+- HTTP clients (axios, requests, fetch) - make outgoing HTTP calls
+- Database drivers (pg, pymongo, psycopg2) - query databases
+- Cache clients (redis, ioredis) - interact with cache
+- Message queue clients (kafkajs, pika) - publish/consume messages
+- Third-party API SDKs (stripe, boto3, twilio) - make API calls
+
+**SKIP entirely (do not include in any category):**
+
+- Utility libraries: lodash, underscore, ramda, uuid
+- Data processing: numpy, pandas, moment, date-fns
+- Validation/parsing: joi, zod, pydantic, marshmallow
+- Dev dependencies: pytest, jest, eslint, typescript, prettier
+- Build tools: webpack, vite, esbuild, setuptools
+- Type definitions: @types/*, typing-extensions
+- Internal logic: anything that doesn't make network/disk I/O calls
+
+**Goal**: The classification should answer "What external calls will be captured/missed?" - not catalog every dependency.
 
 #### Package Classification Decision Tree
 
-For EACH dependency, follow these steps IN ORDER:
+For EACH I/O package, follow these steps IN ORDER:
 
 ```text
 1. Is the package in the SDK manifest?
@@ -94,13 +120,13 @@ These packages use custom wire protocols that the SDK must explicitly instrument
 | **gRPC** | @grpc/grpc-js, grpc | grpcio, grpclib |
 | **Elasticsearch** | @elastic/elasticsearch | elasticsearch, opensearch-py |
 
-#### Low-Risk Packages (safe as UNKNOWN)
+#### Low-Risk I/O Packages (classify as UNKNOWN)
 
-These packages are safe even if not in the manifest:
+These packages make external calls but use HTTP under the hood, so they're auto-captured:
 
-- **HTTP-based API SDKs**: stripe, twilio, boto3, sendgrid, etc. (use HTTP under the hood → auto-captured)
-- **Utility libraries**: lodash, numpy, pandas, etc. (no network I/O)
-- **Dev dependencies**: pytest, eslint, typescript, etc. (not runtime dependencies)
+- **Third-party API SDKs**: stripe, twilio, boto3, sendgrid, openai, etc.
+
+Classify these as `unknown_packages` - they don't affect compatibility status.
 
 ### Response Schema
 
@@ -179,8 +205,8 @@ Call `transition_phase` with:
             "reasoning": "express (web framework) and pg (SQL database driver) are both in the Node.js SDK manifest with compatible versions"
           },
           "unknown_packages": {
-            "packages": ["axios@1.6.0", "lodash@4.17.21"],
-            "reasoning": "axios uses HTTP under the hood (auto-captured); lodash is a utility library with no I/O"
+            "packages": ["axios@1.6.0"],
+            "reasoning": "axios uses HTTP under the hood (auto-captured by SDK)"
           }
         },
         "./services/auth": {
@@ -197,8 +223,8 @@ Call `transition_phase` with:
             "reasoning": "redis is a high-risk cache driver not in the SDK manifest, but only used for optional caching (non-critical)"
           },
           "unknown_packages": {
-            "packages": ["boto3==1.34.0", "pydantic==2.5.0"],
-            "reasoning": "boto3 uses HTTP under the hood (auto-captured); pydantic is a validation library with no I/O"
+            "packages": ["boto3==1.34.0"],
+            "reasoning": "boto3 (AWS SDK) uses HTTP under the hood (auto-captured by SDK)"
           }
         },
         "./services/users": {
