@@ -174,7 +174,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	}
 
 	// Create UI based on mode
-	a.ui = NewAgentUI(a.ctx, a.cancel, a.printMode, a.phaseManager.GetPhaseNames())
+	a.ui = NewAgentUI(a.ctx, a.cancel, a.printMode, a.phaseManager.GetPhaseNames(), a.eligibilityOnly)
 
 	if a.printMode {
 		// Headless mode: set up signal handling and run directly

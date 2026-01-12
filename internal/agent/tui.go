@@ -154,6 +154,7 @@ type TUIModel struct {
 	streamingText    string
 	lastAgentMessage string
 	lastToolComplete bool // Track if we just completed a tool (for showing thinking)
+	hideProgressBar  bool // Hide progress bar (e.g., for eligibility-only mode)
 
 	// Log state
 	logs       []logEntry
@@ -227,7 +228,7 @@ type todoItem struct {
 }
 
 // NewTUIModel creates a new TUI model
-func NewTUIModel(ctx context.Context, cancel context.CancelFunc, phaseNames []string) *TUIModel {
+func NewTUIModel(ctx context.Context, cancel context.CancelFunc, phaseNames []string, hideProgressBar bool) *TUIModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(styles.PrimaryColor))
@@ -273,6 +274,7 @@ func NewTUIModel(ctx context.Context, cancel context.CancelFunc, phaseNames []st
 		sidebarOrder:      []string{},
 		todoItems:         todoItems,
 		userInputTextarea: ta,
+		hideProgressBar:   hideProgressBar,
 	}
 }
 
@@ -1309,6 +1311,10 @@ func (m *TUIModel) renderHeader() string {
 	statusWidth := lipgloss.Width(statusText)
 	padding := max(m.width-statusWidth, 1)
 	statusLine := statusText + strings.Repeat(" ", padding)
+
+	if m.hideProgressBar {
+		return lipgloss.JoinVertical(lipgloss.Left, title, "", statusLine, "")
+	}
 
 	progressWidth := m.width - 2
 	progressWidth = max(progressWidth, 20)

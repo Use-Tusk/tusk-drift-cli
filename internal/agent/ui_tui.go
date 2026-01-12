@@ -15,8 +15,8 @@ type TUIUI struct {
 }
 
 // NewTUIUI creates a new TUI-based UI
-func NewTUIUI(ctx context.Context, cancel context.CancelFunc, phaseNames []string) *TUIUI {
-	model := NewTUIModel(ctx, cancel, phaseNames)
+func NewTUIUI(ctx context.Context, cancel context.CancelFunc, phaseNames []string, hideProgressBar bool) *TUIUI {
+	model := NewTUIModel(ctx, cancel, phaseNames, hideProgressBar)
 	return &TUIUI{
 		ctx:    ctx,
 		cancel: cancel,
