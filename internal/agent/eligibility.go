@@ -16,17 +16,13 @@ const (
 	StatusNotCompatible       EligibilityStatus = "not_compatible"
 )
 
-// Language represents a detected programming language
-type Language string
+// Runtime represents a detected runtime environment
+type Runtime string
 
 const (
-	LangNodeJS  Language = "nodejs"
-	LangPython  Language = "python"
-	LangGo      Language = "go"
-	LangJava    Language = "java"
-	LangRuby    Language = "ruby"
-	LangRust    Language = "rust"
-	LangUnknown Language = "unknown"
+	RuntimeNodeJS Runtime = "nodejs"
+	RuntimePython Runtime = "python"
+	RuntimeOther  Runtime = "other"
 )
 
 // PackageInfo contains information about packages in a category
@@ -39,7 +35,7 @@ type PackageInfo struct {
 type ServiceEligibility struct {
 	Status              EligibilityStatus `json:"status"`
 	StatusReasoning     string            `json:"status_reasoning"`
-	Language            Language          `json:"language"`
+	Runtime             Runtime           `json:"runtime"`
 	Framework           string            `json:"framework,omitempty"`
 	SupportedPackages   *PackageInfo      `json:"supported_packages,omitempty"`
 	UnsupportedPackages *PackageInfo      `json:"unsupported_packages,omitempty"`
@@ -94,12 +90,12 @@ func ValidateEligibilityReport(report *EligibilityReport) error {
 			return fmt.Errorf("status_reasoning is required for service at path '%s'", path)
 		}
 
-		// Validate language
-		switch service.Language {
-		case LangNodeJS, LangPython, LangGo, LangJava, LangRuby, LangRust, LangUnknown:
+		// Validate runtime
+		switch service.Runtime {
+		case RuntimeNodeJS, RuntimePython, RuntimeOther:
 			// Valid
 		default:
-			return fmt.Errorf("invalid language '%s' for service at path '%s'. Must be one of: nodejs, python, go, java, ruby, rust, unknown", service.Language, path)
+			return fmt.Errorf("invalid runtime '%s' for service at path '%s'. Must be one of: nodejs, python, other", service.Runtime, path)
 		}
 
 		// Validate package info if present

@@ -5,7 +5,7 @@ Discover all backend services in the directory tree and check their SDK compatib
 ### Objectives
 
 1. Discover all backend services (any depth)
-2. For each service: detect language, check compatibility against SDK manifest
+2. For each service: detect runtime, check compatibility against SDK manifest
 3. Output structured eligibility report
 
 ### Service Discovery
@@ -41,23 +41,20 @@ Scan the repository to discover all **backend API services**. A backend service 
    - Controller/handler files
 4. **Exclude if** the primary purpose is to be imported (look for `"main"` field pointing to lib entry, `exports` in package.json, or library-style structure)
 
-#### Language-Specific Indicators
+#### Runtime-Specific Indicators
 
-| Language | Service Indicator | Exclude If |
-|----------|-------------------|------------|
+| Runtime | Service Indicator | Exclude If |
+|---------|-------------------|------------|
 | **Node.js** | `package.json` with express, fastify, hono, koa, nest, hapi + route handlers | `"main": "lib/index.js"`, has `"exports"` field, or name suggests SDK (`*-sdk`, `*-client`) |
 | **Python** | `pyproject.toml`/`requirements.txt` with fastapi, flask, django, starlette, sanic + app entry | `setup.py` with `packages=`, or structured as importable module without server entry |
-| **Go** | `go.mod` with net/http, gin, echo, fiber, chi + `func main()` that starts server | No main package, or is a library with no cmd/ directory |
-| **Java** | `pom.xml`/`build.gradle` with spring-boot, quarkus, micronaut + controllers | Packaging type is `jar` library without web dependencies |
-| **Ruby** | `Gemfile` with rails, sinatra, grape + routing files | Is a gem (has `.gemspec`) |
-| **Rust** | `Cargo.toml` with actix-web, axum, rocket, warp + main.rs starting server | `[lib]` target only, no `[[bin]]` |
+| **Other** | Go (`go.mod`), Java (`pom.xml`/`build.gradle`), Ruby (`Gemfile`), Rust (`Cargo.toml`) with web frameworks | N/A - these are not yet supported |
 
 ### Compatibility Check
 
 For each discovered service:
 
-1. **Determine language** from markers
-2. **Get SDK manifest** for that language (provided in context)
+1. **Determine runtime** from markers (nodejs, python, or other)
+2. **Get SDK manifest** for that runtime (provided in context)
 3. **Read dependencies** (package.json, requirements.txt, etc.)
 4. **Categorize packages**:
    - **Supported**: In SDK manifest with matching version range
@@ -66,7 +63,7 @@ For each discovered service:
 
 #### Low-Risk Packages (HTTP-based)
 
-The SDKs instrument all major HTTP client libraries (Node.js: `http`/`https` modules, `axios`, `fetch`; Python: `requests`, `httpx`, `urllib3`, `aiohttp`). 
+The SDKs instrument all major HTTP client libraries (Node.js: `http`/`https` modules, `axios`, `fetch`; Python: `requests`, `httpx`, `urllib3`, `aiohttp`).
 
 Any third-party packages that make HTTP calls under the hood—such as API SDKs (Stripe, Twilio, AWS SDK, etc.)—are generally safe because their HTTP traffic will be captured automatically.
 
@@ -97,7 +94,7 @@ interface PackageInfo {
 interface ServiceEligibility {
   status: "compatible" | "partially_compatible" | "not_compatible";
   status_reasoning: string;  // REQUIRED - why this status was assigned
-  language: "nodejs" | "python" | "go" | "java" | "ruby" | "rust" | "unknown";
+  runtime: "nodejs" | "python" | "other";
   framework?: string;        // e.g., "express", "fastapi", "gin"
   supported_packages?: PackageInfo;
   unsupported_packages?: PackageInfo;
@@ -121,9 +118,9 @@ interface EligibilityReport {
 
 ### Status Determination
 
-- **compatible**: Language is nodejs/python AND no unsupported packages
-- **partially_compatible**: Language is nodejs/python AND has some unsupported packages
-- **not_compatible**: Language is NOT nodejs/python (go, java, ruby, rust, unknown)
+- **compatible**: Runtime is nodejs/python AND no unsupported packages
+- **partially_compatible**: Runtime is nodejs/python AND has some unsupported packages
+- **not_compatible**: Runtime is "other" (Go, Java, Ruby, Rust, etc. are not yet supported)
 
 ### Output Format
 
@@ -137,7 +134,7 @@ Call `transition_phase` with:
         "./backend": {
           "status": "compatible",
           "status_reasoning": "Node.js service with Express framework. All dependencies are supported by the SDK.",
-          "language": "nodejs",
+          "runtime": "nodejs",
           "framework": "express",
           "supported_packages": {
             "packages": ["pg@8.11.0"],
@@ -151,7 +148,7 @@ Call `transition_phase` with:
         "./services/auth": {
           "status": "partially_compatible",
           "status_reasoning": "Python service with FastAPI. Some dependencies are not instrumented by the SDK.",
-          "language": "python",
+          "runtime": "python",
           "framework": "fastapi",
           "supported_packages": {
             "packages": ["httpx==0.27.0"],
@@ -165,7 +162,7 @@ Call `transition_phase` with:
         "./services/billing": {
           "status": "not_compatible",
           "status_reasoning": "Go is not currently supported by the Tusk Drift SDK.",
-          "language": "go",
+          "runtime": "other",
           "framework": "gin"
         }
       },
