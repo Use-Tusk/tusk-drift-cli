@@ -64,6 +64,7 @@ type Agent struct {
 	disableProgress bool
 	skipToCloud     bool
 	printMode       bool
+	eligibilityOnly bool
 
 	// UI abstraction (TUI / headless)
 	ui     AgentUI
@@ -114,6 +115,7 @@ func New(cfg Config) (*Agent, error) {
 		disableProgress: cfg.DisableProgress,
 		skipToCloud:     cfg.SkipToCloud,
 		printMode:       cfg.PrintMode,
+		eligibilityOnly: cfg.EligibilityOnly,
 	}
 
 	if cfg.OutputLogs {
@@ -431,7 +433,7 @@ func (a *Agent) runAgent() error {
 			report.Summary.Compatible,
 			report.Summary.PartiallyCompatible,
 			report.Summary.NotCompatible), false)
-		a.ui.Completed(a.workDir)
+		a.ui.EligibilityCompleted(a.workDir)
 		time.Sleep(500 * time.Millisecond)
 		return a.setCompleted()
 	}
@@ -1416,7 +1418,7 @@ func (a *Agent) findNextPhaseToRun(completedPhases []string) string {
 
 // saveProgress saves the current progress to the progress file
 func (a *Agent) saveProgress(completedPhases []string, currentPhase string, notes string) error {
-	if a.disableProgress {
+	if a.disableProgress || a.eligibilityOnly {
 		return nil
 	}
 

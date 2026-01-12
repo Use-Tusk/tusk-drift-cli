@@ -73,7 +73,8 @@ func runExpSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// When skipping to cloud, verify that local setup has been completed
-	if expSkipToCloud {
+	// Skip this validation if eligibility-only mode is set (it doesn't need prior setup)
+	if expSkipToCloud && !expEligibilityOnly {
 		configPath := filepath.Join(workDir, ".tusk", "config.yaml")
 		if _, err := os.Stat(configPath); err != nil {
 			if os.IsNotExist(err) {

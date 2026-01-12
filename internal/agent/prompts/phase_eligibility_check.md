@@ -140,12 +140,12 @@ Call `transition_phase` with:
           "language": "nodejs",
           "framework": "express",
           "supported_packages": {
-            "packages": ["pg@8.11.0", "axios@1.6.0"],
-            "reasoning": "pg is in manifest with version 8.*, axios uses HTTP under the hood"
+            "packages": ["pg@8.11.0"],
+            "reasoning": "pg is in manifest with version 8.*"
           },
           "unknown_packages": {
-            "packages": ["lodash@4.17.21"],
-            "reasoning": "Utility library, does not make external calls"
+            "packages": ["axios@1.6.0", "lodash@4.17.21"],
+            "reasoning": "axios uses HTTP under the hood (auto-captured), lodash is a utility library"
           }
         },
         "./services/auth": {

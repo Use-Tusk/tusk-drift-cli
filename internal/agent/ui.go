@@ -26,6 +26,7 @@ type AgentUI interface {
 	Error(err error)
 	FatalError(err error)
 	Completed(workDir string)
+	EligibilityCompleted(workDir string)
 	Aborted(reason string)
 
 	// Interactive prompts - all blocking, return results directly

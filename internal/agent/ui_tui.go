@@ -91,6 +91,11 @@ func (u *TUIUI) Completed(workDir string) {
 	u.model.SendCompleted(u.program, workDir)
 }
 
+// EligibilityCompleted notifies the UI that eligibility check is complete
+func (u *TUIUI) EligibilityCompleted(workDir string) {
+	u.model.SendEligibilityCompleted(u.program, workDir)
+}
+
 // Aborted notifies the UI that setup was aborted
 func (u *TUIUI) Aborted(reason string) {
 	u.model.SendAborted(u.program, reason)

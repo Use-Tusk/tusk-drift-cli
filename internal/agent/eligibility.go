@@ -67,10 +67,6 @@ func ValidateEligibilityReport(report *EligibilityReport) error {
 		return fmt.Errorf("services map is required")
 	}
 
-	if len(report.Services) == 0 {
-		return fmt.Errorf("at least one service must be discovered")
-	}
-
 	// Validate each service
 	compatibleCount := 0
 	partialCount := 0
@@ -174,7 +170,7 @@ func WriteEligibilityReport(workDir string, report *EligibilityReport) error {
 	}
 
 	reportPath := filepath.Join(tuskDir, "eligibility-report.json")
-	if err := os.WriteFile(reportPath, data, 0o644); err != nil {
+	if err := os.WriteFile(reportPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write eligibility report: %w", err)
 	}
 

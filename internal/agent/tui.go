@@ -84,6 +84,8 @@ type (
 		removableFiles []string // Files that can be safely removed from .tusk/
 	}
 
+	eligibilityCompletedMsg struct{}
+
 	abortedMsg struct {
 		reason string
 	}
@@ -618,6 +620,20 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.addLog("spacing", "", "")
 		}
+		cmds = append(cmds, m.progress.SetPercent(1.0))
+		// Mark all todos as done
+		for i := range m.todoItems {
+			m.todoItems[i].done = true
+			m.todoItems[i].active = false
+		}
+
+	case eligibilityCompletedMsg:
+		m.completed = true
+		m.thinking = false
+		m.currentTool = ""
+		m.addLog("spacing", "", "")
+		m.addLog("success", "✅ Eligibility check complete!", "")
+		m.addLog("dim", "   Check .tusk/eligibility-report.json for details.", "")
 		cmds = append(cmds, m.progress.SetPercent(1.0))
 		// Mark all todos as done
 		for i := range m.todoItems {
@@ -1619,6 +1635,10 @@ func (m *TUIModel) SendCompleted(program *tea.Program, workDir string) {
 
 func (m *TUIModel) SendAborted(program *tea.Program, reason string) {
 	program.Send(abortedMsg{reason: reason})
+}
+
+func (m *TUIModel) SendEligibilityCompleted(program *tea.Program, workDir string) {
+	program.Send(eligibilityCompletedMsg{})
 }
 
 func (m *TUIModel) SendSidebarUpdate(program *tea.Program, key, value string) {
