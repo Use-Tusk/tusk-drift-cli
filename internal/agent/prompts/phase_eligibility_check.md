@@ -56,30 +56,51 @@ For each discovered service:
 1. **Determine runtime** from markers (nodejs, python, or other)
 2. **Get SDK manifest** for that runtime (provided in context)
 3. **Read dependencies** (package.json, requirements.txt, etc.)
-4. **Categorize packages**:
-   - **Supported**: In SDK manifest with matching version range
-   - **Unsupported**: In high-risk category (see below) but NOT in manifest or version mismatch
-   - **Unknown**: Not in manifest and not in high-risk category
+4. **Categorize each package** using the decision tree below
 
-#### Low-Risk Packages (HTTP-based)
+#### Package Classification Decision Tree
 
-The SDKs instrument all major HTTP client libraries (Node.js: `http`/`https` modules, `axios`, `fetch`; Python: `requests`, `httpx`, `urllib3`, `aiohttp`).
+For EACH dependency, follow these steps IN ORDER:
 
-Any third-party packages that make HTTP calls under the hood—such as API SDKs (Stripe, Twilio, AWS SDK, etc.)—are generally safe because their HTTP traffic will be captured automatically.
+```text
+1. Is the package in the SDK manifest?
+   ├─ YES → Is the version compatible with the manifest's version range?
+   │        ├─ YES → SUPPORTED (the SDK instruments this package)
+   │        └─ NO  → UNSUPPORTED (version mismatch - SDK can't instrument this version)
+   │
+   └─ NO  → Is this a HIGH-RISK package? (see table below)
+            ├─ YES → UNSUPPORTED (requires instrumentation but SDK doesn't support it)
+            │        This includes: databases, caches, message queues, gRPC
+            │        Also includes ODMs/ORMs that wrap these (e.g., mongoengine wraps pymongo)
+            │
+            └─ NO  → UNKNOWN (low-risk, doesn't affect compatibility)
+                     These are safe because either:
+                     - They use HTTP under the hood (auto-captured)
+                     - They're utility libraries with no I/O
+```
 
-**These should be categorized as `unknown_packages` (not `unsupported`)**, even if not explicitly in the manifest. The SDKs will capture their network calls.
+**IMPORTANT**: Web frameworks (flask, fastapi, express, etc.) ARE in the manifest and should be classified as SUPPORTED, not UNKNOWN.
 
-Only packages using **custom wire protocols** (databases, caches, message queues, gRPC) require explicit instrumentation and should be checked against the SDK manifests.
+#### High-Risk Packages (require explicit SDK instrumentation)
 
-#### High-Risk Categories (require explicit instrumentation)
+These packages use custom wire protocols that the SDK must explicitly instrument. If a package in this category is NOT in the manifest (or version doesn't match), it is **UNSUPPORTED**.
 
-| Category | Node.js | Python |
-|----------|---------|--------|
-| SQL DB | pg, mysql2, better-sqlite3 | psycopg2, pymysql, sqlite3 |
-| NoSQL DB | mongodb, mongoose | pymongo, motor |
-| Cache | ioredis, redis | redis, aioredis |
-| Queue | kafkajs, amqplib, bullmq | kafka-python, pika, celery |
-| gRPC | @grpc/grpc-js | grpcio |
+| Category | Node.js Packages | Python Packages |
+|----------|------------------|-----------------|
+| **SQL Databases** | pg, mysql2, better-sqlite3, tedious, oracledb | psycopg2, psycopg, pymysql, sqlite3, cx_Oracle |
+| **NoSQL Databases** | mongodb, mongoose | pymongo, motor, mongoengine, odmantic |
+| **Cache/Key-Value** | ioredis, redis | redis, aioredis |
+| **Message Queues** | kafkajs, amqplib, bullmq, rhea | kafka-python, pika, celery, kombu |
+| **gRPC** | @grpc/grpc-js, grpc | grpcio, grpclib |
+| **Elasticsearch** | @elastic/elasticsearch | elasticsearch, opensearch-py |
+
+#### Low-Risk Packages (safe as UNKNOWN)
+
+These packages are safe even if not in the manifest:
+
+- **HTTP-based API SDKs**: stripe, twilio, boto3, sendgrid, etc. (use HTTP under the hood → auto-captured)
+- **Utility libraries**: lodash, numpy, pandas, etc. (no network I/O)
+- **Dev dependencies**: pytest, eslint, typescript, etc. (not runtime dependencies)
 
 ### Response Schema
 
@@ -88,7 +109,7 @@ The eligibility report must conform to this structure:
 ```typescript
 interface PackageInfo {
   packages: string[];    // e.g., ["pg@8.11.0", "axios@1.6.0"]
-  reasoning: string;     // REQUIRED - explanation for categorization
+  reasoning: string;     // REQUIRED - must explain WHY packages are in this category
 }
 
 interface ServiceEligibility {
@@ -119,8 +140,25 @@ interface EligibilityReport {
 ### Status Determination
 
 - **compatible**: Runtime is nodejs/python AND no unsupported packages
-- **partially_compatible**: Runtime is nodejs/python AND has some unsupported packages
-- **not_compatible**: Runtime is "other" (Go, Java, Ruby, Rust, etc. are not yet supported)
+- **partially_compatible**: Runtime is nodejs/python AND has some unsupported packages, but they are used by only a subset of endpoints
+- **not_compatible**: One of the following:
+  - Runtime is "other" (Go, Java, Ruby, Rust, etc. are not yet supported)
+  - Runtime is nodejs/python BUT has **critical** unsupported packages that the majority of endpoints depend on (e.g., the primary database driver for a service that stores all data in MongoDB)
+
+#### Critical vs Non-Critical Unsupported Packages
+
+When determining status, consider whether unsupported packages are **critical** to the service:
+
+- **Critical**: The service's core functionality depends on this package. Most/all endpoints would fail without it.
+  - Example: A service using MongoDB as its only database → `pymongo` is critical
+  - Example: A service where every request writes to Redis for session management → `redis` is critical
+
+- **Non-Critical**: Only some endpoints use this package; others work fine without it.
+  - Example: A service with 10 endpoints where only 2 use Redis for caching → `redis` is non-critical
+  - Example: A service that uses Kafka for async events but has synchronous endpoints that work independently
+
+If ALL unsupported packages are non-critical → **partially_compatible**
+If ANY unsupported package is critical → **not_compatible**
 
 ### Output Format
 
@@ -133,30 +171,48 @@ Call `transition_phase` with:
       "services": {
         "./backend": {
           "status": "compatible",
-          "status_reasoning": "Node.js service with Express framework. All dependencies are supported by the SDK.",
+          "status_reasoning": "Node.js service with Express framework. All high-risk dependencies (pg) are in the SDK manifest.",
           "runtime": "nodejs",
           "framework": "express",
           "supported_packages": {
-            "packages": ["pg@8.11.0"],
-            "reasoning": "pg is in manifest with version 8.*"
+            "packages": ["express@4.18.0", "pg@8.11.0"],
+            "reasoning": "express (web framework) and pg (SQL database driver) are both in the Node.js SDK manifest with compatible versions"
           },
           "unknown_packages": {
             "packages": ["axios@1.6.0", "lodash@4.17.21"],
-            "reasoning": "axios uses HTTP under the hood (auto-captured), lodash is a utility library"
+            "reasoning": "axios uses HTTP under the hood (auto-captured); lodash is a utility library with no I/O"
           }
         },
         "./services/auth": {
           "status": "partially_compatible",
-          "status_reasoning": "Python service with FastAPI. Some dependencies are not instrumented by the SDK.",
+          "status_reasoning": "Python service with FastAPI. Redis is unsupported but only used for optional caching in minority of endpoints",
           "runtime": "python",
           "framework": "fastapi",
           "supported_packages": {
-            "packages": ["httpx==0.27.0"],
-            "reasoning": "In manifest with version 0.27.*"
+            "packages": ["fastapi==0.109.0", "requests==2.31.0", "psycopg2==2.9.9"],
+            "reasoning": "fastapi (web framework), requests (HTTP client), and psycopg2 (PostgreSQL driver) are in the Python SDK manifest"
           },
           "unsupported_packages": {
             "packages": ["redis==5.0.0"],
-            "reasoning": "Redis 5.x not in Python SDK manifest, only 4.x supported"
+            "reasoning": "redis is a high-risk cache driver not in the SDK manifest, but only used for optional caching (non-critical)"
+          },
+          "unknown_packages": {
+            "packages": ["boto3==1.34.0", "pydantic==2.5.0"],
+            "reasoning": "boto3 uses HTTP under the hood (auto-captured); pydantic is a validation library with no I/O"
+          }
+        },
+        "./services/users": {
+          "status": "not_compatible",
+          "status_reasoning": "Python service with Flask. MongoDB (pymongo) is the primary database for all user data - every endpoint depends on it, making it critical. The SDK cannot capture these database calls.",
+          "runtime": "python",
+          "framework": "flask",
+          "supported_packages": {
+            "packages": ["flask==2.3.0", "requests==2.31.0"],
+            "reasoning": "flask (web framework) and requests (HTTP client) are in the Python SDK manifest"
+          },
+          "unsupported_packages": {
+            "packages": ["pymongo==4.6.0", "mongoengine==0.27.0"],
+            "reasoning": "pymongo is the primary database driver (CRITICAL - all endpoints depend on it); mongoengine is an ODM that wraps pymongo"
           }
         },
         "./services/billing": {
@@ -167,10 +223,10 @@ Call `transition_phase` with:
         }
       },
       "summary": {
-        "total_services": 3,
+        "total_services": 4,
         "compatible": 1,
         "partially_compatible": 1,
-        "not_compatible": 1
+        "not_compatible": 2
       }
     }
   }
