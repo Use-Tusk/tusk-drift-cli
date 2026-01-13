@@ -60,15 +60,3 @@ jobs:
           source venv/bin/activate
           $GITHUB_WORKSPACE/tusk run --print --enable-service-logs
           # Exits non-zero if any test has deviations
-
-      - name: Print first log file
-        if: always()
-        working-directory: ../drift-python-demo
-        run: |
-          FIRST_LOG=$(ls -1 .tusk/logs/*.log 2>/dev/null | head -n 1)
-          if [ -n "$FIRST_LOG" ]; then
-            echo "=== Contents of $FIRST_LOG ==="
-            cat "$FIRST_LOG"
-          else
-            echo "No log files found in .tusk/logs/"
-          fi
