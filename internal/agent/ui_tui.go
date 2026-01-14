@@ -30,6 +30,11 @@ func (u *TUIUI) Start() error {
 	return nil
 }
 
+// ShowIntro displays the intro screen with animation
+func (u *TUIUI) ShowIntro() (bool, error) {
+	return RunIntroScreen()
+}
+
 // Stop is a no-op for TUI - cleanup happens via the program
 func (u *TUIUI) Stop() {
 	// TUI cleanup is handled by the program's quit mechanism

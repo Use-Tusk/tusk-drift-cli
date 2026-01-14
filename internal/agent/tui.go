@@ -1077,7 +1077,10 @@ func (m *TUIModel) addLog(level, message, toolName string) {
 }
 
 func (m *TUIModel) updateViewportSize() {
-	headerHeight := 5    // Title + empty line + status + progress + spacing
+	headerHeight := 5 // Title + empty line + status + progress + spacing
+	if m.phaseDesc != "" {
+		headerHeight = 6 // +1 for description subtitle
+	}
 	infoPanelHeight := 3 // Info panel with border (1 content line + 2 border lines)
 	spacerHeight := 5    // 5 lines of spacing between content and footer
 	footerHeight := 1    // Help text line
@@ -1312,7 +1315,18 @@ func (m *TUIModel) renderHeader() string {
 	padding := max(m.width-statusWidth, 1)
 	statusLine := statusText + strings.Repeat(" ", padding)
 
+	var descLine string
+	if m.phaseDesc != "" {
+		descStyle := lipgloss.NewStyle().
+			Italic(true).
+			Foreground(lipgloss.Color("245"))
+		descLine = descStyle.Render(m.phaseDesc)
+	}
+
 	if m.hideProgressBar {
+		if descLine != "" {
+			return lipgloss.JoinVertical(lipgloss.Left, title, "", statusLine, descLine, "")
+		}
 		return lipgloss.JoinVertical(lipgloss.Left, title, "", statusLine, "")
 	}
 
@@ -1321,6 +1335,9 @@ func (m *TUIModel) renderHeader() string {
 	m.progress.Width = progressWidth
 	progressBar := m.progress.View()
 
+	if descLine != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, title, "", statusLine, descLine, progressBar, "")
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, title, "", statusLine, progressBar, "")
 }
 
