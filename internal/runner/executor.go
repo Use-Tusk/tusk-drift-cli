@@ -477,6 +477,7 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 				slog.Warn("Failed to load spans for trace", "traceID", test.TraceID, "error", err)
 			} else {
 				e.server.LoadSpansForTrace(test.TraceID, spans)
+				test.Spans = spans // Ensure spans are available for time-travel and schema extraction
 			}
 		}
 
