@@ -374,6 +374,8 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update todo items
 		m.updateTodoForPhase(msg.phaseNumber)
+		// Recalculate viewport size since header height depends on phaseDesc
+		m.updateViewportSize()
 
 	case toolStartMsg:
 		m.currentTool = msg.toolName
