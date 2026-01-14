@@ -118,15 +118,28 @@ tusk --help
 
 ## Quick start
 
-Initialize a service:
+### AI-powered setup (recommended)
+
+Use our AI agent to automatically set up Tusk Drift for your service:
+
+```bash
+cd path/to/your/service
+export ANTHROPIC_API_KEY=your-api-key
+tusk setup
+```
+
+The agent will analyze your codebase, instrument the SDK, create configuration files, and test the setup with recording and replay. Supported languages: Python and Node.js.
+
+### Manual setup
+
+Alternatively, use the interactive wizard:
 
 ```bash
 cd path/to/your/service
 tusk init
 ```
 
-An onboarding wizard will guide you to create your `.tusk/config.yaml` config file.
-You can also create the `.tusk` directory and config file manually in your root directory of your service. See [configuration docs](/docs/configuration.md).
+This will guide you to create your `.tusk/config.yaml` config file. You can also create the `.tusk` directory and config file manually. See [configuration docs](/docs/configuration.md).
 
 You will need to record traces for your service. See your respective SDK's guide for more details. Once you have traces recorded, you can replay them with the `tusk run` command.
 
@@ -161,10 +174,10 @@ You can use Tusk Drift as API tests in your CI/CD pipeline by running your test 
 - Securely store these traces as test suites
 - Analyze deviations (classification of intended vs unintended deviations), root cause of deviations against your code changes, and suggested fixes.
 
-We provide an onboarding wizard to help you get started quickly:
+If you used `tusk setup`, cloud configuration is included. Otherwise, run the cloud onboarding wizard:
 
 ```bash
-tusk cloud-init
+tusk init-cloud
 ```
 
 For more details, dive into [Tusk Drift Cloud docs](./docs/cloud/).
