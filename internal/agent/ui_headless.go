@@ -58,6 +58,12 @@ func (u *HeadlessUI) Start() error {
 	return nil
 }
 
+// ShowIntro displays the intro screen for headless mode (no confirmation for scripts)
+func (u *HeadlessUI) ShowIntro() (bool, error) {
+	PrintIntroHeadless()
+	return true, nil
+}
+
 // Stop is a no-op for headless mode
 func (u *HeadlessUI) Stop() {}
 

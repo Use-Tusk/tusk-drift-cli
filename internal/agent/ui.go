@@ -9,6 +9,10 @@ type AgentUI interface {
 	Start() error // Initialize the UI (e.g., start TUI program)
 	Stop()        // Clean up the UI
 
+	// ShowIntro displays the intro screen with animation and description.
+	// Returns true if user wants to continue, false if they quit.
+	ShowIntro() (bool, error)
+
 	// Phase updates
 	PhaseChange(name, desc string, phaseNum, totalPhases int)
 	UpdatePhaseList(phaseNames []string)

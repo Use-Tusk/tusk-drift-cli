@@ -176,6 +176,15 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	// Create UI based on mode
 	a.ui = NewAgentUI(a.ctx, a.cancel, a.printMode, a.phaseManager.GetPhaseNames(), a.eligibilityOnly)
 
+	// Show intro screen and wait for user to continue
+	shouldContinue, err := a.ui.ShowIntro()
+	if err != nil {
+		return fmt.Errorf("failed to show intro: %w", err)
+	}
+	if !shouldContinue {
+		return nil
+	}
+
 	if a.printMode {
 		// Headless mode: set up signal handling and run directly
 		sigCh := make(chan os.Signal, 1)
@@ -210,7 +219,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	}()
 
 	// Run TUI (blocks until quit)
-	_, err := tuiUI.Run()
+	_, err = tuiUI.Run()
 	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
 	}

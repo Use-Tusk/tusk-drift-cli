@@ -711,7 +711,7 @@ func cloudCreateServicePhase() *Phase {
 	return &Phase{
 		ID:           "cloud_create_service",
 		Name:         "Create Service",
-		Description:  "Create observable service in Tusk Cloud",
+		Description:  "Register a service in Tusk Cloud",
 		Instructions: PhaseCloudCreateServicePrompt,
 		Tools: Tools(
 			ToolCloudCreateService,
@@ -726,7 +726,7 @@ func cloudCreateApiKeyPhase() *Phase {
 	return &Phase{
 		ID:           "cloud_create_api_key",
 		Name:         "Create API Key",
-		Description:  "Create API key for CI/CD",
+		Description:  "Generate an API key for CI/CD",
 		Instructions: PhaseCloudCreateApiKeyPrompt,
 		Tools: Tools(
 			ToolCloudCheckApiKeyExists,
