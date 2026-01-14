@@ -69,6 +69,10 @@ type Server struct {
 	sdkVersion             string
 	sdkConnected           bool
 	sdkConnectedChan       chan struct{}
+	sdkRuntime             core.Runtime
+	sdkConnection          net.Conn
+	pendingRequests        map[string]chan *core.SDKMessage
+	pendingMu              sync.Mutex
 	suiteSpans             []*core.Span
 	matchEvents            map[string][]MatchEvent
 	replayInbound          map[string]*core.Span
@@ -169,6 +173,7 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		mockNotFoundEvents: make(map[string][]MockNotFoundEvent),
 		communicationType:  commType,
 		tcpPort:            cfg.Communication.TCPPort,
+		pendingRequests:    make(map[string]chan *core.SDKMessage),
 	}
 
 	return server, nil
@@ -631,6 +636,9 @@ func (ms *Server) handleConnection(conn net.Conn) {
 			ms.handleInboundReplaySpanProtobuf(&sdkMsg, conn)
 		case core.MessageType_MESSAGE_TYPE_ALERT:
 			ms.handleAlertProtobuf(&sdkMsg)
+		case core.MessageType_MESSAGE_TYPE_SET_TIME_TRAVEL:
+			// SDK is responding to our SetTimeTravel request
+			ms.handleSetTimeTravelResponse(&sdkMsg)
 		default:
 			slog.Debug("Unknown message type", "type", sdkMsg.Type)
 		}
@@ -816,6 +824,8 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 
 	ms.mu.Lock()
 	ms.sdkVersion = connectReq.SdkVersion
+	ms.sdkRuntime = connectReq.Runtime
+	ms.sdkConnection = conn
 	if !ms.sdkConnected {
 		ms.sdkConnected = true
 		close(ms.sdkConnectedChan)
@@ -834,6 +844,97 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 
 	if err := ms.sendProtobufResponse(conn, response); err != nil {
 		slog.Error("Failed to send connect response", "error", err)
+	}
+}
+
+// GetSDKRuntime returns the runtime of the connected SDK
+func (ms *Server) GetSDKRuntime() core.Runtime {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.sdkRuntime
+}
+
+// SendSetTimeTravel sends a time travel request to the SDK and waits for acknowledgement
+func (ms *Server) SendSetTimeTravel(timestampSeconds float64, traceID string, timestampSource string) error {
+	ms.mu.RLock()
+	conn := ms.sdkConnection
+	ms.mu.RUnlock()
+
+	if conn == nil {
+		return fmt.Errorf("no SDK connection available")
+	}
+
+	// Generate a unique request ID
+	requestID := fmt.Sprintf("time-travel-%s-%d", traceID, time.Now().UnixNano())
+
+	msg := &core.CLIMessage{
+		Type:      core.MessageType_MESSAGE_TYPE_SET_TIME_TRAVEL,
+		RequestId: requestID,
+		Payload: &core.CLIMessage_SetTimeTravelRequest{
+			SetTimeTravelRequest: &core.SetTimeTravelRequest{
+				TimestampSeconds: timestampSeconds,
+				TraceId:          traceID,
+				TimestampSource:  timestampSource,
+			},
+		},
+	}
+
+	// Send the message
+	if err := ms.sendProtobufResponse(conn, msg); err != nil {
+		return fmt.Errorf("failed to send SetTimeTravel request: %w", err)
+	}
+
+	// Wait for response (with timeout)
+	response, err := ms.waitForSDKResponse(requestID, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to receive SetTimeTravel response: %w", err)
+	}
+
+	// Check response
+	setTimeTravelResp := response.GetSetTimeTravelResponse()
+	if setTimeTravelResp == nil {
+		return fmt.Errorf("unexpected response type for SetTimeTravel")
+	}
+
+	if !setTimeTravelResp.Success {
+		return fmt.Errorf("SDK failed to set time travel: %s", setTimeTravelResp.Error)
+	}
+
+	return nil
+}
+
+// waitForSDKResponse waits for a response from the SDK with the given request ID
+func (ms *Server) waitForSDKResponse(requestID string, timeout time.Duration) (*core.SDKMessage, error) {
+	respChan := make(chan *core.SDKMessage, 1)
+
+	ms.pendingMu.Lock()
+	ms.pendingRequests[requestID] = respChan
+	ms.pendingMu.Unlock()
+
+	defer func() {
+		ms.pendingMu.Lock()
+		delete(ms.pendingRequests, requestID)
+		ms.pendingMu.Unlock()
+	}()
+
+	select {
+	case resp := <-respChan:
+		return resp, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("timeout waiting for SDK response")
+	}
+}
+
+// handleSetTimeTravelResponse routes SetTimeTravel responses to pending request channels
+func (ms *Server) handleSetTimeTravelResponse(msg *core.SDKMessage) {
+	ms.pendingMu.Lock()
+	respChan, ok := ms.pendingRequests[msg.RequestId]
+	ms.pendingMu.Unlock()
+
+	if ok {
+		respChan <- msg
+	} else {
+		slog.Debug("Received SetTimeTravel response with unknown request ID", "requestId", msg.RequestId)
 	}
 }
 
