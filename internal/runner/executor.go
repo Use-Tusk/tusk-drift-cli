@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -476,6 +477,7 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 				slog.Warn("Failed to load spans for trace", "traceID", test.TraceID, "error", err)
 			} else {
 				e.server.LoadSpansForTrace(test.TraceID, spans)
+				test.Spans = spans // Ensure spans are available for time-travel and schema extraction
 			}
 		}
 
@@ -527,6 +529,20 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	}
 
 	client := &http.Client{Timeout: e.testTimeout}
+
+	// Send time travel request to Python SDK before making HTTP request
+	// This ensures auth checks at the inbound request level use the recorded time
+	if e.server != nil && e.server.GetSDKRuntime() == core.Runtime_RUNTIME_PYTHON {
+		timestamp, source := GetFirstSpanTimestamp(test.Spans)
+		if timestamp > 0 {
+			if err := e.server.SendSetTimeTravel(timestamp, test.TraceID, source); err != nil {
+				// Log warning but don't fail the test - time travel is best-effort
+				slog.Warn("Failed to set time travel", "error", err, "traceID", test.TraceID)
+			} else {
+				slog.Debug("Time travel set", "timestamp", timestamp, "source", source, "traceID", test.TraceID)
+			}
+		}
+	}
 
 	startTime := time.Now()
 	resp, err := client.Do(req)
@@ -722,4 +738,45 @@ func OutputResultsSummary(results []TestResult, format string, quiet bool) error
 	}
 
 	return nil
+}
+
+// GetFirstSpanTimestamp returns the timestamp to use for time travel.
+// Priority: first recorded span (non-server) > server span
+func GetFirstSpanTimestamp(spans []*core.Span) (float64, string) {
+	var firstTimestamp float64 = math.MaxFloat64
+	var serverSpanTimestamp float64 = 0
+	var foundNonServerSpan bool
+
+	for _, span := range spans {
+		if span == nil || span.Timestamp == nil {
+			continue
+		}
+
+		spanTimestamp := float64(span.Timestamp.Seconds) + float64(span.Timestamp.Nanos)/1e9
+
+		// Track server span separately as fallback
+		if span.IsRootSpan {
+			serverSpanTimestamp = spanTimestamp
+			continue
+		}
+
+		// Track earliest non-server span
+		if spanTimestamp < firstTimestamp {
+			firstTimestamp = spanTimestamp
+			foundNonServerSpan = true
+		}
+	}
+
+	// Return earliest non-server span if found
+	if foundNonServerSpan {
+		return firstTimestamp, "first_span"
+	}
+
+	// Fallback to server span
+	if serverSpanTimestamp > 0 {
+		return serverSpanTimestamp, "server_span"
+	}
+
+	// No timestamp available
+	return 0, "none"
 }
