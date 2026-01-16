@@ -33,40 +33,49 @@ fi
 echo ""
 echo "[3/5] Cloning tusk backend..."
 mkdir -p ~/repos
-if [ -d ~/repos/tusk ]; then
+if [ ! -d ~/repos/tusk ]; then
+  git clone --depth 1 https://github.com/Use-Tusk/tusk.git ~/repos/tusk || echo "⚠ Could not clone tusk (check GitHub app permissions)"
+else
   echo "  tusk repo already exists, pulling latest..."
   cd ~/repos/tusk && git pull --depth 1 || true
-else
-  git clone --depth 1 https://github.com/Use-Tusk/tusk.git ~/repos/tusk
 fi
-echo "✓ tusk backend available at ~/repos/tusk"
+if [ -d ~/repos/tusk ]; then
+  echo "✓ tusk backend available at ~/repos/tusk"
+else
+  echo "⚠ tusk backend not available"
+fi
 
 echo ""
 echo "[4/5] Setting up demo repos..."
 
 # Node.js demo
-if [ -d ~/repos/drift-node-demo ]; then
-  echo "  drift-node-demo already exists"
-else
-  git clone --depth 1 https://github.com/Use-Tusk/drift-node-demo.git ~/repos/drift-node-demo
+if [ ! -d ~/repos/drift-node-demo ]; then
+  git clone --depth 1 https://github.com/Use-Tusk/drift-node-demo.git ~/repos/drift-node-demo || echo "⚠ Could not clone drift-node-demo (check GitHub app permissions)"
 fi
-cd ~/repos/drift-node-demo && npm install --silent 2>/dev/null || npm install
-echo "✓ drift-node-demo ready at ~/repos/drift-node-demo"
+if [ -d ~/repos/drift-node-demo ]; then
+  cd ~/repos/drift-node-demo
+  npm install --silent 2>/dev/null || npm install
+  echo "✓ drift-node-demo ready at ~/repos/drift-node-demo"
+else
+  echo "⚠ drift-node-demo not available"
+fi
 
 # Python demo
+if [ ! -d ~/repos/drift-python-demo ]; then
+  git clone --depth 1 https://github.com/Use-Tusk/drift-python-demo.git ~/repos/drift-python-demo || echo "⚠ Could not clone drift-python-demo (check GitHub app permissions)"
+fi
 if [ -d ~/repos/drift-python-demo ]; then
-  echo "  drift-python-demo already exists"
+  cd ~/repos/drift-python-demo
+  if [ ! -d venv ]; then
+    python3 -m venv venv
+  fi
+  source venv/bin/activate
+  pip install -q -r requirements.txt
+  deactivate
+  echo "✓ drift-python-demo ready at ~/repos/drift-python-demo"
 else
-  git clone --depth 1 https://github.com/Use-Tusk/drift-python-demo.git ~/repos/drift-python-demo
+  echo "⚠ drift-python-demo not available"
 fi
-cd ~/repos/drift-python-demo
-if [ ! -d venv ]; then
-  python3 -m venv venv
-fi
-source venv/bin/activate
-pip install -q -r requirements.txt
-deactivate
-echo "✓ drift-python-demo ready at ~/repos/drift-python-demo"
 
 echo ""
 echo "[5/5] Configuring environment..."
