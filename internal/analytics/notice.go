@@ -33,10 +33,7 @@ func ShowFirstRunNotice(cmd *cobra.Command) bool {
 		return false
 	}
 
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		return false
-	}
+	cfg := cliconfig.CLIConfig
 
 	// Skip if already shown
 	if cfg.NoticeShown {

@@ -56,10 +56,7 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 	}
 
 	// Get client ID (env var takes precedence, then selected client from login)
-	var tuskClientID string
-	if cliCfg, err := cliconfig.Load(); err == nil {
-		tuskClientID = cliCfg.GetClientID()
-	}
+	tuskClientID := cliconfig.CLIConfig.GetClientID()
 
 	client := NewClient(cfg.TuskAPI.URL, apiKey)
 	authOptions := AuthOptions{

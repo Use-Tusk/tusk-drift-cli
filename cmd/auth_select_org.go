@@ -67,10 +67,7 @@ func selectOrg(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show current selection
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		return fmt.Errorf("Failed to load CLI config: %w", err)
-	}
+	cfg := cliconfig.CLIConfig
 
 	// Prompt for new selection (selector shows current selection)
 	selectedID, selectedName := promptClientSelection(resp.Clients, cfg.SelectedClientID)

@@ -43,11 +43,7 @@ func NewClient() *Client {
 		return nil
 	}
 
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		slog.Debug("Failed to load CLI config for analytics", "error", err)
-		return nil
-	}
+	cfg := cliconfig.CLIConfig
 
 	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
 		Endpoint: posthogEndpoint,
