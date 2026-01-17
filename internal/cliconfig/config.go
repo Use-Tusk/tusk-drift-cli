@@ -73,6 +73,14 @@ func GetPath() string {
 	return filepath.Join(cfgDir, "tusk", "cli.json")
 }
 
+func defaultCfg() *Config {
+	return &Config{
+		AnonymousID:      generateAnonymousID(),
+		AnalyticsEnabled: true,
+		DarkMode:         nil,
+	}
+}
+
 func init() {
 	CLIConfig = defaultCfg()
 
@@ -95,14 +103,6 @@ func init() {
 	if err := json.Unmarshal(data, CLIConfig); err != nil {
 		_ = CLIConfig.Save()
 		return
-	}
-}
-
-func defaultCfg() *Config {
-	return &Config{
-		AnonymousID:      generateAnonymousID(),
-		AnalyticsEnabled: true,
-		DarkMode:         nil,
 	}
 }
 

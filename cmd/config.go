@@ -51,7 +51,7 @@ Available keys:
 			if cfg.DarkMode != nil {
 				fmt.Println(*cfg.DarkMode)
 			} else {
-				fmt.Println("false")
+				fmt.Println("unset")
 			}
 		default:
 			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode", key)
