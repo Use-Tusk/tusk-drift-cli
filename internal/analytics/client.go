@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"os"
 	"runtime"
 	"sync"
@@ -78,9 +79,7 @@ func (c *Client) Track(event string, properties map[string]any) {
 	c.resolveIdentity()
 
 	props := c.baseProperties()
-	for k, v := range properties {
-		props[k] = v
-	}
+	maps.Copy(props, properties)
 
 	capture := posthog.Capture{
 		DistinctId: c.getDistinctID(),

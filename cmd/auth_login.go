@@ -65,7 +65,6 @@ func cacheAuthInfo(bearerToken string) error {
 		return fmt.Errorf("Failed to get auth info: %w", err)
 	}
 
-	// Get CLI config
 	cfg := cliconfig.CLIConfig
 
 	// Extract user info
