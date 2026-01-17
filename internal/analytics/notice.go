@@ -13,7 +13,7 @@ import (
 
 const NoticeText = `Tusk CLI collects usage analytics to help improve the product.
 Before login, data is anonymous. After login, it's associated with your Tusk Cloud account.
-To disable: export TUSK_ANALYTICS_DISABLED=1 or run: tusk analytics disable`
+To disable: export TUSK_ANALYTICS_DISABLED=1 or run: tusk config set analytics false`
 
 // ShowFirstRunNotice displays the analytics notice on first run
 // Returns true if the notice was shown (and we should track first_run)
