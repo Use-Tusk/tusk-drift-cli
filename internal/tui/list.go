@@ -2,12 +2,17 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
@@ -15,6 +20,19 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
+
+// spanTreeNode represents a span in the tree hierarchy
+type spanTreeNode struct {
+	span     *core.Span
+	children []*spanTreeNode
+}
+
+// rowInfo tracks what each visible row represents
+type rowInfo struct {
+	testIndex int    // Index in the tests slice
+	spanID    string // Empty for the root trace row, span ID for child spans
+	isTrace   bool   // True if this is the main trace row (not a child span)
+}
 
 type viewState int
 
@@ -24,18 +42,23 @@ const (
 )
 
 type listModel struct {
-	table        table.Model
-	tests        []runner.Test
-	executor     *runner.Executor
-	width        int
-	height       int
-	state        viewState
-	testExecutor *testExecutorModel
-	selectedTest *runner.Test
-	columns      []table.Column
-	suiteOpts    runner.SuiteSpanOptions
-	err          error
-	sizeWarning  *components.TerminalSizeWarning
+	table               table.Model
+	tests               []runner.Test
+	executor            *runner.Executor
+	width               int
+	height              int
+	state               viewState
+	testExecutor        *testExecutorModel
+	selectedTest        *runner.Test
+	columns             []table.Column
+	suiteOpts           runner.SuiteSpanOptions
+	err                 error
+	sizeWarning         *components.TerminalSizeWarning
+	expandedTraces      map[string]bool // map of trace id to whether it's expanded
+	rowInfos            []rowInfo
+	detailsScrollOffset int
+	detailsCache        []string
+	detailsCursor       int
 }
 
 func ShowTestList(tests []runner.Test) error {
@@ -44,46 +67,26 @@ func ShowTestList(tests []runner.Test) error {
 
 func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, suiteOpts runner.SuiteSpanOptions) error {
 	columns := []table.Column{
-		{Title: "#", Width: 5},
+		{Title: "#", Width: 4},
 		{Title: "Trace ID", Width: 32},
-		{Title: "Type", Width: 12},
-		{Title: "Path", Width: 32},
-		{Title: "Status", Width: 10},
-		{Title: "Duration", Width: 10},
-		{Title: "Recorded At", Width: 32},
+		{Title: "Type", Width: 10},
+		{Title: "Name", Width: 30},
 	}
 
-	rows := []table.Row{}
-	for i, test := range tests {
-		timestamp := test.Timestamp
-		// Parse and format timestamp with local timezone
-		if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
-			timestamp = t.Local().Format("2006-01-02 15:04:05 MST")
-		} else if len(timestamp) >= 19 {
-			// Fallback to old format if parsing fails
-			timestamp = timestamp[:10] + " " + timestamp[11:19]
-		}
-
-		// Use display fields for better GraphQL representation
-		displayType := test.DisplayType
-		if displayType == "" {
-			displayType = test.Type
-		}
-		displayPath := test.DisplayName
-		if displayPath == "" {
-			displayPath = test.Path
-		}
-
-		rows = append(rows, table.Row{
-			fmt.Sprintf("%d", i+1),
-			test.TraceID,
-			displayType,
-			displayPath,
-			test.Status,
-			fmt.Sprintf("%dms", test.Duration),
-			timestamp,
-		})
+	m := &listModel{
+		tests:               tests,
+		executor:            executor,
+		state:               listView,
+		columns:             columns,
+		suiteOpts:           suiteOpts,
+		sizeWarning:         components.NewListViewSizeWarning(),
+		expandedTraces:      make(map[string]bool),
+		detailsScrollOffset: 0,
+		detailsCursor:       -1, // Force initial cache generation
 	}
+
+	rows, rowMapping := m.buildRows()
+	m.rowInfos = rowMapping
 
 	t := table.New(
 		table.WithColumns(columns),
@@ -98,15 +101,7 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, su
 	s.Selected = styles.TableRowSelectedStyle
 	t.SetStyles(s)
 
-	m := &listModel{
-		table:       t,
-		tests:       tests,
-		executor:    executor,
-		state:       listView,
-		columns:     columns,
-		suiteOpts:   suiteOpts,
-		sizeWarning: components.NewListViewSizeWarning(),
-	}
+	m.table = t
 
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		return err
@@ -146,38 +141,66 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "ctrl+c", "esc":
 				return m, tea.Quit
 			case "enter":
-				selectedRow := m.table.SelectedRow()
-				if len(selectedRow) > 0 && m.executor != nil {
-					traceID := selectedRow[1]
-					for _, test := range m.tests {
-						if test.TraceID == traceID {
-							opts := &InteractiveOpts{
-								IsCloudMode:              m.suiteOpts.IsCloudMode,
-								OnBeforeEnvironmentStart: m.createSuiteSpanPreparation(),
-							}
-							executor := newTestExecutorModel([]runner.Test{test}, m.executor, opts)
+				selectedIdx := m.table.Cursor()
+				if selectedIdx >= 0 &&
+					selectedIdx < len(m.rowInfos) &&
+					m.executor != nil {
+					info := m.rowInfos[selectedIdx]
+					test := m.tests[info.testIndex]
+					opts := &InteractiveOpts{
+						IsCloudMode:              m.suiteOpts.IsCloudMode,
+						OnBeforeEnvironmentStart: m.createSuiteSpanPreparation(),
+					}
+					executor := newTestExecutorModel([]runner.Test{test}, m.executor, opts)
 
-							logging.SetTestLogger(executor)
+					logging.SetTestLogger(executor)
 
-							// Set the window size if we have it
-							if m.width > 0 && m.height > 0 {
-								sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
-								updatedModel, _ := executor.Update(sizeMsg)
-								executor = updatedModel.(*testExecutorModel)
-							}
+					if m.width > 0 && m.height > 0 {
+						sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
+						updatedModel, _ := executor.Update(sizeMsg)
+						executor = updatedModel.(*testExecutorModel)
+					}
 
-							m.testExecutor = executor
-							m.selectedTest = &test
-							m.state = testExecutionView
-							// Initialize the test executor
-							return m, m.testExecutor.Init()
-						}
+					m.testExecutor = executor
+					m.selectedTest = &test
+					m.state = testExecutionView
+					// Initialize the test executor
+					return m, m.testExecutor.Init()
+				}
+			case "left", "h":
+				selectedIdx := m.table.Cursor()
+				if selectedIdx >= 0 && selectedIdx < len(m.rowInfos) {
+					info := m.rowInfos[selectedIdx]
+					traceID := m.tests[info.testIndex].TraceID
+					if m.expandedTraces[traceID] {
+						m.expandedTraces[traceID] = false
+						m.rebuildTable()
+					}
+				}
+			case "right", "l":
+				selectedIdx := m.table.Cursor()
+				if selectedIdx >= 0 && selectedIdx < len(m.rowInfos) {
+					info := m.rowInfos[selectedIdx]
+					test := m.tests[info.testIndex]
+					if len(test.Spans) > 0 && !m.expandedTraces[test.TraceID] {
+						m.expandedTraces[test.TraceID] = true
+						m.rebuildTable()
 					}
 				}
 			case "g":
 				m.table.GotoTop()
+				m.detailsScrollOffset = 0
 			case "G":
 				m.table.GotoBottom()
+				m.detailsScrollOffset = 0
+			case "u":
+				if m.detailsScrollOffset > 0 {
+					m.detailsScrollOffset--
+				}
+				return m, nil
+			case "d":
+				m.detailsScrollOffset++
+				return m, nil
 			}
 		case testExecutionView:
 			// Handle return from test execution
@@ -243,8 +266,12 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update the table only in list view
 	if m.state == listView {
+		prevCursor := m.table.Cursor()
 		m.table, cmd = m.table.Update(msg)
 		cmds = append(cmds, cmd)
+		if m.table.Cursor() != prevCursor {
+			m.detailsScrollOffset = 0
+		}
 	}
 
 	if len(cmds) > 0 {
@@ -258,9 +285,11 @@ func (m *listModel) resizeColumns(totalWidth int) {
 		return
 	}
 
+	tableWidth := totalWidth / 2
+
 	// Match padding
 	padPerCol := styles.TableCellStyle.GetPaddingLeft() + styles.TableCellStyle.GetPaddingRight()
-	contentWidth := max(totalWidth-padPerCol*len(m.columns), 0)
+	contentWidth := max(tableWidth-padPerCol*len(m.columns), 0)
 
 	sum := 0
 	for _, c := range m.columns {
@@ -271,11 +300,11 @@ func (m *listModel) resizeColumns(totalWidth int) {
 	copy(cols, m.columns)
 
 	if contentWidth > sum {
-		cols[3].Width += contentWidth - sum // grow Path column
+		cols[3].Width += contentWidth - sum // grow Name column
 	}
 
 	m.table.SetColumns(cols)
-	m.table.SetWidth(totalWidth)
+	m.table.SetWidth(tableWidth)
 }
 
 func (m *listModel) View() string {
@@ -289,28 +318,33 @@ func (m *listModel) View() string {
 		testCount := fmt.Sprintf("%d TESTS", len(m.tests))
 		separator := " • "
 
-		// Calculate available width for help text
-		// Account for: testCount + separator
 		usedWidth := lipgloss.Width(testCount) + lipgloss.Width(separator)
 		availableWidthForHelp := m.width - usedWidth
-
-		// Ensure some space for help text
 		availableWidthForHelp = max(availableWidthForHelp, 20)
 
-		helpText := utils.TruncateWithEllipsis("↑/↓: navigate • g: go to top • G: go to bottom • enter: run test (with default run options) • q: quit", availableWidthForHelp)
+		helpText := utils.TruncateWithEllipsis("↑/↓: navigate • ←/→: collapse/expand • u/d: scroll details • enter: run • q: quit", availableWidthForHelp)
 
 		footer := fmt.Sprintf("%s%s%s", testCount, separator, helpText)
 		help := components.Footer(m.width, footer)
 
-		var infoSection string
-		if m.width < components.ListViewMinRecommendedWidth {
-			infoMsg := "Narrow terminal detected. Some columns may be truncated. Expand window for better visibility."
-			wrappedInfo := utils.WrapText(infoMsg, m.width)
-			infoStyle := styles.DimStyle.Italic(true)
-			infoSection = "\n" + infoStyle.Render(wrappedInfo)
-		}
+		tableWidth := m.width / 2
+		detailsWidth := m.width - tableWidth - 1 // -1 for border
 
-		return fmt.Sprintf("%s\n\n%s\n%s\n%s", header, m.table.View(), infoSection, help)
+		detailsContent := m.renderDetails(detailsWidth, m.height-7)
+
+		detailsStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(lipgloss.Color("240")).
+			Width(detailsWidth).
+			Height(m.height - 7)
+
+		mainContent := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			m.table.View(),
+			detailsStyle.Render(detailsContent),
+		)
+
+		return fmt.Sprintf("%s\n\n%s\n%s", header, mainContent, help)
 
 	case testExecutionView:
 		if m.testExecutor != nil {
@@ -320,6 +354,208 @@ func (m *listModel) View() string {
 	default:
 		return "Unknown state"
 	}
+}
+
+// renderDetails renders the details panel for the currently selected item
+func (m *listModel) renderDetails(width, height int) string {
+	selectedIdx := m.table.Cursor()
+	if selectedIdx < 0 || selectedIdx >= len(m.rowInfos) {
+		return "No selection"
+	}
+
+	// The cache is primarily there to prevent contents from changing from
+	// redraws. The primary culprit is `map`, because iteration order is
+	// random, so redrawing will cause contents to shift
+
+	if selectedIdx != m.detailsCursor {
+		m.detailsCursor = selectedIdx
+		m.detailsCache = m.generateDetailsContent()
+	}
+
+	lines := m.detailsCache
+
+	totalLines := len(lines)
+	if totalLines <= height {
+		m.detailsScrollOffset = 0
+	} else {
+		maxScroll := totalLines - height
+		if m.detailsScrollOffset > maxScroll {
+			m.detailsScrollOffset = maxScroll
+		}
+	}
+
+	visibleLines := make([]string, len(lines))
+	copy(visibleLines, lines)
+
+	if m.detailsScrollOffset > 0 && m.detailsScrollOffset < len(visibleLines) {
+		visibleLines = visibleLines[m.detailsScrollOffset:]
+	}
+	if len(visibleLines) > height {
+		visibleLines = visibleLines[:height]
+	}
+
+	for i, line := range visibleLines {
+		if lipgloss.Width(line) > width-2 {
+			visibleLines[i] = utils.TruncateWithEllipsis(line, width-2)
+		}
+	}
+
+	return strings.Join(visibleLines, "\n")
+}
+
+// lineBuilder helps build lines for the details panel efficiently
+type lineBuilder struct {
+	lines []string
+}
+
+func newLineBuilder(capacity int) *lineBuilder {
+	return &lineBuilder{lines: make([]string, 0, capacity)}
+}
+
+func (b *lineBuilder) add(line string) {
+	b.lines = append(b.lines, line)
+}
+
+func (b *lineBuilder) blank() {
+	b.lines = append(b.lines, "")
+}
+
+func (b *lineBuilder) header(title string) {
+	b.lines = append(b.lines, styles.HeadingStyle.Render(title))
+}
+
+func (b *lineBuilder) field(key string, value any) {
+	b.lines = append(b.lines, fmt.Sprintf("%s: %v", key, value))
+}
+
+func (b *lineBuilder) addSortedMap(header string, m map[string]string) {
+	if len(m) == 0 {
+		return
+	}
+	b.add(header)
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		b.add(fmt.Sprintf("  %s: %s", k, m[k]))
+	}
+}
+
+func (b *lineBuilder) addJSON(label string, data any) {
+	if data == nil {
+		return
+	}
+	b.add(label)
+	jsonBytes, _ := json.MarshalIndent(data, "  ", "  ")
+	for _, line := range strings.Split(string(jsonBytes), "\n") {
+		b.add("  " + line)
+	}
+}
+
+func (b *lineBuilder) build() []string {
+	return b.lines
+}
+
+// generateDetailsContent generates the details content for the currently selected item
+func (m *listModel) generateDetailsContent() []string {
+	selectedIdx := m.table.Cursor()
+	if selectedIdx < 0 || selectedIdx >= len(m.rowInfos) {
+		return []string{"No selection"}
+	}
+
+	info := m.rowInfos[selectedIdx]
+	test := m.tests[info.testIndex]
+
+	b := newLineBuilder(64) // Pre-allocate reasonable capacity
+
+	if info.isTrace {
+		b.header("TRACE DETAILS")
+		b.blank()
+		b.field("Trace ID", test.TraceID)
+		b.field("Type", test.DisplayType)
+		b.field("Method", test.Method)
+		b.field("Path", test.Path)
+		b.field("Status", test.Status)
+		b.field("Duration", fmt.Sprintf("%dms", test.Duration))
+		b.field("Environment", test.Environment)
+		b.field("Timestamp", test.Timestamp)
+		b.field("File", test.FileName)
+		b.field("Spans", len(test.Spans))
+
+		b.blank()
+		b.header("REQUEST")
+		b.field("Method", test.Request.Method)
+		b.field("Path", test.Request.Path)
+		b.addSortedMap("Headers:", test.Request.Headers)
+		b.addJSON("Body:", test.Request.Body)
+
+		b.blank()
+		b.header("RESPONSE")
+		b.field("Status", test.Response.Status)
+		b.addSortedMap("Headers:", test.Response.Headers)
+		b.addJSON("Body:", test.Response.Body)
+	} else {
+		span := m.findSpan(test.Spans, info.spanID)
+		if span == nil {
+			return []string{"Span not found"}
+		}
+
+		b.header("SPAN DETAILS")
+		b.blank()
+		b.field("Span ID", span.SpanId)
+		b.field("Parent ID", span.ParentSpanId)
+		b.field("Name", span.Name)
+		b.field("Package", span.PackageName)
+		b.field("Instrumentation", span.InstrumentationName)
+		b.field("Submodule", span.SubmoduleName)
+		b.field("Kind", span.Kind.String())
+		b.field("Is Root", span.IsRootSpan)
+
+		if span.Duration != nil {
+			b.field("Duration", fmt.Sprintf("%dms", span.Duration.AsDuration().Milliseconds()))
+		}
+		if span.Timestamp != nil {
+			b.field("Timestamp", span.Timestamp.AsTime().Format(time.RFC3339))
+		}
+		if span.Status != nil {
+			b.field("Status Code", span.Status.Code.String())
+			if span.Status.Message != "" {
+				b.field("Status Message", span.Status.Message)
+			}
+		}
+
+		if span.InputValue != nil {
+			b.blank()
+			b.header("INPUT")
+			b.addJSON("", span.InputValue.AsMap())
+		}
+
+		if span.OutputValue != nil {
+			b.blank()
+			b.header("OUTPUT")
+			b.addJSON("", span.OutputValue.AsMap())
+		}
+
+		if span.Metadata != nil {
+			b.blank()
+			b.header("METADATA")
+			b.addJSON("", span.Metadata.AsMap())
+		}
+	}
+
+	return b.build()
+}
+
+// findSpan finds a span by ID in the test's spans
+func (m *listModel) findSpan(spans []*core.Span, spanID string) *core.Span {
+	for _, span := range spans {
+		if span.SpanId == spanID {
+			return span
+		}
+	}
+	return nil
 }
 
 // createSuiteSpanPreparation creates the OnBeforeEnvironmentStart hook for preparing suite spans
@@ -332,4 +568,147 @@ func (m *listModel) createSuiteSpanPreparation() func(*runner.Executor, []runner
 			tests,
 		)
 	}
+}
+
+// buildRows generates table rows and row mapping based on current expand state
+func (m *listModel) buildRows() ([]table.Row, []rowInfo) {
+	rows := []table.Row{}
+	rowMapping := []rowInfo{}
+
+	for i, test := range m.tests {
+		displayType := test.DisplayType
+		if displayType == "" {
+			displayType = test.Type
+		}
+		displayPath := test.DisplayName
+		if displayPath == "" {
+			displayPath = test.Path
+		}
+
+		// Add expand/collapse indicator if test has spans
+		expandIndicator := "  "
+		if len(test.Spans) > 0 {
+			if m.expandedTraces[test.TraceID] {
+				expandIndicator = "▼ "
+			} else {
+				expandIndicator = "▶ "
+			}
+		}
+
+		rows = append(rows, table.Row{
+			fmt.Sprintf("%d", i+1),
+			expandIndicator + test.TraceID,
+			displayType,
+			displayPath,
+		})
+		rowMapping = append(rowMapping, rowInfo{testIndex: i, isTrace: true})
+
+		// If expanded, add child span rows
+		if m.expandedTraces[test.TraceID] && len(test.Spans) > 0 {
+			tree := buildSpanTree(test.Spans)
+			m.addSpanRows(&rows, &rowMapping, tree, i, "", true)
+		}
+	}
+
+	return rows, rowMapping
+}
+
+// buildSpanTree converts a flat list of spans into a tree structure
+func buildSpanTree(spans []*core.Span) []*spanTreeNode {
+	if len(spans) == 0 {
+		return nil
+	}
+
+	// Create a map of span ID to node
+	nodeMap := make(map[string]*spanTreeNode)
+	for _, span := range spans {
+		nodeMap[span.SpanId] = &spanTreeNode{span: span}
+	}
+
+	// Build tree by linking children to parents
+	var roots []*spanTreeNode
+	for _, span := range spans {
+		node := nodeMap[span.SpanId]
+		if span.ParentSpanId == "" || nodeMap[span.ParentSpanId] == nil {
+			// This is a root span
+			roots = append(roots, node)
+		} else {
+			// Add as child to parent
+			parent := nodeMap[span.ParentSpanId]
+			parent.children = append(parent.children, node)
+		}
+	}
+
+	return roots
+}
+
+// addSpanRows recursively adds span rows to the table with tree visualization
+func (m *listModel) addSpanRows(rows *[]table.Row, rowMapping *[]rowInfo, nodes []*spanTreeNode, testIndex int, prefix string, isRoot bool) {
+	for i, node := range nodes {
+		isLast := i == len(nodes)-1
+
+		// Determine tree prefix characters
+		var branchChar, childPrefix string
+		if isRoot {
+			if isLast {
+				branchChar = "  └─ "
+				childPrefix = prefix + "     "
+			} else {
+				branchChar = "  ├─ "
+				childPrefix = prefix + "  │  "
+			}
+		} else {
+			if isLast {
+				branchChar = "└─ "
+				childPrefix = prefix + "   "
+			} else {
+				branchChar = "├─ "
+				childPrefix = prefix + "│  "
+			}
+		}
+
+		// Get span display info
+		spanName := node.span.Name
+		if spanName == "" {
+			spanName = node.span.PackageName
+			if node.span.SubmoduleName != "" {
+				spanName += "." + node.span.SubmoduleName
+			}
+		}
+
+		spanType := node.span.PackageName
+		if spanType == "" {
+			spanType = "span"
+		}
+
+		*rows = append(*rows, table.Row{
+			"", // No row number for child spans
+			prefix + branchChar + node.span.SpanId[:min(8, len(node.span.SpanId))], // Truncated span ID with tree
+			spanType,
+			spanName,
+		})
+		*rowMapping = append(*rowMapping, rowInfo{testIndex: testIndex, spanID: node.span.SpanId, isTrace: false})
+
+		// Recursively add children
+		if len(node.children) > 0 {
+			m.addSpanRows(rows, rowMapping, node.children, testIndex, childPrefix, false)
+		}
+	}
+}
+
+// rebuildTable rebuilds the table rows while preserving cursor position
+func (m *listModel) rebuildTable() {
+	cursor := m.table.Cursor()
+	rows, rowMapping := m.buildRows()
+	m.rowInfos = rowMapping
+	m.table.SetRows(rows)
+
+	// Try to keep cursor at a valid position
+	if cursor >= len(rows) {
+		cursor = len(rows) - 1
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	m.table.SetCursor(cursor)
 }
