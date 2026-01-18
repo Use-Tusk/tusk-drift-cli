@@ -105,7 +105,7 @@ func (l *Logger) handleLogMessage(msg logMessage) {
 // Setup configures the singleton logger (call once at startup)
 func Setup(debug bool, mode OutputMode) {
 	l := Get()
-	l.mode.Store(int32(mode))
+	l.mode.Store(int32(mode)) //nolint:gosec // OutputMode is a small enum (0-1)
 
 	if debug {
 		l.level = slog.LevelDebug
@@ -132,7 +132,7 @@ func SetTUILogger(tui TUILogger) {
 
 // SetMode changes the output mode
 func SetMode(mode OutputMode) {
-	Get().mode.Store(int32(mode))
+	Get().mode.Store(int32(mode)) //nolint:gosec // OutputMode is a small enum (0-1)
 }
 
 // GetMode returns the current output mode
@@ -204,28 +204,28 @@ func UserDeviation(msg string) {
 // Print prints a message without styling or newline
 func Print(msg string) {
 	if GetMode() == ModeHeadless {
-		io.WriteString(os.Stdout, msg)
+		_, _ = io.WriteString(os.Stdout, msg)
 	}
 }
 
 // Println prints a message with newline but no styling
 func Println(msg string) {
 	if GetMode() == ModeHeadless {
-		io.WriteString(os.Stdout, msg+"\n")
+		_, _ = io.WriteString(os.Stdout, msg+"\n")
 	}
 }
 
 // Stderr prints a message to stderr without newline
 func Stderr(msg string) {
 	if GetMode() == ModeHeadless {
-		io.WriteString(os.Stderr, msg)
+		_, _ = io.WriteString(os.Stderr, msg)
 	}
 }
 
 // Stderrln prints a message to stderr with newline
 func Stderrln(msg string) {
 	if GetMode() == ModeHeadless {
-		io.WriteString(os.Stderr, msg+"\n")
+		_, _ = io.WriteString(os.Stderr, msg+"\n")
 	}
 }
 
@@ -233,7 +233,7 @@ func printStyled(msg string) {
 	// User output always goes to stdout for headless mode
 	// TUI mode handles its own display
 	if GetMode() == ModeHeadless {
-		io.WriteString(os.Stdout, msg+"\n")
+		_, _ = io.WriteString(os.Stdout, msg+"\n")
 	}
 }
 
