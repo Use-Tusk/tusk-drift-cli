@@ -36,13 +36,18 @@ const (
 	AuthMethodAPIKey AuthMethod = "api_key"
 )
 
+var CLIConfig *Config
+
 // Config represents the user-level CLI configuration stored at ~/.config/tusk/cli.json
 type Config struct {
-	// Analytics settings
-	AnonymousID      string `json:"anonymous_id"`      // "cli-anon-<uuid>" generated on first run
-	AnalyticsEnabled bool   `json:"analytics_enabled"` // Default true
-	IsTuskDeveloper  bool   `json:"is_tusk_developer"` // For Tusk employees
-	NoticeShown      bool   `json:"notice_shown"`      // First-run notice displayed
+	// User settings (configurable via `tusk config`)
+	AnalyticsEnabled bool  `json:"analytics_enabled"` // Default true, enable usage analytics
+	DarkMode         *bool `json:"dark_mode"`         // nil = auto-detect, true/false = forced
+
+	// Analytics internals
+	AnonymousID     string `json:"anonymous_id"`      // "cli-anon-<uuid>" generated on first run
+	IsTuskDeveloper bool   `json:"is_tusk_developer"` // For Tusk employees
+	NoticeShown     bool   `json:"notice_shown"`      // First-run notice displayed
 
 	// Cached auth info (updated on login/logout, avoids backend calls)
 	UserID             string `json:"user_id,omitempty"`              // From authInfo.User.Id
@@ -68,42 +73,37 @@ func GetPath() string {
 	return filepath.Join(cfgDir, "tusk", "cli.json")
 }
 
-// Load loads the CLI config from disk, creating defaults if it doesn't exist
-func Load() (*Config, error) {
+func defaultCfg() *Config {
+	return &Config{
+		AnonymousID:      generateAnonymousID(),
+		AnalyticsEnabled: true,
+		DarkMode:         nil,
+	}
+}
+
+func init() {
+	CLIConfig = defaultCfg()
+
 	path := GetPath()
 	if path == "" {
-		// No config directory available, return in-memory defaults
-		return &Config{
-			AnonymousID:      generateAnonymousID(),
-			AnalyticsEnabled: true,
-		}, nil
+		return
 	}
 
 	data, err := os.ReadFile(path) //#nosec G304 -- path is from trusted source (UserConfigDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Create default config and save to disk so anonymous ID persists
-			cfg := &Config{
-				AnonymousID:      generateAnonymousID(),
-				AnalyticsEnabled: true,
-			}
-			_ = cfg.Save() // Best effort, ignore errors
-			return cfg, nil
+			_ = CLIConfig.Save()
+			return
 		}
-		return nil, err
+		panic(err)
 	}
 
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+	// json.Unmarshal doesn't affect fields that are not in the JSON
+	// https://go.dev/play/p/p9rCScN8GcR
+	if err := json.Unmarshal(data, CLIConfig); err != nil {
+		_ = CLIConfig.Save()
+		return
 	}
-
-	// Ensure anonymous ID exists (migration for old configs)
-	if cfg.AnonymousID == "" {
-		cfg.AnonymousID = generateAnonymousID()
-	}
-
-	return &cfg, nil
 }
 
 // Save persists the config to disk
@@ -139,18 +139,12 @@ func IsAnalyticsEnabled() bool {
 		return false
 	}
 
-	cfg, err := Load()
-	if err != nil {
-		// If we can't load config, default to enabled
-		return true
-	}
-
 	// Developer mode disables analytics
-	if cfg.IsTuskDeveloper {
+	if CLIConfig.IsTuskDeveloper {
 		return false
 	}
 
-	return cfg.AnalyticsEnabled
+	return CLIConfig.AnalyticsEnabled
 }
 
 // IsCI returns true if running in a CI environment

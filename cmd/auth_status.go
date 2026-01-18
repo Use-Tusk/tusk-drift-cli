@@ -32,17 +32,12 @@ var statusCmd = &cobra.Command{
 			}
 		}
 
-		// Get effective auth method
 		apiKey := cliconfig.GetAPIKey()
 		_, effectiveMethod := cliconfig.GetAuthMethod(auth0LoggedIn)
 		apiKeyPresent := apiKey != ""
 
-		// Get client ID from cliconfig (for JWT auth)
-		var localClientID string
-		var clientSource cliconfig.ClientIDSource
-		if cfg, err := cliconfig.Load(); err == nil {
-			localClientID, clientSource = cfg.GetClientIDWithSource()
-		}
+		cfg := cliconfig.CLIConfig
+		localClientID, clientSource := cfg.GetClientIDWithSource()
 
 		// Check cloud connection (if we have credentials)
 		var cloudResp *backend.GetAuthInfoResponse

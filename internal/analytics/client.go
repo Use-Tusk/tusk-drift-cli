@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"os"
 	"runtime"
 	"sync"
@@ -43,11 +44,7 @@ func NewClient() *Client {
 		return nil
 	}
 
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		slog.Debug("Failed to load CLI config for analytics", "error", err)
-		return nil
-	}
+	cfg := cliconfig.CLIConfig
 
 	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
 		Endpoint: posthogEndpoint,
@@ -82,9 +79,7 @@ func (c *Client) Track(event string, properties map[string]any) {
 	c.resolveIdentity()
 
 	props := c.baseProperties()
-	for k, v := range properties {
-		props[k] = v
-	}
+	maps.Copy(props, properties)
 
 	capture := posthog.Capture{
 		DistinctId: c.getDistinctID(),

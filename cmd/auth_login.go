@@ -65,11 +65,7 @@ func cacheAuthInfo(bearerToken string) error {
 		return fmt.Errorf("Failed to get auth info: %w", err)
 	}
 
-	// Load or create CLI config
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		return fmt.Errorf("Failed to load CLI config: %w", err)
-	}
+	cfg := cliconfig.CLIConfig
 
 	// Extract user info
 	userID := resp.User.GetId()

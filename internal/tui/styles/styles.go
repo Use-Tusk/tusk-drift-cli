@@ -5,10 +5,12 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 )
 
 var (
-	HasDarkBackground = lipgloss.HasDarkBackground()
+	HasDarkBackground = initDarkBackground()
 
 	PrimaryColor = func() string {
 		if HasDarkBackground {
@@ -124,4 +126,13 @@ func HuhTheme() *huh.Theme {
 	t.Focused.SelectedOption = lipgloss.NewStyle().Foreground(primary)
 
 	return t
+}
+
+// initDarkBackground determines if dark background should be used from config.
+func initDarkBackground() bool {
+	cfg := cliconfig.CLIConfig
+	if cfg.DarkMode == nil {
+		return lipgloss.HasDarkBackground()
+	}
+	return *cfg.DarkMode
 }

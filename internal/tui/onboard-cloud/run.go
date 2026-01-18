@@ -113,9 +113,9 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 		slog.Debug("Found clients", "ids", ids)
 
 		// Check if there's a previously selected client in cli.json
-		if cliCfg, err := cliconfig.Load(); err == nil && cliCfg.SelectedClientID != "" {
+		if cliconfig.CLIConfig.SelectedClientID != "" {
 			for i, c := range m.AvailableClients {
-				if c.ID == cliCfg.SelectedClientID {
+				if c.ID == cliconfig.CLIConfig.SelectedClientID {
 					m.DefaultClientIndex = i + 1 // 1-based index
 					slog.Debug("Found previously selected client", "id", c.ID, "index", m.DefaultClientIndex)
 					break

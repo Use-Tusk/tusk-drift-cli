@@ -34,11 +34,9 @@ func logout(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clear cached auth info from CLI config
-	cfg, err := cliconfig.Load()
-	if err == nil {
-		cfg.ClearAuthInfo()
-		_ = cfg.Save() // Best effort, don't fail logout if this fails
-	}
+	cfg := cliconfig.CLIConfig
+	cfg.ClearAuthInfo()
+	_ = cfg.Save() // Best effort, don't fail logout if this fails
 
 	fmt.Println("✓ Successfully logged out")
 	return nil
