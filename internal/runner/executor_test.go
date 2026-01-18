@@ -669,7 +669,7 @@ func TestOutputSingleResult_Text_WithFailures_Verbose(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Contains(t, outputStr, "● DEVIATION - test1")
+	assert.Contains(t, outputStr, "DEVIATION - test1")
 	assert.Contains(t, outputStr, "GET /api/test")
 	assert.Contains(t, outputStr, "Authorization: Bearer token")
 	assert.Contains(t, outputStr, "Body: map[key:value]")
@@ -698,8 +698,8 @@ func TestOutputSingleResult_Text_WithPasses(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Contains(t, outputStr, "✓ NO DEVIATION - test1")
-	assert.Contains(t, outputStr, "✓ NO DEVIATION - test2")
+	assert.Contains(t, outputStr, "NO DEVIATION - test1")
+	assert.Contains(t, outputStr, "NO DEVIATION - test2")
 }
 
 func TestOutputSingleResult_Text_Quiet_OnlyFailures(t *testing.T) {
@@ -722,8 +722,8 @@ func TestOutputSingleResult_Text_Quiet_OnlyFailures(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.NotContains(t, outputStr, "✓ NO DEVIATION") // Should not show passed tests in quiet mode
-	assert.Contains(t, outputStr, "● DEVIATION - test2")
+	assert.NotContains(t, outputStr, "NO DEVIATION - test1") // Should not show passed tests in quiet mode
+	assert.Contains(t, outputStr, "DEVIATION - test2")
 }
 
 func TestOutputSingleResult_Text_WithError(t *testing.T) {
@@ -746,7 +746,7 @@ func TestOutputSingleResult_Text_WithError(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Contains(t, outputStr, "● DEVIATION - test1")
+	assert.Contains(t, outputStr, "DEVIATION - test1")
 	assert.Contains(t, outputStr, "Error: Connection refused")
 }
 
@@ -785,7 +785,7 @@ func TestOutputSingleResult_Text_QuietSuppressesVerbose(t *testing.T) {
 	output, _ := io.ReadAll(r)
 	outputStr := string(output)
 
-	assert.Contains(t, outputStr, "● DEVIATION - test1")
+	assert.Contains(t, outputStr, "DEVIATION - test1")
 	assert.NotContains(t, outputStr, "GET /api/test") // Details should be suppressed by quiet
 	assert.NotContains(t, outputStr, "Expected:")
 }

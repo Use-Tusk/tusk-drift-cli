@@ -16,6 +16,7 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui"
@@ -233,7 +234,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			driftRunID = id
 			if !interactive {
-				fmt.Fprintf(os.Stderr, "Tusk Drift run ID: %s\n", driftRunID)
+				log.Stderrln(fmt.Sprintf("Tusk Drift run ID: %s", driftRunID))
 			}
 
 			statusReq := &backend.UpdateDriftRunCIStatusRequest{
@@ -383,10 +384,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 
 		if print && outputFormat == "json" {
-			fmt.Println("[]")
-			fmt.Fprintln(os.Stderr, noTestsMsg)
+			log.Println("[]")
+			log.Stderrln(noTestsMsg)
 		} else {
-			fmt.Println(noTestsMsg)
+			log.Println(noTestsMsg)
 		}
 
 		if cloud && client != nil && (ci || isValidation) {
@@ -405,9 +406,9 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	if !interactive && !quiet {
 		if isValidation {
-			fmt.Fprintf(os.Stderr, "\n➤ Found %d traces to validate\n", len(tests))
+			log.Stderrln(fmt.Sprintf("\n➤ Found %d traces to validate", len(tests)))
 		} else if !cloud {
-			fmt.Fprintf(os.Stderr, "\n➤ Loaded %d tests from local traces\n", len(tests))
+			log.Stderrln(fmt.Sprintf("\n➤ Loaded %d tests from local traces", len(tests)))
 		}
 	}
 
@@ -439,7 +440,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		// Log warnings if any
 		for _, warning := range groupResult.Warnings {
 			if !quiet {
-				fmt.Fprintf(os.Stderr, "⚠️  %s\n", warning)
+				log.Stderrln(fmt.Sprintf("⚠️  %s", warning))
 			}
 		}
 
@@ -578,7 +579,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		if groupResult != nil {
 			envCount = len(groupResult.Groups)
 		}
-		fmt.Fprintf(os.Stderr, "➤ Running %d tests across %d environment(s) (concurrency: %d)...\n\n", len(tests), envCount, executor.GetConcurrency())
+		log.Stderrln(fmt.Sprintf("➤ Running %d tests across %d environment(s) (concurrency: %d)...\n", len(tests), envCount, executor.GetConcurrency()))
 	}
 
 	// Step 4: Run tests by environment
@@ -595,11 +596,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 					slog.Warn("Headless: cloud finalize failed", "error", err)
 				}
 				mu.Lock()
-				fmt.Fprintf(os.Stderr, "Successfully uploaded %d/%d test results", uploadedCount, attemptedCount)
+				log.Stderr(fmt.Sprintf("Successfully uploaded %d/%d test results", uploadedCount, attemptedCount))
 				if attemptedCount > uploadedCount && lastUploadErr != nil {
-					fmt.Fprintf(os.Stderr, ". Last error: %v", lastUploadErr)
+					log.Stderr(fmt.Sprintf(". Last error: %v", lastUploadErr))
 				}
-				fmt.Fprintln(os.Stderr)
+				log.Stderrln("")
 				mu.Unlock()
 			}
 
@@ -608,7 +609,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	} else {
 		// Fallback: Original single-environment flow (for interactive mode or edge cases)
 		if !interactive && !quiet {
-			fmt.Fprintf(os.Stderr, "➤ Starting environment...\n")
+			log.Stderrln("➤ Starting environment...")
 		}
 
 		if err = executor.StartEnvironment(); err != nil {
@@ -625,7 +626,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			fmt.Fprint(os.Stderr, executor.GetStartupFailureHelpMessage())
+			log.Stderr(executor.GetStartupFailureHelpMessage())
 			return fmt.Errorf("failed to start environment: %w", err)
 		}
 		defer func() {
@@ -635,8 +636,8 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}()
 
 		if !interactive && !quiet {
-			fmt.Fprintf(os.Stderr, "  ✓ Environment ready\n")
-			fmt.Fprintf(os.Stderr, "➤ Running %d tests (concurrency: %d)...\n\n", len(tests), executor.GetConcurrency())
+			log.Stderrln("  ✓ Environment ready")
+			log.Stderrln(fmt.Sprintf("➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency()))
 		}
 
 		results, err = executor.RunTests(tests)
@@ -649,11 +650,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 					slog.Warn("Headless: cloud finalize failed", "error", err)
 				}
 				mu.Lock()
-				fmt.Fprintf(os.Stderr, "Successfully uploaded %d/%d test results", uploadedCount, attemptedCount)
+				log.Stderr(fmt.Sprintf("Successfully uploaded %d/%d test results", uploadedCount, attemptedCount))
 				if attemptedCount > uploadedCount && lastUploadErr != nil {
-					fmt.Fprintf(os.Stderr, ". Last error: %v", lastUploadErr)
+					log.Stderr(fmt.Sprintf(". Last error: %v", lastUploadErr))
 				}
-				fmt.Fprintln(os.Stderr)
+				log.Stderrln("")
 				mu.Unlock()
 			}
 
@@ -684,14 +685,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 			slog.Warn("Headless: cloud finalize failed", "error", err)
 		}
 		if isValidation {
-			fmt.Println("\nSuite validation completed - backend will process results and update suite")
+			log.Println("\nSuite validation completed - backend will process results and update suite")
 		}
 		mu.Lock()
-		fmt.Fprintf(os.Stderr, "\nSuccessfully uploaded %d/%d test results", uploadedCount, attemptedCount)
+		log.Stderr(fmt.Sprintf("\nSuccessfully uploaded %d/%d test results", uploadedCount, attemptedCount))
 		if attemptedCount > uploadedCount && lastUploadErr != nil {
-			fmt.Fprintf(os.Stderr, ". Last error: %v", lastUploadErr)
+			log.Stderr(fmt.Sprintf(". Last error: %v", lastUploadErr))
 		}
-		fmt.Fprintln(os.Stderr)
+		log.Stderrln("")
 		mu.Unlock()
 	}
 
