@@ -1,5 +1,4 @@
-# AI coding agent files
-.claude/
+.claude/settings.local.json
 
 # Binaries for programs and plugins
 *.exe
