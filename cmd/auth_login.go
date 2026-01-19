@@ -10,6 +10,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
@@ -27,9 +28,7 @@ func init() {
 }
 
 func login(cmd *cobra.Command, args []string) error {
-	fmt.Print("🔐 Tusk CLI Authentication")
-	fmt.Println()
-	fmt.Println()
+	log.Println("🔐 Tusk CLI Authentication\n")
 
 	authenticator, err := auth.NewAuthenticator()
 	if err != nil {
@@ -41,13 +40,13 @@ func login(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("❌ Login failed: %w", err)
 	}
 
-	fmt.Printf("✅ Authenticated as %s\n", authenticator.Email)
-	fmt.Print("Fetching organization info...")
+	log.Println(fmt.Sprintf("✅ Authenticated as %s", authenticator.Email))
+	log.Print("Fetching organization info...")
 
 	// Fetch auth info from backend and cache it
 	if err := cacheAuthInfo(authenticator.AccessToken); err != nil {
 		// Log but don't fail - auth succeeded, caching is optional
-		fmt.Printf("⚠️  Could not cache user info: %v\n", err)
+		log.Println(fmt.Sprintf("⚠️  Could not cache user info: %v", err))
 	}
 
 	return nil
@@ -65,11 +64,7 @@ func cacheAuthInfo(bearerToken string) error {
 		return fmt.Errorf("Failed to get auth info: %w", err)
 	}
 
-	// Load or create CLI config
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		return fmt.Errorf("Failed to load CLI config: %w", err)
-	}
+	cfg := cliconfig.CLIConfig
 
 	// Extract user info
 	userID := resp.User.GetId()
@@ -92,14 +87,11 @@ func cacheAuthInfo(bearerToken string) error {
 		if resp.Clients[0].Name != nil {
 			selectedClientName = *resp.Clients[0].Name
 		}
-		fmt.Printf(" done\n\n📋 Organization: %s (%s)\n", selectedClientName, selectedClientID)
+		log.Println(fmt.Sprintf(" done\n\n📋 Organization: %s (%s)", selectedClientName, selectedClientID))
 	case 0:
-		fmt.Println(" done")
-		fmt.Println()
+		log.Println(" done\n")
 	default:
-		fmt.Print(" done")
-		fmt.Println()
-		fmt.Println()
+		log.Println(" done\n")
 		// Check if previously selected client is still valid
 		if cfg.SelectedClientID != "" {
 			for _, c := range resp.Clients {
@@ -110,7 +102,7 @@ func cacheAuthInfo(bearerToken string) error {
 						selectedClientName = *c.Name
 					}
 					boldStyle := lipgloss.NewStyle().Bold(true)
-					fmt.Printf("📋 Organization: %s (%s) - remembered from last session, use %s to change\n", selectedClientName, selectedClientID, boldStyle.Render("tusk auth select-org"))
+					log.Println(fmt.Sprintf("📋 Organization: %s (%s) - remembered from last session, use %s to change", selectedClientName, selectedClientID, boldStyle.Render("tusk auth select-org")))
 					break
 				}
 			}
@@ -161,6 +153,6 @@ func promptClientSelection(clients []*backend.AuthInfoClient, currentID string) 
 		return clients[0].Id, name
 	}
 
-	fmt.Printf("📋 Selected organization: %s (%s)\n", selected.Label, selected.ID)
+	log.Println(fmt.Sprintf("📋 Selected organization: %s (%s)", selected.Label, selected.ID))
 	return selected.ID, selected.Label
 }

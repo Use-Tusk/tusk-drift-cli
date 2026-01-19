@@ -17,6 +17,7 @@ import (
 
 	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
@@ -589,71 +590,59 @@ func outputSingleText(result TestResult, test Test, quiet bool, verbose bool) {
 		return
 	}
 
-	green := ""
-	orange := ""
-	yellow := ""
-	red := ""
-	reset := ""
-
-	if utils.IsTerminal() && os.Getenv("NO_COLOR") == "" {
-		green = "\033[32m"
-		orange = "\033[38;5;208m"
-		yellow = "\033[33m"
-		red = "\033[31m"
-		reset = "\033[0m"
-	}
-
 	// Handle server crash scenario
 	if result.CrashedServer {
-		fmt.Printf("%s❌ SERVER CRASHED - %s (%dms)%s", red, result.TestID, result.Duration, reset)
+		msg := fmt.Sprintf("SERVER CRASHED - %s (%dms)", result.TestID, result.Duration)
 		if result.RetriedAfterCrash {
-			fmt.Printf(" %s[retried]%s\n", yellow, reset)
+			log.UserError(msg + " [retried]")
 		} else {
-			fmt.Println()
+			log.UserError(msg)
 		}
 		if result.Error != "" {
-			fmt.Printf("  Error: %s\n", result.Error)
+			log.Println(fmt.Sprintf("  Error: %s", result.Error))
 		}
 		return
 	}
 
 	if result.Passed {
 		if !quiet {
-			suffix := ""
+			msg := fmt.Sprintf("NO DEVIATION - %s (%dms)", result.TestID, result.Duration)
 			if result.RetriedAfterCrash {
-				suffix = fmt.Sprintf(" %s[retried after crash]%s", yellow, reset)
+				log.UserSuccess(msg + " [retried after crash]")
+			} else {
+				log.UserSuccess(msg)
 			}
-			fmt.Printf("%s✓ NO DEVIATION - %s (%dms)%s%s\n", green, result.TestID, result.Duration, reset, suffix)
 		}
 	} else {
-		suffix := ""
+		msg := fmt.Sprintf("DEVIATION - %s (%dms)", result.TestID, result.Duration)
 		if result.RetriedAfterCrash {
-			suffix = fmt.Sprintf(" %s[retried after crash]%s", yellow, reset)
+			log.UserDeviation(msg + " [retried after crash]")
+		} else {
+			log.UserDeviation(msg)
 		}
-		fmt.Printf("%s● DEVIATION - %s (%dms)%s%s\n", orange, result.TestID, result.Duration, reset, suffix)
 
 		if verbose && !quiet && len(result.Deviations) > 0 {
-			fmt.Printf("  Request: %s %s\n", test.Request.Method, test.Request.Path)
+			log.Println(fmt.Sprintf("  Request: %s %s", test.Request.Method, test.Request.Path))
 			if len(test.Request.Headers) > 0 {
-				fmt.Printf("  Headers:\n")
+				log.Println("  Headers:")
 				for key, value := range test.Request.Headers {
-					fmt.Printf("    %s: %s\n", key, value)
+					log.Println(fmt.Sprintf("    %s: %s", key, value))
 				}
 			}
 			if test.Request.Body != nil {
-				fmt.Printf("  Body: %v\n", test.Request.Body)
+				log.Println(fmt.Sprintf("  Body: %v", test.Request.Body))
 			}
-			fmt.Println()
+			log.Println("")
 
 			for _, dev := range result.Deviations {
-				fmt.Printf("  %sDeviation: %s%s\n", yellow, dev.Description, reset)
-				fmt.Printf("    Expected: %v\n", dev.Expected)
-				fmt.Printf("    Actual: %v\n", dev.Actual)
+				log.UserWarn(fmt.Sprintf("  Deviation: %s", dev.Description))
+				log.Println(fmt.Sprintf("    Expected: %v", dev.Expected))
+				log.Println(fmt.Sprintf("    Actual: %v", dev.Actual))
 			}
 		}
 
 		if result.Error != "" {
-			fmt.Printf("  Error: %s\n", result.Error)
+			log.Println(fmt.Sprintf("  Error: %s", result.Error))
 		}
 	}
 }

@@ -216,10 +216,7 @@ func loadExistingConfig(m *Model) error {
 
 // saveSelectedClientToCLIConfig persists the selected client to CLI config
 func saveSelectedClientToCLIConfig(clientID, clientName string) {
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		return // Silently fail - not critical
-	}
+	cfg := cliconfig.CLIConfig
 	cfg.SelectedClientID = clientID
 	cfg.SelectedClientName = clientName
 	_ = cfg.Save()

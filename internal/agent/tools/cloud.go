@@ -297,10 +297,7 @@ func (ct *CloudTools) GetClients(input json.RawMessage) (string, error) {
 	}
 
 	// If there's a previously selected client, note it
-	selectedID := ""
-	if cliCfg, err := cliconfig.Load(); err == nil && cliCfg.SelectedClientID != "" {
-		selectedID = cliCfg.SelectedClientID
-	}
+	selectedID := cliconfig.CLIConfig.SelectedClientID
 
 	result := struct {
 		Clients          []ClientInfo `json:"clients"`
@@ -331,10 +328,7 @@ func (ct *CloudTools) SelectClient(input json.RawMessage) (string, error) {
 	ct.clientID = params.ClientID
 	ct.clientName = params.ClientName
 
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		cfg = &cliconfig.Config{}
-	}
+	cfg := cliconfig.CLIConfig
 	cfg.SelectedClientID = params.ClientID
 	cfg.SelectedClientName = params.ClientName
 	if err := cfg.Save(); err != nil {

@@ -32,7 +32,6 @@ func selectOrg(cmd *cobra.Command, args []string) error {
 
 	hasJWT := authenticator.TryExistingAuth(context.Background()) == nil
 
-	// Determine effective auth method
 	_, effectiveMethod := cliconfig.GetAuthMethod(hasJWT)
 
 	switch effectiveMethod {
@@ -66,11 +65,7 @@ func selectOrg(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Show current selection
-	cfg, err := cliconfig.Load()
-	if err != nil {
-		return fmt.Errorf("Failed to load CLI config: %w", err)
-	}
+	cfg := cliconfig.CLIConfig
 
 	// Prompt for new selection (selector shows current selection)
 	selectedID, selectedName := promptClientSelection(resp.Clients, cfg.SelectedClientID)
