@@ -1,57 +1,33 @@
 package logging
 
 import (
-	"sync"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 // TestLogger interface for logging to specific tests
-type TestLogger interface {
-	LogToCurrentTest(testID, message string)
-	LogToService(message string)
-}
-
-// Global registry for the current test logger
-var (
-	currentLogger TestLogger
-	loggerMu      sync.RWMutex
-)
+// Kept for backwards compatibility with TUI implementations
+type TestLogger = log.TUILogger
 
 // SetTestLogger sets the global test logger (called by TUI)
+// Delegates to the centralized log package
 func SetTestLogger(logger TestLogger) {
-	loggerMu.Lock()
-	defer loggerMu.Unlock()
-	currentLogger = logger
+	log.SetTUILogger(logger)
 }
 
 // LogToCurrentTest logs to the currently active test
+// Delegates to the centralized log package
 func LogToCurrentTest(testID, message string) {
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-
-	if currentLogger != nil {
-		currentLogger.LogToCurrentTest(testID, message)
-	}
+	log.TestLog(testID, message)
 }
 
 // LogToService logs to service logs
+// Delegates to the centralized log package
 func LogToService(message string) {
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-
-	if currentLogger != nil {
-		currentLogger.LogToService(message)
-	}
+	log.ServiceLog(message)
 }
 
 // LogToCurrentTestOrService tries to log to current test, falls back to service
+// Delegates to the centralized log package
 func LogToCurrentTestOrService(testID, message string) {
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	if currentLogger != nil {
-		if testID != "" {
-			currentLogger.LogToCurrentTest(testID, message)
-		} else {
-			currentLogger.LogToService(message)
-		}
-	}
+	log.TestOrServiceLog(testID, message)
 }

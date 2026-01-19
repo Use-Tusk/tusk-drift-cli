@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
@@ -20,7 +21,6 @@ var (
 	cfgFile     string
 	debug       bool
 	showVersion bool
-	logger      *slog.Logger
 
 	// Cleanup infrastructure
 	cleanupFuncs []func()
@@ -144,19 +144,8 @@ func init() {
 }
 
 func setupLogger() {
-	level := slog.LevelInfo
-	if debug {
-		level = slog.LevelDebug
-	}
-
-	opts := &slog.HandlerOptions{
-		Level: level,
-	}
-
-	handler := slog.NewTextHandler(os.Stderr, opts)
-
-	logger = slog.New(handler)
-	slog.SetDefault(logger)
+	// Default to headless mode; run command will set TUI mode if needed
+	log.Setup(debug, log.ModeHeadless)
 }
 
 // RegisterCleanup adds a cleanup function to be called on program termination
