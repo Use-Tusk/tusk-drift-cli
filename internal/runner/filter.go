@@ -171,3 +171,17 @@ func extractGraphQLOperationName(displayName string) string {
 	}
 	return displayName
 }
+
+// FilterLocalTestsForExecution filters out local tests with HTTP status >= 300.
+// These tests are skipped for replay but their spans remain available for mock matching.
+// Returns (testsToExecute, excludedCount).
+func FilterLocalTestsForExecution(tests []Test) (testsToExecute []Test, excludedCount int) {
+	for _, t := range tests {
+		if t.Response.Status >= 300 {
+			excludedCount++
+			continue
+		}
+		testsToExecute = append(testsToExecute, t)
+	}
+	return testsToExecute, excludedCount
+}

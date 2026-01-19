@@ -431,6 +431,57 @@ func runTests(cmd *cobra.Command, args []string) error {
 	// Group tests by environment before starting
 	var groupResult *runner.EnvironmentExtractionResult
 	if !deferLoadTests {
+		// For local traces: build suite spans with ALL tests first (for mock matching),
+		// then filter out error responses (status >= 300) for execution only.
+		// This ensures spans from error traces are still available for mock matching.
+		testsForSuiteSpans := tests
+		if !cloud {
+			// Build suite spans with ALL tests before filtering
+			if err := runner.PrepareAndSetSuiteSpans(
+				context.Background(),
+				executor,
+				runner.SuiteSpanOptions{
+					IsCloudMode:            cloud,
+					Client:                 client,
+					AuthOptions:            authOptions,
+					ServiceID:              cfg.Service.ID,
+					TraceTestID:            traceTestID,
+					Interactive:            false,
+					Quiet:                  quiet,
+					AllowSuiteWideMatching: isValidation,
+				},
+				testsForSuiteSpans,
+			); err != nil {
+				slog.Warn("Failed to prepare suite spans", "error", err)
+			}
+
+			// Filter out error responses for execution
+			var excludedCount int
+			tests, excludedCount = runner.FilterLocalTestsForExecution(tests)
+			if excludedCount > 0 && !quiet {
+				log.Stderrln(fmt.Sprintf("➤ Skipping %d tests with HTTP status >= 300 (spans still available for mocking)", excludedCount))
+			}
+		} else {
+			// Cloud mode: no automatic filtering, prepare suite spans with all tests
+			if err := runner.PrepareAndSetSuiteSpans(
+				context.Background(),
+				executor,
+				runner.SuiteSpanOptions{
+					IsCloudMode:            cloud,
+					Client:                 client,
+					AuthOptions:            authOptions,
+					ServiceID:              cfg.Service.ID,
+					TraceTestID:            traceTestID,
+					Interactive:            false,
+					Quiet:                  quiet,
+					AllowSuiteWideMatching: isValidation,
+				},
+				tests,
+			); err != nil {
+				slog.Warn("Failed to prepare suite spans", "error", err)
+			}
+		}
+
 		groupResult, err = runner.GroupTestsByEnvironment(tests, preAppStartSpans)
 		if err != nil {
 			cmd.SilenceUsage = true
@@ -442,26 +493,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if !quiet {
 				log.Stderrln(fmt.Sprintf("⚠️  %s", warning))
 			}
-		}
-
-		// Call PrepareAndSetSuiteSpans ONCE with ALL tests
-		// This means tests for one environment can find mocks across all environments if not found in their own trace
-		if err := runner.PrepareAndSetSuiteSpans(
-			context.Background(),
-			executor,
-			runner.SuiteSpanOptions{
-				IsCloudMode:            cloud,
-				Client:                 client,
-				AuthOptions:            authOptions,
-				ServiceID:              cfg.Service.ID,
-				TraceTestID:            traceTestID,
-				Interactive:            false,
-				Quiet:                  quiet,
-				AllowSuiteWideMatching: isValidation,
-			},
-			tests,
-		); err != nil {
-			slog.Warn("Failed to prepare suite spans", "error", err)
 		}
 	}
 
@@ -501,13 +532,18 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 
 		// Create LoadTests function based on mode
+		// For local traces, we need to store all tests (before filtering) for suite span preparation,
+		// while returning filtered tests for execution.
+		var allTestsForSuiteSpans []runner.Test
 		var loadTestsFn func(ctx context.Context) ([]runner.Test, error)
 		if isValidation {
 			loadTestsFn = func(ctx context.Context) ([]runner.Test, error) {
-				return fetchValidationTraceTests(ctx, client, authOptions, cfg.Service.ID)
+				tests, err := fetchValidationTraceTests(ctx, client, authOptions, cfg.Service.ID)
+				allTestsForSuiteSpans = tests
+				return tests, err
 			}
 		} else {
-			loadTestsFn = makeLoadTestsFunc(
+			baseLoadTestsFn := makeLoadTestsFunc(
 				executor,
 				client,
 				authOptions,
@@ -520,6 +556,24 @@ func runTests(cmd *cobra.Command, args []string) error {
 				true,
 				quiet,
 			)
+			loadTestsFn = func(ctx context.Context) ([]runner.Test, error) {
+				tests, err := baseLoadTestsFn(ctx)
+				if err != nil {
+					return nil, err
+				}
+				// Store all tests for suite span preparation
+				allTestsForSuiteSpans = tests
+
+				// For local traces: filter out error responses for execution
+				if !cloud {
+					var excludedCount int
+					tests, excludedCount = runner.FilterLocalTestsForExecution(tests)
+					if excludedCount > 0 {
+						logging.LogToService(fmt.Sprintf("Skipping %d tests with HTTP status >= 300 (spans still available for mocking)", excludedCount))
+					}
+				}
+				return tests, nil
+			}
 		}
 
 		_, err := tui.RunTestsInteractiveWithOpts(nil, executor, &tui.InteractiveOpts{
@@ -528,6 +582,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 			IsCloudMode:           cloud,
 			LoadTests:             loadTestsFn,
 			OnBeforeEnvironmentStart: func(exec *runner.Executor, tests []runner.Test) error {
+				// Use allTestsForSuiteSpans (includes error tests) for mock matching
+				testsForSpans := allTestsForSuiteSpans
+				if len(testsForSpans) == 0 {
+					testsForSpans = tests // Fallback to passed tests if not set
+				}
 				return runner.PrepareAndSetSuiteSpans(
 					context.Background(),
 					exec,
@@ -540,7 +599,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 						Interactive:            true,
 						AllowSuiteWideMatching: isValidation,
 					},
-					tests,
+					testsForSpans,
 				)
 			},
 			OnAllCompleted: func(results []runner.TestResult, tests []runner.Test, exec *runner.Executor) {
