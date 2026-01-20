@@ -216,7 +216,7 @@ type TUIModel struct {
 
 type logEntry struct {
 	timestamp time.Time
-	level     string // "phase", "tool-start", "tool-complete", "agent", "error", "success", "dim", "spacing", "plain"
+	level     string // "phase", "tool-start", "tool-complete", "agent", "error", "warning", "success", "dim", "spacing", "plain"
 	message   string
 	toolName  string // for tool entries
 }
@@ -1095,7 +1095,7 @@ func (m *TUIModel) updateViewportSize() {
 	case m.userSelectMode:
 		footerHeight = len(m.userSelectOptions) + 4 // header + options + empty line + help text
 	case m.permissionMode:
-		footerHeight = 2 // prompt + help text
+		footerHeight = 1 // just help text (prompt is shown in content area)
 	case m.permissionDenyMode:
 		footerHeight = 2 // input line + help text
 	case m.portConflictMode:
@@ -1145,6 +1145,14 @@ func (m *TUIModel) updateViewportContent() {
 		lines = append(lines, "")
 		execText := m.renderExecutingIndicator()
 		lines = append(lines, execText)
+	}
+
+	// Show permission prompt after executing indicator for better visibility
+	if m.permissionMode {
+		lines = append(lines, "")
+		displayName := getToolDisplayName(m.permissionTool)
+		promptStyle := styles.WarningStyle
+		lines = append(lines, promptStyle.Render(fmt.Sprintf("Allow %s?", displayName)))
 	}
 
 	if m.thinking && m.lastToolComplete && m.currentTool == "" {
@@ -1205,6 +1213,8 @@ func (m *TUIModel) styleLogEntry(entry logEntry) string {
 		return styles.SuccessStyle.Render(entry.message)
 	case "error":
 		return styles.ErrorStyle.Render(entry.message)
+	case "warning":
+		return styles.WarningStyle.Render(entry.message)
 	case "success":
 		return styles.SuccessStyle.Render(entry.message)
 	case "agent":
@@ -1393,11 +1403,8 @@ func (m *TUIModel) renderFooter() string {
 		helpText = components.Footer(m.width, "Enter: submit • Esc: back")
 		return inputLine + "\n" + helpText
 	case m.permissionMode:
-		displayName := getToolDisplayName(m.permissionTool)
-		prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(
-			fmt.Sprintf("Allow %s?", displayName))
 		helpText = components.Footer(m.width, "y: approve • a: approve all • n: deny & suggest alternative • Ctrl+C: cancel")
-		return prompt + "\n" + helpText
+		return helpText
 	case m.completed:
 		helpText = components.Footer(m.width, "q/Esc: quit")
 	case m.shutdownRequested:
