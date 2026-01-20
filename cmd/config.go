@@ -17,15 +17,16 @@ var configCmd = &cobra.Command{
 Configuration is stored in ~/.config/tusk/cli.json
 
 Available configuration keys:
-  analytics    Enable or disable usage analytics (true/false)
-  darkMode     Dark mode for terminal output (true/false)
+  analytics            Enable or disable usage analytics (true/false)
+  darkMode             Dark mode for terminal output (true/false)
+  autoUpdate           Automatically update without prompting (true/false)
+  disableVersionPrompt Disable version check and update prompt (true/false)
 
 Examples:
-  tusk config get analytics        # Show current analytics setting
-  tusk config set analytics false  # Disable analytics
-  tusk config get darkMode         # Show current dark mode setting
-  tusk config set darkMode true    # Enable dark mode
-  tusk config set darkMode false   # Disable dark mode`,
+  tusk config get analytics              # Show current analytics setting
+  tusk config set analytics false        # Disable analytics
+  tusk config set autoUpdate true        # Enable automatic updates
+  tusk config set disableVersionPrompt true  # Disable version prompt`,
 	Run: func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 	},
@@ -37,8 +38,10 @@ var configGetCmd = &cobra.Command{
 	Long: `Get the current value of a configuration key.
 
 Available keys:
-  analytics    Usage analytics setting
-  darkMode     Dark mode setting`,
+  analytics            Usage analytics setting
+  darkMode             Dark mode setting
+  autoUpdate           Automatic update setting
+  disableVersionPrompt Version prompt setting`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
@@ -53,8 +56,12 @@ Available keys:
 			} else {
 				fmt.Println("unset")
 			}
+		case "autoupdate":
+			fmt.Println(cfg.AutoUpdate)
+		case "disableversionprompt":
+			fmt.Println(cfg.DisableVersionPrompt)
 		default:
-			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode", key)
+			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode, autoUpdate, disableVersionPrompt", key)
 		}
 
 		return nil
@@ -67,12 +74,14 @@ var configSetCmd = &cobra.Command{
 	Long: `Set the value of a configuration key.
 
 Available keys and values:
-  analytics    true/false    Enable or disable usage analytics
-  darkMode     true/false    Dark mode for terminal output
+  analytics            true/false    Enable or disable usage analytics
+  darkMode             true/false    Dark mode for terminal output
+  autoUpdate           true/false    Automatically update without prompting
+  disableVersionPrompt true/false    Disable version check and update prompt
 
 Examples:
   tusk config set analytics false
-  tusk config set darkMode true`,
+  tusk config set autoUpdate true`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
@@ -96,8 +105,20 @@ Examples:
 				return fmt.Errorf("invalid value for darkMode: %s (expected true/false)", value)
 			}
 			cfg.DarkMode = &boolVal
+		case "autoupdate":
+			boolVal, err := parseBool(value)
+			if err != nil {
+				return fmt.Errorf("invalid value for autoUpdate: %s (expected true/false)", value)
+			}
+			cfg.AutoUpdate = boolVal
+		case "disableversionprompt":
+			boolVal, err := parseBool(value)
+			if err != nil {
+				return fmt.Errorf("invalid value for disableVersionPrompt: %s (expected true/false)", value)
+			}
+			cfg.DisableVersionPrompt = boolVal
 		default:
-			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode", key)
+			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode, autoUpdate, disableVersionPrompt", key)
 		}
 
 		if err := cfg.Save(); err != nil {

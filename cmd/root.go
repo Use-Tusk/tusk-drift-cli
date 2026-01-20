@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
@@ -130,6 +132,22 @@ func showASCIIArt() {
 	fmt.Print("\n\n")
 
 	fmt.Println("Use \"tusk --help\" for more information about available commands.")
+
+	cfg := cliconfig.CLIConfig
+	if cfg.DisableVersionPrompt && !cfg.AutoUpdate {
+		return
+	}
+
+	release, err := version.CheckForUpdate(context.Background())
+	if err != nil || release == nil {
+		return
+	}
+
+	if cfg.AutoUpdate {
+		version.AutoUpdate(release)
+	} else {
+		version.PromptAndUpdate(release)
+	}
 }
 
 func init() {
