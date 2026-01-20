@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -46,14 +47,21 @@ func CheckForUpdate(ctx context.Context) (*LatestRelease, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, err
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
 	var release LatestRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+	if err := json.Unmarshal(body, &release); err != nil {
 		return nil, err
 	}
 
@@ -154,7 +162,14 @@ func SelfUpdate(release *LatestRelease) error {
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
-	defer resp.Body.Close()
+
+	archiveData, err := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read download: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed with status: %d", resp.StatusCode)
@@ -162,9 +177,9 @@ func SelfUpdate(release *LatestRelease) error {
 
 	var newBinary []byte
 	if runtime.GOOS == "windows" {
-		newBinary, err = extractFromZip(resp.Body, "tusk.exe")
+		newBinary, err = extractFromZip(archiveData, "tusk.exe")
 	} else {
-		newBinary, err = extractFromTarGz(resp.Body, "tusk")
+		newBinary, err = extractFromTarGz(archiveData, "tusk")
 	}
 	if err != nil {
 		return fmt.Errorf("failed to extract binary: %w", err)
@@ -177,19 +192,22 @@ func SelfUpdate(release *LatestRelease) error {
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.Write(newBinary); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
 
-	if err := os.Chmod(tmpPath, 0o755); err != nil {
-		os.Remove(tmpPath)
+	if err := os.Chmod(tmpPath, 0o755); err != nil { //#nosec G302 -- executable binary needs 0755
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to set permissions: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, execPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
@@ -228,38 +246,39 @@ func getDownloadURL(version string) string {
 }
 
 // extractFromTarGz extracts a specific file from a tar.gz archive.
-func extractFromTarGz(r io.Reader, filename string) ([]byte, error) {
-	gzr, err := gzip.NewReader(r)
+func extractFromTarGz(archiveData []byte, filename string) ([]byte, error) {
+	gzr, err := gzip.NewReader(bytes.NewReader(archiveData))
 	if err != nil {
 		return nil, err
 	}
-	defer gzr.Close()
 
 	tr := tar.NewReader(gzr)
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
+			if closeErr := gzr.Close(); closeErr != nil {
+				return nil, closeErr
+			}
 			return nil, fmt.Errorf("file %s not found in archive", filename)
 		}
 		if err != nil {
+			_ = gzr.Close()
 			return nil, err
 		}
 
 		if header.Typeflag == tar.TypeReg && filepath.Base(header.Name) == filename {
-			return io.ReadAll(tr)
+			data, err := io.ReadAll(tr)
+			if closeErr := gzr.Close(); closeErr != nil && err == nil {
+				return nil, closeErr
+			}
+			return data, err
 		}
 	}
 }
 
 // extractFromZip extracts a specific file from a zip archive.
-func extractFromZip(r io.Reader, filename string) ([]byte, error) {
-	// We need to read the entire zip into memory since zip requires seeking
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	zipReader, err := zip.NewReader(strings.NewReader(string(data)), int64(len(data)))
+func extractFromZip(archiveData []byte, filename string) ([]byte, error) {
+	zipReader, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
 	if err != nil {
 		return nil, err
 	}
@@ -270,8 +289,15 @@ func extractFromZip(r io.Reader, filename string) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			defer rc.Close()
-			return io.ReadAll(rc)
+			fileData, readErr := io.ReadAll(rc)
+			closeErr := rc.Close()
+			if readErr != nil {
+				return nil, readErr
+			}
+			if closeErr != nil {
+				return nil, closeErr
+			}
+			return fileData, nil
 		}
 	}
 

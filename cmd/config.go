@@ -17,16 +17,16 @@ var configCmd = &cobra.Command{
 Configuration is stored in ~/.config/tusk/cli.json
 
 Available configuration keys:
-  analytics            Enable or disable usage analytics (true/false)
-  darkMode             Dark mode for terminal output (true/false)
-  autoUpdate           Automatically update without prompting (true/false)
-  disableVersionPrompt Disable version check and update prompt (true/false)
+  analytics        Enable or disable usage analytics (true/false)
+  darkMode         Dark mode for terminal output (true/false)
+  autoUpdate       Automatically update without prompting (true/false)
+  autoCheckUpdates Check for updates on startup (true/false, default: true)
 
 Examples:
-  tusk config get analytics              # Show current analytics setting
-  tusk config set analytics false        # Disable analytics
-  tusk config set autoUpdate true        # Enable automatic updates
-  tusk config set disableVersionPrompt true  # Disable version prompt`,
+  tusk config get analytics          # Show current analytics setting
+  tusk config set analytics false    # Disable analytics
+  tusk config set autoUpdate true    # Enable automatic updates
+  tusk config set autoCheckUpdates false  # Disable update checking`,
 	Run: func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 	},
@@ -38,10 +38,10 @@ var configGetCmd = &cobra.Command{
 	Long: `Get the current value of a configuration key.
 
 Available keys:
-  analytics            Usage analytics setting
-  darkMode             Dark mode setting
-  autoUpdate           Automatic update setting
-  disableVersionPrompt Version prompt setting`,
+  analytics        Usage analytics setting
+  darkMode         Dark mode setting
+  autoUpdate       Automatic update setting
+  autoCheckUpdates Update checking setting`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
@@ -58,10 +58,15 @@ Available keys:
 			}
 		case "autoupdate":
 			fmt.Println(cfg.AutoUpdate)
-		case "disableversionprompt":
-			fmt.Println(cfg.DisableVersionPrompt)
+		case "autocheckupdates":
+			// nil means true (default)
+			if cfg.AutoCheckUpdates != nil {
+				fmt.Println(*cfg.AutoCheckUpdates)
+			} else {
+				fmt.Println(true)
+			}
 		default:
-			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode, autoUpdate, disableVersionPrompt", key)
+			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode, autoUpdate, autoCheckUpdates", key)
 		}
 
 		return nil
@@ -74,10 +79,10 @@ var configSetCmd = &cobra.Command{
 	Long: `Set the value of a configuration key.
 
 Available keys and values:
-  analytics            true/false    Enable or disable usage analytics
-  darkMode             true/false    Dark mode for terminal output
-  autoUpdate           true/false    Automatically update without prompting
-  disableVersionPrompt true/false    Disable version check and update prompt
+  analytics        true/false    Enable or disable usage analytics
+  darkMode         true/false    Dark mode for terminal output
+  autoUpdate       true/false    Automatically update without prompting
+  autoCheckUpdates true/false    Check for updates on startup (default: true)
 
 Examples:
   tusk config set analytics false
@@ -111,14 +116,14 @@ Examples:
 				return fmt.Errorf("invalid value for autoUpdate: %s (expected true/false)", value)
 			}
 			cfg.AutoUpdate = boolVal
-		case "disableversionprompt":
+		case "autocheckupdates":
 			boolVal, err := parseBool(value)
 			if err != nil {
-				return fmt.Errorf("invalid value for disableVersionPrompt: %s (expected true/false)", value)
+				return fmt.Errorf("invalid value for autoCheckUpdates: %s (expected true/false)", value)
 			}
-			cfg.DisableVersionPrompt = boolVal
+			cfg.AutoCheckUpdates = &boolVal
 		default:
-			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode, autoUpdate, disableVersionPrompt", key)
+			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode, autoUpdate, autoCheckUpdates", key)
 		}
 
 		if err := cfg.Save(); err != nil {

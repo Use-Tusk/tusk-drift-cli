@@ -134,7 +134,8 @@ func showASCIIArt() {
 	fmt.Println("Use \"tusk --help\" for more information about available commands.")
 
 	cfg := cliconfig.CLIConfig
-	if cfg.DisableVersionPrompt && !cfg.AutoUpdate {
+	autoCheck := cfg.AutoCheckUpdates == nil || *cfg.AutoCheckUpdates
+	if !autoCheck && !cfg.AutoUpdate {
 		return
 	}
 

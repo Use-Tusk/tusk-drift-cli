@@ -41,10 +41,10 @@ var CLIConfig *Config
 // Config represents the user-level CLI configuration stored at ~/.config/tusk/cli.json
 type Config struct {
 	// User settings (configurable via `tusk config`)
-	AnalyticsEnabled     bool  `json:"analytics_enabled"`      // Default true, enable usage analytics
-	DarkMode             *bool `json:"dark_mode"`              // nil = auto-detect, true/false = forced
-	AutoUpdate           bool  `json:"auto_update"`            // Default false, auto-update without prompting
-	DisableVersionPrompt bool  `json:"disable_version_prompt"` // Default false, disable version check prompt
+	AnalyticsEnabled bool  `json:"analytics_enabled"`   // Default true, enable usage analytics
+	DarkMode         *bool `json:"dark_mode"`           // nil = auto-detect, true/false = forced
+	AutoUpdate       bool  `json:"auto_update"`         // Default false, auto-update without prompting
+	AutoCheckUpdates *bool `json:"auto_check_updates"`  // Default true (nil = true), check for updates on startup
 
 	// Analytics internals
 	AnonymousID     string `json:"anonymous_id"`      // "cli-anon-<uuid>" generated on first run
