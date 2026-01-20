@@ -201,7 +201,7 @@ func SelfUpdate(release *LatestRelease) error {
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := os.Chmod(tmpPath, 0o755); err != nil { //#nosec G302 -- executable binary needs 0755
+	if err := os.Chmod(tmpPath, 0o755); err != nil { //nolint: gosec -- executable binary needs 0755
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to set permissions: %w", err)
 	}
