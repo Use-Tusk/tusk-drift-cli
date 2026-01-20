@@ -10,6 +10,8 @@
 4. Create configuration files (`.tusk/config.yaml`)
 5. Test the setup with recording and replay
 
+Full docs: <https://docs.usetusk.ai/api-tests/setup-agent>
+
 ## Requirements
 
 - Anthropic API key: Set via `ANTHROPIC_API_KEY` environment variable or `--api-key` flag
