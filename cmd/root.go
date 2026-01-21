@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -179,9 +178,9 @@ func runCleanup() {
 	cleanupMutex.Lock()
 	defer cleanupMutex.Unlock()
 
-	slog.Debug("Running cleanup functions", "count", len(cleanupFuncs))
+	log.Debug("Running cleanup functions", "count", len(cleanupFuncs))
 	for i, fn := range cleanupFuncs {
-		slog.Debug("Running cleanup function", "index", i)
+		log.Debug("Running cleanup function", "index", i)
 		fn()
 	}
 	cleanupFuncs = nil // Clear the slice
@@ -200,6 +199,6 @@ func setupSignalHandling() {
 			os.Exit(1)
 		}()
 
-		slog.Debug("Signal handling setup complete")
+		log.Debug("Signal handling setup complete")
 	})
 }

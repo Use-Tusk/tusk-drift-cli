@@ -14,7 +14,7 @@ import (
 
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
@@ -153,7 +153,7 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					executor := newTestExecutorModel([]runner.Test{test}, m.executor, opts)
 
-					logging.SetTestLogger(executor)
+					log.SetTUILogger(executor)
 
 					if m.width > 0 && m.height > 0 {
 						sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
@@ -209,7 +209,7 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "q", "ctrl+c", "esc", "enter", " ":
 					// Clean up and return to list
 					m.testExecutor.cleanup()
-					logging.SetTestLogger(nil)
+					log.SetTUILogger(nil)
 
 					m.state = listView
 					m.testExecutor = nil

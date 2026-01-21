@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -22,7 +21,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
@@ -131,7 +130,7 @@ func determineCommunicationType(cfg *config.ServiceConfig) CommunicationType {
 	// Auto-detect based on start command
 	if commType == "auto" {
 		if isDockerCommand(cfg.Start.Command) {
-			slog.Debug("Auto-detected Docker command, using TCP communication")
+			log.Debug("Auto-detected Docker command, using TCP communication")
 			return CommunicationTCP
 		}
 		return CommunicationUnix
@@ -207,7 +206,7 @@ func (ms *Server) startUnix() error {
 	}
 
 	ms.listener = listener
-	slog.Debug("Mock server started with Unix socket", "socket", ms.socketPath)
+	log.Debug("Mock server started with Unix socket", "socket", ms.socketPath)
 
 	// Verify the socket file exists and is accessible
 	if _, err := os.Stat(ms.socketPath); err != nil {
@@ -221,7 +220,7 @@ func (ms *Server) startUnix() error {
 	// Give the goroutine a moment to start accepting connections
 	time.Sleep(100 * time.Millisecond)
 
-	slog.Debug("Mock server ready to accept connections", "socket", ms.socketPath)
+	log.Debug("Mock server ready to accept connections", "socket", ms.socketPath)
 
 	return nil
 }
@@ -235,7 +234,7 @@ func (ms *Server) startTCP() error {
 
 	ms.tcpListener = listener
 	ms.listener = listener
-	slog.Debug("Mock server started with TCP", "address", addr, "port", ms.tcpPort)
+	log.Debug("Mock server started with TCP", "address", addr, "port", ms.tcpPort)
 
 	ms.wg.Add(1)
 	go ms.acceptConnections()
@@ -262,11 +261,11 @@ func (ms *Server) Stop() error {
 	// Flush and close analytics client
 	if ms.analyticsClient != nil {
 		if err := ms.analyticsClient.Close(); err != nil {
-			slog.Error("Failed to close analytics client", "error", err)
+			log.Error("Failed to close analytics client", "error", err)
 		}
 	}
 
-	slog.Debug("Mock server stopped")
+	log.Debug("Mock server stopped")
 	return nil
 }
 
@@ -296,11 +295,11 @@ func (ms *Server) SetCurrentTestID(id string) {
 }
 
 func (ms *Server) WaitForSDKConnection(timeout time.Duration) error {
-	slog.Debug("Waiting for SDK to connect and acknowledge...", "timeout", timeout)
+	log.Debug("Waiting for SDK to connect and acknowledge...", "timeout", timeout)
 
 	select {
 	case <-ms.sdkConnectedChan:
-		slog.Debug("SDK connection acknowledged")
+		log.Debug("SDK connection acknowledged")
 		return nil
 	case <-time.After(timeout):
 		return fmt.Errorf("timeout waiting for SDK acknowledgement after %v", timeout)
@@ -377,7 +376,7 @@ func (ms *Server) LoadSpansForTrace(traceID string, spans []*core.Span) {
 		sortSpansByTimestamp(ms.spansByReducedValueHash[traceID][hash])
 	}
 
-	slog.Debug("Loaded spans for trace", "traceID", traceID, "count", len(spans))
+	log.Debug("Loaded spans for trace", "traceID", traceID, "count", len(spans))
 }
 
 func (ms *Server) SetSuiteSpans(spans []*core.Span) {
@@ -544,7 +543,7 @@ func (ms *Server) CleanupTraceSpans(traceID string) {
 	delete(ms.spansByValueHash, traceID)
 	delete(ms.spansByReducedValueHash, traceID)
 
-	slog.Debug("Cleaned up spans for trace", "traceID", traceID)
+	log.Debug("Cleaned up spans for trace", "traceID", traceID)
 }
 
 // acceptConnections handles incoming socket connections
@@ -561,7 +560,7 @@ func (ms *Server) acceptConnections() {
 				if ms.ctx.Err() != nil {
 					return // Context cancelled, shutting down
 				}
-				slog.Error("Failed to accept connection", "error", err)
+				log.Error("Failed to accept connection", "error", err)
 				continue
 			}
 
@@ -581,27 +580,27 @@ func (ms *Server) handleConnection(conn net.Conn) {
 		lengthBytes := make([]byte, 4)
 		if _, err := io.ReadFull(conn, lengthBytes); err != nil {
 			if err == io.EOF {
-				slog.Debug("SDK connection closed")
+				log.Debug("SDK connection closed")
 				return
 			}
 			// Connection reset/closed errors are expected during shutdown
 			errStr := err.Error()
 			if strings.Contains(errStr, "connection reset by peer") ||
 				strings.Contains(errStr, "use of closed network connection") {
-				slog.Debug("SDK connection closed during shutdown", "error", err)
+				log.Debug("SDK connection closed during shutdown", "error", err)
 				return
 			}
-			slog.Error("Failed to read message length", "error", err)
+			log.Error("Failed to read message length", "error", err)
 			return
 		}
 
 		// Parse message length
 		messageLength := binary.BigEndian.Uint32(lengthBytes)
 		if messageLength > 10*1024*1024 { // 10MB limit
-			slog.Warn("Message too large, skipping", "length", messageLength)
+			log.Warn("Message too large, skipping", "length", messageLength)
 			discardBuf := make([]byte, messageLength)
 			if _, err := io.ReadFull(conn, discardBuf); err != nil {
-				slog.Error("Failed to discard oversized message", "error", err)
+				log.Error("Failed to discard oversized message", "error", err)
 				return
 			}
 			continue // Skip this message but keep connection alive
@@ -610,14 +609,14 @@ func (ms *Server) handleConnection(conn net.Conn) {
 		// Read message data
 		messageData := make([]byte, messageLength)
 		if _, err := io.ReadFull(conn, messageData); err != nil {
-			slog.Debug("Failed to read message data", "error", err)
+			log.Debug("Failed to read message data", "error", err)
 			return
 		}
 
 		// Parse protobuf message
 		var sdkMsg core.SDKMessage
 		if err := proto.Unmarshal(messageData, &sdkMsg); err != nil {
-			slog.Debug("Failed to parse protobuf message", "error", err)
+			log.Debug("Failed to parse protobuf message", "error", err)
 			continue
 		}
 
@@ -640,7 +639,7 @@ func (ms *Server) handleConnection(conn net.Conn) {
 			// SDK is responding to our SetTimeTravel request
 			ms.handleSetTimeTravelResponse(&sdkMsg)
 		default:
-			slog.Debug("Unknown message type", "type", sdkMsg.Type)
+			log.Debug("Unknown message type", "type", sdkMsg.Type)
 		}
 	}
 }
@@ -681,13 +680,13 @@ func (ms *Server) sendProtobufResponse(conn net.Conn, msg proto.Message) error {
 func isVersionCompatible(actualVersion, minRequiredVersion string) bool {
 	actual, err := parseVersion(actualVersion)
 	if err != nil {
-		slog.Warn("Failed to parse actual version", "version", actualVersion, "error", err)
+		log.Warn("Failed to parse actual version", "version", actualVersion, "error", err)
 		return false
 	}
 
 	required, err := parseVersion(minRequiredVersion)
 	if err != nil {
-		slog.Warn("Failed to parse required version", "version", minRequiredVersion, "error", err)
+		log.Warn("Failed to parse required version", "version", minRequiredVersion, "error", err)
 		return false
 	}
 
@@ -742,7 +741,7 @@ func parseVersion(v string) (SemVer, error) {
 func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) {
 	connectReq := msg.GetConnectRequest()
 	if connectReq == nil {
-		logging.LogToService("Invalid connect request from SDK- no payload")
+		log.ServiceLog("Invalid connect request from SDK- no payload")
 		response := &core.CLIMessage{
 			Type:      core.MessageType_MESSAGE_TYPE_SDK_CONNECT,
 			RequestId: msg.RequestId,
@@ -755,7 +754,7 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 		}
 		err := ms.sendProtobufResponse(conn, response)
 		if err != nil {
-			logging.LogToService(fmt.Sprintf("Failed to send connect response: %v", err))
+			log.ServiceLog(fmt.Sprintf("Failed to send connect response: %v", err))
 		}
 		return
 	}
@@ -766,7 +765,7 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 
 	// Check if CLI version meets SDK's minimum requirement
 	if connectReq.MinCliVersion != "" && !isVersionCompatible(cliVersion, connectReq.MinCliVersion) {
-		logging.LogToService(fmt.Sprintf("CLI version %s is incompatible. SDK (%s) requires CLI version %s or higher", cliVersion, connectReq.SdkVersion, connectReq.MinCliVersion))
+		log.ServiceLog(fmt.Sprintf("CLI version %s is incompatible. SDK (%s) requires CLI version %s or higher", cliVersion, connectReq.SdkVersion, connectReq.MinCliVersion))
 
 		response := &core.CLIMessage{
 			Type:      core.MessageType_MESSAGE_TYPE_SDK_CONNECT,
@@ -780,7 +779,7 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 		}
 		err := ms.sendProtobufResponse(conn, response)
 		if err != nil {
-			logging.LogToService(fmt.Sprintf("Failed to send connect response: %v", err))
+			log.ServiceLog(fmt.Sprintf("Failed to send connect response: %v", err))
 		}
 
 		go func() {
@@ -792,7 +791,7 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 
 	// Check if SDK version meets CLI's minimum requirement
 	if connectReq.SdkVersion != "" && !isVersionCompatible(connectReq.SdkVersion, version.MinSDKVersion) {
-		logging.LogToService(fmt.Sprintf("SDK version %s is incompatible. CLI (%s) requires SDK version %s or higher", connectReq.SdkVersion, cliVersion, version.MinSDKVersion))
+		log.ServiceLog(fmt.Sprintf("SDK version %s is incompatible. CLI (%s) requires SDK version %s or higher", connectReq.SdkVersion, cliVersion, version.MinSDKVersion))
 
 		response := &core.CLIMessage{
 			Type:      core.MessageType_MESSAGE_TYPE_SDK_CONNECT,
@@ -806,7 +805,7 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 		}
 		err := ms.sendProtobufResponse(conn, response)
 		if err != nil {
-			logging.LogToService(fmt.Sprintf("Failed to send connect response: %v", err))
+			log.ServiceLog(fmt.Sprintf("Failed to send connect response: %v", err))
 		}
 
 		go func() {
@@ -816,11 +815,11 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 		return
 	}
 
-	logging.LogToService("SDK connected:")
-	logging.LogToService(fmt.Sprintf("  - Service ID: %s", connectReq.ServiceId))
-	logging.LogToService(fmt.Sprintf("  - SDK version: %s", connectReq.SdkVersion))
-	logging.LogToService(fmt.Sprintf("  - CLI version: %s", cliVersion))
-	logging.LogToService(fmt.Sprintf("  - Min CLI version: %s", connectReq.MinCliVersion))
+	log.ServiceLog("SDK connected:")
+	log.ServiceLog(fmt.Sprintf("  - Service ID: %s", connectReq.ServiceId))
+	log.ServiceLog(fmt.Sprintf("  - SDK version: %s", connectReq.SdkVersion))
+	log.ServiceLog(fmt.Sprintf("  - CLI version: %s", cliVersion))
+	log.ServiceLog(fmt.Sprintf("  - Min CLI version: %s", connectReq.MinCliVersion))
 
 	ms.mu.Lock()
 	ms.sdkVersion = connectReq.SdkVersion
@@ -843,7 +842,7 @@ func (ms *Server) handleSDKConnectProtobuf(msg *core.SDKMessage, conn net.Conn) 
 	}
 
 	if err := ms.sendProtobufResponse(conn, response); err != nil {
-		slog.Error("Failed to send connect response", "error", err)
+		log.Error("Failed to send connect response", "error", err)
 	}
 }
 
@@ -934,7 +933,7 @@ func (ms *Server) handleSetTimeTravelResponse(msg *core.SDKMessage) {
 	if ok {
 		respChan <- msg
 	} else {
-		slog.Debug("Received SetTimeTravel response with unknown request ID", "requestId", msg.RequestId)
+		log.Debug("Received SetTimeTravel response with unknown request ID", "requestId", msg.RequestId)
 	}
 }
 
@@ -942,7 +941,7 @@ func (ms *Server) handleSetTimeTravelResponse(msg *core.SDKMessage) {
 func (ms *Server) handleMockRequestProtobuf(msg *core.SDKMessage, conn net.Conn) {
 	mockReq := msg.GetGetMockRequest()
 	if mockReq == nil {
-		slog.Error("Invalid mock request - no payload")
+		log.Error("Invalid mock request - no payload")
 		return
 	}
 
@@ -958,18 +957,18 @@ func (ms *Server) handleMockRequestProtobuf(msg *core.SDKMessage, conn net.Conn)
 	}
 
 	if err := ms.sendProtobufResponse(conn, cliMsg); err != nil {
-		slog.Debug("Failed to send mock response", "error", err)
+		log.Debug("Failed to send mock response", "error", err)
 	}
 }
 
 func (ms *Server) handleInboundReplaySpanProtobuf(msg *core.SDKMessage, conn net.Conn) {
 	req := msg.GetSendInboundSpanForReplayRequest()
 	if req == nil || req.Span == nil {
-		slog.Error("Invalid inbound span request")
+		log.Error("Invalid inbound span request")
 		return
 	}
 
-	slog.Debug("Received inbound span for replay", "traceID", req.Span.TraceId, "spanID", req.Span.SpanId)
+	log.Debug("Received inbound span for replay", "traceID", req.Span.TraceId, "spanID", req.Span.SpanId)
 
 	span := req.Span
 
@@ -992,7 +991,7 @@ func (ms *Server) handleInboundReplaySpanProtobuf(msg *core.SDKMessage, conn net
 func (ms *Server) handleAlertProtobuf(msg *core.SDKMessage) {
 	req := msg.GetSendAlertRequest()
 	if req == nil {
-		slog.Error("Invalid alert request")
+		log.Error("Invalid alert request")
 		return
 	}
 
@@ -1002,12 +1001,12 @@ func (ms *Server) handleAlertProtobuf(msg *core.SDKMessage) {
 	case *core.SendAlertRequest_UnpatchedDependency:
 		ms.handleUnpatchedDependencyAlert(alert.UnpatchedDependency)
 	default:
-		slog.Debug("Unknown alert type")
+		log.Debug("Unknown alert type")
 	}
 }
 
 func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.InstrumentationVersionMismatchAlert) {
-	slog.Info("Instrumentation version mismatch alert",
+	log.Info("Instrumentation version mismatch alert",
 		"module", alert.ModuleName,
 		"requestedVersion", alert.RequestedVersion,
 		"supportedVersions", alert.SupportedVersions,
@@ -1023,12 +1022,12 @@ func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.Instrume
 			"sdk_version":        alert.SdkVersion,
 		})
 	} else {
-		slog.Debug("Analytics client not initialized, skipping instrumentation version mismatch alert")
+		log.Debug("Analytics client not initialized, skipping instrumentation version mismatch alert")
 	}
 }
 
 func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependencyAlert) {
-	slog.Info("Unpatched dependency alert",
+	log.Info("Unpatched dependency alert",
 		"traceTestServerSpanId", alert.TraceTestServerSpanId,
 		"stackTrace", alert.StackTrace,
 		"sdkVersion", alert.SdkVersion,
@@ -1042,7 +1041,7 @@ func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependency
 			"sdk_version":               alert.SdkVersion,
 		})
 	} else {
-		slog.Debug("Analytics client not initialized, skipping unpatched dependency alert")
+		log.Debug("Analytics client not initialized, skipping unpatched dependency alert")
 	}
 }
 
@@ -1068,9 +1067,9 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 		ms.mu.RUnlock()
 
 		if !spansLoaded {
-			slog.Debug("Spans not loaded for trace, attempting to load", "traceID", testID)
+			log.Debug("Spans not loaded for trace, attempting to load", "traceID", testID)
 			if err := ms.loadSpansForTraceID(testID); err != nil {
-				slog.Debug("Failed to load spans for trace", "traceID", testID, "error", err)
+				log.Debug("Failed to load spans for trace", "traceID", testID, "error", err)
 				return &core.GetMockResponse{
 					Found: false,
 					Error: fmt.Sprintf("failed to load spans for trace %s: %v", testID, err),
@@ -1086,17 +1085,17 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	// for pre-app-start requests (to try Priority 14-15 schema matching) or when there's no testID
 	if span == nil && (testID == "" || req.OutboundSpan.IsPreAppStart) {
 		if testID != "" {
-			slog.Debug("No mock found in current trace; attempting global fallback for pre-app-start",
+			log.Debug("No mock found in current trace; attempting global fallback for pre-app-start",
 				"testID", testID, "package", req.OutboundSpan.PackageName, "operation", req.Operation, "error", err)
 		} else {
-			slog.Debug("No test ID provided; searching global mocks",
+			log.Debug("No test ID provided; searching global mocks",
 				"package", req.OutboundSpan.PackageName, "operation", req.Operation)
 		}
 
 		candidates := ms.GetSuiteSpans()
 		if len(candidates) > 0 {
 			if globalSpan, globalMatchLevel, globalErr := matcher.FindBestMatchAcrossTraces(req, testID, candidates); globalErr == nil && globalSpan != nil {
-				slog.Debug("Found suite mock match",
+				log.Debug("Found suite mock match",
 					"testID", testID,
 					"spanName", globalSpan.Name,
 					"spanID", globalSpan.SpanId,
@@ -1110,14 +1109,14 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	}
 
 	if span == nil {
-		slog.Debug("No mock found",
+		log.Debug("No mock found",
 			"testID", testID,
 			"packageName", req.OutboundSpan.PackageName,
 			"operation", req.Operation,
 			"error", err)
 
 		if testID != "" {
-			logging.LogToCurrentTest(testID, "🔴 No mock found for request\n")
+			log.TestLog(testID, "🔴 No mock found for request\n")
 			// Record that a mock was not found for this test
 			ms.recordMockNotFoundEvent(testID, MockNotFoundEvent{
 				PackageName: req.OutboundSpan.PackageName,
@@ -1140,7 +1139,7 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	switch matchLevel.MatchScope {
 	case core.MatchScope_MATCH_SCOPE_TRACE:
 		if testID != "" {
-			logging.LogToCurrentTest(testID, "🟢 Found best match for request in trace\n")
+			log.TestLog(testID, "🟢 Found best match for request in trace\n")
 		}
 	case core.MatchScope_MATCH_SCOPE_GLOBAL:
 		if testID != "" {
@@ -1148,7 +1147,7 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 			if span.IsPreAppStart {
 				msg = "🟢 Found best match for request across traces (pre-app-start)\n"
 			}
-			logging.LogToCurrentTest(testID, msg)
+			log.TestLog(testID, msg)
 		}
 	}
 
@@ -1176,7 +1175,7 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 	// Convert to JSON and back to map[string]any for protobuf compatibility
 	mockBytes, err := json.Marshal(mockInteraction)
 	if err != nil {
-		slog.Error("Failed to marshal mock interaction", "error", err)
+		log.Error("Failed to marshal mock interaction", "error", err)
 		return &core.GetMockResponse{
 			Found: false,
 			Error: "failed to serialize mock response",
@@ -1185,7 +1184,7 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 
 	var mockInteractionMap map[string]any
 	if err := json.Unmarshal(mockBytes, &mockInteractionMap); err != nil {
-		slog.Error("Failed to unmarshal mock interaction", "error", err)
+		log.Error("Failed to unmarshal mock interaction", "error", err)
 		return &core.GetMockResponse{
 			Found: false,
 			Error: "failed to serialize mock response",
@@ -1196,14 +1195,14 @@ func (ms *Server) findMock(req *core.GetMockRequest) *core.GetMockResponse {
 		"response": mockInteractionMap,
 	})
 	if err != nil {
-		slog.Error("Failed to convert mock interaction to struct", "error", err)
+		log.Error("Failed to convert mock interaction to struct", "error", err)
 		return &core.GetMockResponse{
 			Found: false,
 			Error: "failed to serialize mock response",
 		}
 	}
 
-	slog.Debug("Found mock match",
+	log.Debug("Found mock match",
 		"testID", testID,
 		"spanName", span.Name,
 		"spanID", span.SpanId,
@@ -1304,13 +1303,13 @@ func (ms *Server) loadSpansForTraceID(traceID string) error {
 			}
 			spans, err := utils.ParseSpansFromFile(traceFile, filter)
 			if err != nil {
-				slog.Warn("Failed to load spans from file", "file", traceFile, "error", err)
+				log.Warn("Failed to load spans from file", "file", traceFile, "error", err)
 				continue
 			}
 
 			if len(spans) > 0 {
 				ms.LoadSpansForTrace(traceID, spans)
-				slog.Info("Successfully loaded spans for trace", "traceID", traceID, "count", len(spans), "file", traceFile)
+				log.Info("Successfully loaded spans for trace", "traceID", traceID, "count", len(spans), "file", traceFile)
 				return nil
 			}
 		}

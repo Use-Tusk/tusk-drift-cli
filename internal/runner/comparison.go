@@ -3,14 +3,13 @@ package runner
 import (
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"reflect"
 	"regexp"
 	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
 
@@ -42,12 +41,12 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 		}
 	}
 
-	logging.LogToCurrentTest(test.TraceID, "Evaluating replay response...")
+	log.TestLog(test.TraceID, "Evaluating replay response...")
 
 	// Compare status code
 	var deviations []Deviation
 	if actualResp.StatusCode != test.Response.Status {
-		slog.Debug("Status code mismatch", "traceID", test.TraceID, "expected", test.Response.Status, "actual", actualResp.StatusCode)
+		log.Debug("Status code mismatch", "traceID", test.TraceID, "expected", test.Response.Status, "actual", actualResp.StatusCode)
 		deviations = append(deviations, Deviation{
 			Field:       "response.status",
 			Expected:    test.Response.Status,
@@ -60,7 +59,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 	for expectedKey, expectedValue := range test.Response.Headers {
 		actualValue := actualResp.Header.Get(expectedKey)
 		if actualValue != expectedValue {
-			slog.Debug("Header mismatch", "traceID", test.TraceID, "header", expectedKey, "expected", expectedValue, "actual", actualValue)
+			log.Debug("Header mismatch", "traceID", test.TraceID, "header", expectedKey, "expected", expectedValue, "actual", actualValue)
 			deviations = append(deviations, Deviation{
 				Field:       fmt.Sprintf("response.headers.%s", strings.ToLower(expectedKey)),
 				Expected:    expectedValue,
@@ -71,7 +70,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 	}
 
 	if !e.compareResponseBodies(test.Response.Body, actualBody, test.TraceID) {
-		slog.Debug("Body mismatch detected", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody)
+		log.Debug("Body mismatch detected", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody)
 		deviations = append(deviations, Deviation{
 			Field:       "response.body",
 			Expected:    test.Response.Body,
@@ -82,7 +81,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 
 	passed := len(deviations) == 0
 
-	slog.Debug("Comparison result", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody, "passed", passed, "deviations", deviations)
+	log.Debug("Comparison result", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody, "passed", passed, "deviations", deviations)
 
 	result := TestResult{
 		TestID:     test.TraceID,
@@ -91,12 +90,12 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 		Deviations: deviations,
 	}
 
-	logging.LogToCurrentTest(test.TraceID, "Evaluation complete.")
+	log.TestLog(test.TraceID, "Evaluation complete.")
 
 	if passed {
-		logging.LogToService(fmt.Sprintf("Test passed for trace ID %s (%dms)", test.TraceID, duration))
+		log.ServiceLog(fmt.Sprintf("Test passed for trace ID %s (%dms)", test.TraceID, duration))
 	} else {
-		logging.LogToService(fmt.Sprintf("Test failed for trace ID %s (%dms)", test.TraceID, duration))
+		log.ServiceLog(fmt.Sprintf("Test failed for trace ID %s (%dms)", test.TraceID, duration))
 	}
 
 	return result, nil
@@ -111,7 +110,7 @@ func (e *Executor) compareResponseBodies(expected, actual any, testID string) bo
 		// Check if comparison config has any non-default values
 		comp := &cfg.Comparison
 
-		slog.Debug("Loaded comparison config from file",
+		log.Debug("Loaded comparison config from file",
 			"ignoreFields", comp.IgnoreFields,
 			"ignorePatterns", comp.IgnorePatterns,
 			"ignoreUUIDs", comp.IgnoreUUIDs,
@@ -127,23 +126,23 @@ func (e *Executor) compareResponseBodies(expected, actual any, testID string) bo
 
 		if hasConfig {
 			comparisonConfig = comp
-			slog.Debug("Using comparison config", "config", comparisonConfig)
+			log.Debug("Using comparison config", "config", comparisonConfig)
 		} else {
-			slog.Debug("No comparison config found, using defaults")
+			log.Debug("No comparison config found, using defaults")
 		}
 		// If all fields are zero/empty, comparisonConfig stays nil for default behavior
 	} else {
-		slog.Debug("Failed to load config", "error", err)
+		log.Debug("Failed to load config", "error", err)
 	}
 
-	slog.Debug("Values for comparison",
+	log.Debug("Values for comparison",
 		"expected", expected,
 		"actual", actual)
 
 	matcher := NewDynamicFieldMatcherWithConfig(comparisonConfig)
 	result := e.compareJSONValues("", expected, actual, matcher, testID)
 
-	slog.Debug("Final comparison result", "result", result)
+	log.Debug("Final comparison result", "result", result)
 
 	return result
 }
@@ -232,7 +231,7 @@ func (e *Executor) compareMaps(fieldPath string, expected, actual any, matcher *
 			fieldName := getFieldName(newFieldPath)
 
 			if shouldIgnore, exists := matcher.ignoreFields[strings.ToLower(fieldName)]; exists && shouldIgnore {
-				logging.LogToCurrentTest(testID, fmt.Sprintf("🔄 Ignoring extra field '%s' (configured field name): %v", fieldName, actualMap[key]))
+				log.TestLog(testID, fmt.Sprintf("🔄 Ignoring extra field '%s' (configured field name): %v", fieldName, actualMap[key]))
 				continue
 			}
 

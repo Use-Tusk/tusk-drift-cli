@@ -9,6 +9,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
@@ -61,7 +62,7 @@ func selectOrg(cmd *cobra.Command, args []string) error {
 		if resp.Clients[0].Name != nil {
 			name = *resp.Clients[0].Name
 		}
-		fmt.Printf("You only belong to one organization: %s (%s)\n", name, resp.Clients[0].Id)
+		log.UserInfo(fmt.Sprintf("You only belong to one organization: %s (%s)", name, resp.Clients[0].Id))
 		return nil
 	}
 

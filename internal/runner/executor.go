@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -18,7 +17,6 @@ import (
 	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
@@ -94,13 +92,13 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 		}
 		batch := tests[i:end]
 
-		slog.Debug("Processing batch", "start", i, "end", end, "size", len(batch))
+		log.Debug("Processing batch", "start", i, "end", end, "size", len(batch))
 
 		results, serverCrashed := e.RunBatchWithCrashDetection(batch, batchSize)
 
 		if !serverCrashed {
 			// No crash detected - invoke callbacks manually for all results
-			slog.Debug("Batch completed successfully, no crash detected", "batch_size", len(batch))
+			log.Debug("Batch completed successfully, no crash detected", "batch_size", len(batch))
 			if e.OnTestCompleted != nil {
 				// Create a map of tests by TraceID for matching
 				testsByID := make(map[string]Test, len(batch))
@@ -120,12 +118,12 @@ func (e *Executor) runTestsWithResilience(tests []Test) ([]TestResult, error) {
 
 		// Server crashed during batch - discard results, restart, and retry sequentially
 		// Callbacks will fire during sequential execution from each test
-		logging.LogToService(fmt.Sprintf("❌  Server crashed during batch execution. Restarting and retrying %d tests sequentially...", len(batch)))
+		log.ServiceLog(fmt.Sprintf("❌  Server crashed during batch execution. Restarting and retrying %d tests sequentially...", len(batch)))
 
 		if err := e.RestartServerWithRetry(0); err != nil {
 			// Can't restart - mark all remaining tests as failed
-			logging.LogToService(fmt.Sprintf("❌ Failed to restart server: %v", err))
-			logging.LogToService("Marking all remaining tests as failed")
+			log.ServiceLog(fmt.Sprintf("❌ Failed to restart server: %v", err))
+			log.ServiceLog("Marking all remaining tests as failed")
 
 			for j := i; j < len(tests); j++ {
 				// TODO: should this be a specific error type or at least message?
@@ -172,7 +170,7 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 	for workerID := range maxConcurrency {
 		go func(workerID int) {
 			for test := range testChan {
-				slog.Debug("Worker starting test", "workerID", workerID, "testID", test.TraceID)
+				log.Debug("Worker starting test", "workerID", workerID, "testID", test.TraceID)
 				select {
 				case <-ctx.Done():
 					// Context cancelled - mark as cancelled, not deviation
@@ -191,9 +189,9 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 							Passed: false,
 							Error:  err.Error(),
 						}
-						slog.Debug("Worker test failed", "workerID", workerID, "testID", test.TraceID, "error", err)
+						log.Debug("Worker test failed", "workerID", workerID, "testID", test.TraceID, "error", err)
 					} else {
-						slog.Debug("Worker test completed", "workerID", workerID, "testID", test.TraceID, "passed", result.Passed)
+						log.Debug("Worker test completed", "workerID", workerID, "testID", test.TraceID, "passed", result.Passed)
 					}
 					resultChan <- result
 				}
@@ -225,7 +223,7 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 		}
 	}
 
-	slog.Debug("Completed concurrent test execution",
+	log.Debug("Completed concurrent test execution",
 		"totalTests", len(tests),
 		"maxConcurrency", maxConcurrency,
 		"passed", countPassedTests(results),
@@ -256,7 +254,7 @@ func (e *Executor) RunBatchWithCrashDetection(batch []Test, concurrency int) ([]
 	if hasErrors {
 		serverCrashed = !e.CheckServerHealth()
 		if serverCrashed {
-			slog.Debug("Server crash detected via health check", "batch_size", len(batch))
+			log.Debug("Server crash detected via health check", "batch_size", len(batch))
 		}
 	}
 
@@ -270,29 +268,29 @@ func (e *Executor) RunBatchSequentialWithCrashHandling(batch []Test, hasMoreTest
 	consecutiveRestartAttempt := 0
 
 	for idx, test := range batch {
-		slog.Debug("Running test sequentially", "index", idx+1, "total", len(batch), "testID", test.TraceID)
-		logging.LogToService(fmt.Sprintf("Running test %d/%d sequentially: %s", idx+1, len(batch), test.TraceID))
+		log.Debug("Running test sequentially", "index", idx+1, "total", len(batch), "testID", test.TraceID)
+		log.ServiceLog(fmt.Sprintf("Running test %d/%d sequentially: %s", idx+1, len(batch), test.TraceID))
 
 		result, err := e.RunSingleTest(test)
 		result.RetriedAfterCrash = true
 
 		// Check if this test crashed the server
 		if err != nil && !e.CheckServerHealth() {
-			slog.Warn("Test crashed the server", "testID", test.TraceID, "error", err)
-			logging.LogToService(fmt.Sprintf("⚠️  Test %s crashed the server", test.TraceID))
+			log.Warn("Test crashed the server", "testID", test.TraceID, "error", err)
+			log.ServiceLog(fmt.Sprintf("⚠️  Test %s crashed the server", test.TraceID))
 
 			result.CrashedServer = true
 
 			// Try to restart for next test (either in this batch or subsequent batches)
 			shouldRestart := (idx < len(batch)-1) || hasMoreTestsAfterBatch
 			if shouldRestart {
-				logging.LogToService("Restarting server for next test...")
+				log.ServiceLog("Restarting server for next test...")
 				if restartErr := e.RestartServerWithRetry(consecutiveRestartAttempt); restartErr != nil {
 					consecutiveRestartAttempt++
 					// If multiple tests in a row crash the server, we need to mark the remaining tests as failed
 					if consecutiveRestartAttempt >= MaxServerRestartAttempts {
 						// Mark remaining tests in batch as failed
-						logging.LogToService(fmt.Sprintf("❌ Exceeded maximum restart attempts. Marking remaining %d tests as failed.", len(batch)-idx-1))
+						log.ServiceLog(fmt.Sprintf("❌ Exceeded maximum restart attempts. Marking remaining %d tests as failed.", len(batch)-idx-1))
 						results = append(results, result)
 						for j := idx + 1; j < len(batch); j++ {
 							failedResult := TestResult{
@@ -402,7 +400,7 @@ func (e *Executor) IsServiceLogsEnabled() bool {
 func (e *Executor) CheckServerHealth() bool {
 	cfg, err := config.Get()
 	if err != nil {
-		slog.Debug("Failed to get config for health check", "error", err)
+		log.Debug("Failed to get config for health check", "error", err)
 		return false
 	}
 
@@ -412,7 +410,7 @@ func (e *Executor) CheckServerHealth() bool {
 		if err := cmd.Run(); err == nil {
 			return true
 		}
-		slog.Debug("Readiness command failed", "command", cfg.Service.Readiness.Command)
+		log.Debug("Readiness command failed", "command", cfg.Service.Readiness.Command)
 		return false
 	}
 
@@ -426,7 +424,7 @@ func (e *Executor) CheckServerHealth() bool {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		slog.Debug("Health check failed", "error", err)
+		log.Debug("Health check failed", "error", err)
 		return false
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -475,7 +473,7 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 		} else {
 			spans, err := e.LoadSpansForTrace(test.TraceID, test.FileName)
 			if err != nil {
-				slog.Warn("Failed to load spans for trace", "traceID", test.TraceID, "error", err)
+				log.Warn("Failed to load spans for trace", "traceID", test.TraceID, "error", err)
 			} else {
 				e.server.LoadSpansForTrace(test.TraceID, spans)
 				test.Spans = spans // Ensure spans are available for time-travel and schema extraction
@@ -538,9 +536,9 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 		if timestamp > 0 {
 			if err := e.server.SendSetTimeTravel(timestamp, test.TraceID, source); err != nil {
 				// Log warning but don't fail the test - time travel is best-effort
-				slog.Warn("Failed to set time travel", "error", err, "traceID", test.TraceID)
+				log.Warn("Failed to set time travel", "error", err, "traceID", test.TraceID)
 			} else {
-				slog.Debug("Time travel set", "timestamp", timestamp, "source", source, "traceID", test.TraceID)
+				log.Debug("Time travel set", "timestamp", timestamp, "source", source, "traceID", test.TraceID)
 			}
 		}
 	}
@@ -561,7 +559,7 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			slog.Warn("Failed to close response body", "error", err)
+			log.Warn("Failed to close response body", "error", err)
 		}
 	}()
 

@@ -2,7 +2,6 @@ package analytics
 
 import (
 	"context"
-	"log/slog"
 	"maps"
 	"os"
 	"runtime"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"github.com/posthog/posthog-go"
@@ -40,7 +40,7 @@ type Client struct {
 // Returns nil if analytics is disabled.
 func NewClient() *Client {
 	if !cliconfig.IsAnalyticsEnabled() {
-		slog.Debug("Analytics disabled, not creating client")
+		log.Debug("Analytics disabled, not creating client")
 		return nil
 	}
 
@@ -50,7 +50,7 @@ func NewClient() *Client {
 		Endpoint: posthogEndpoint,
 	})
 	if err != nil {
-		slog.Debug("Failed to create PostHog client", "error", err)
+		log.Debug("Failed to create PostHog client", "error", err)
 		return nil
 	}
 
@@ -92,7 +92,7 @@ func (c *Client) Track(event string, properties map[string]any) {
 	}
 
 	if err := c.posthog.Enqueue(capture); err != nil {
-		slog.Debug("Failed to enqueue analytics event", "event", event, "error", err)
+		log.Debug("Failed to enqueue analytics event", "event", event, "error", err)
 	}
 }
 
@@ -112,14 +112,14 @@ func (c *Client) Alias(userID string) {
 		Alias:      c.config.AnonymousID,
 	})
 	if err != nil {
-		slog.Debug("Failed to alias user", "error", err)
+		log.Debug("Failed to alias user", "error", err)
 		return
 	}
 
 	// Mark as aliased and save
 	c.config.MarkAliased(userID)
 	if err := c.config.Save(); err != nil {
-		slog.Debug("Failed to save config after alias", "error", err)
+		log.Debug("Failed to save config after alias", "error", err)
 	}
 }
 
@@ -155,12 +155,12 @@ func (c *Client) fetchAuthInfo() {
 			api.AuthOptions{APIKey: c.apiKey},
 		)
 		if err != nil {
-			slog.Warn("Failed to fetch auth info for analytics", "error", err)
+			log.Warn("Failed to fetch auth info for analytics", "error", err)
 			return
 		}
 
 		c.authInfo = resp
-		slog.Debug("Successfully fetched auth info for analytics",
+		log.Debug("Successfully fetched auth info for analytics",
 			"userId", resp.User.GetId(),
 			"clientCount", len(resp.Clients))
 	})
