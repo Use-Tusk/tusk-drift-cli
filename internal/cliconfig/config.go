@@ -2,6 +2,7 @@ package cliconfig
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +98,8 @@ func init() {
 			_ = CLIConfig.Save()
 			return
 		}
-		panic(err)
+		slog.Debug("failed to read CLI config, using defaults", "path", path, "error", err)
+		return
 	}
 
 	// json.Unmarshal doesn't affect fields that are not in the JSON
