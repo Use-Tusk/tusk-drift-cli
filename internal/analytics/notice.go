@@ -2,11 +2,11 @@ package analytics
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -41,9 +41,9 @@ func ShowFirstRunNotice(cmd *cobra.Command) bool {
 	}
 
 	// Display notice
-	fmt.Println()
-	fmt.Println(NoticeText)
-	fmt.Println()
+	log.Println("")
+	log.Println(NoticeText)
+	log.Println("")
 
 	// Countdown
 	for i := 4; i > 0; i-- {
@@ -51,15 +51,15 @@ func ShowFirstRunNotice(cmd *cobra.Command) bool {
 		if i == 1 {
 			unit = "second"
 		}
-		fmt.Printf("\rContinuing in %d %s... (Ctrl+C to cancel)", i, unit)
+		log.Print(fmt.Sprintf("\rContinuing in %d %s... (Ctrl+C to cancel)", i, unit))
 		time.Sleep(1 * time.Second)
 	}
-	fmt.Printf("\r%-50s\n", "") // Clear the countdown line
+	log.Print(fmt.Sprintf("\r%-50s\n", "")) // Clear the countdown line
 
 	// Mark as shown and save
 	cfg.NoticeShown = true
 	if err := cfg.Save(); err != nil {
-		slog.Debug("Failed to save config after showing notice", "error", err)
+		log.Debug("Failed to save config after showing notice", "error", err)
 	}
 
 	return true

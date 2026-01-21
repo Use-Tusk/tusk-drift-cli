@@ -3,13 +3,12 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
@@ -107,7 +106,7 @@ func Load(configFile string) error {
 	defer loadMutex.Unlock()
 
 	if hasLoaded {
-		slog.Debug("Config already loaded, skipping reload")
+		log.Debug("Config already loaded, skipping reload")
 		return nil
 	}
 
@@ -117,12 +116,12 @@ func Load(configFile string) error {
 
 	if configFile != "" {
 		if err := k.Load(file.Provider(configFile), yaml.Parser()); err != nil {
-			logging.LogToService(fmt.Sprintf("Failed to load config file: %s. Error: %s", configFile, err))
+			log.ServiceLog(fmt.Sprintf("Failed to load config file: %s. Error: %s", configFile, err))
 			return fmt.Errorf("error loading config file: %w", err)
 		}
-		slog.Debug("Config file loaded", "file", configFile)
+		log.Debug("Config file loaded", "file", configFile)
 	} else {
-		slog.Debug("No config file found, using defaults and environment variables")
+		log.Debug("No config file found, using defaults and environment variables")
 	}
 
 	// Support environment variable overrides for specific config keys
@@ -142,7 +141,7 @@ func Load(configFile string) error {
 	}
 
 	hasLoaded = true
-	slog.Debug("All loaded config", "config", k.All())
+	log.Debug("All loaded config", "config", k.All())
 	return nil
 }
 
@@ -210,7 +209,7 @@ func parseAndValidate() (*Config, error) {
 	cfg.Traces.Dir = utils.ResolveTuskPath(cfg.Traces.Dir)
 
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("error validating config: %w", err)
+		return nil, err
 	}
 
 	return &cfg, nil
@@ -225,7 +224,19 @@ func (cfg *Config) Validate() error {
 
 	if cfg.TestExecution.Timeout != "" {
 		if _, err := time.ParseDuration(cfg.TestExecution.Timeout); err != nil {
-			errs = append(errs, fmt.Errorf("test_execution.timeout invalid: %w", err))
+			errs = append(errs, fmt.Errorf("test_execution.timeout: invalid duration %q", cfg.TestExecution.Timeout))
+		}
+	}
+
+	if cfg.Service.Readiness.Timeout != "" {
+		if _, err := time.ParseDuration(cfg.Service.Readiness.Timeout); err != nil {
+			errs = append(errs, fmt.Errorf("service.readiness_check.timeout: invalid duration %q", cfg.Service.Readiness.Timeout))
+		}
+	}
+
+	if cfg.Service.Readiness.Interval != "" {
+		if _, err := time.ParseDuration(cfg.Service.Readiness.Interval); err != nil {
+			errs = append(errs, fmt.Errorf("service.readiness_check.interval: invalid duration %q", cfg.Service.Readiness.Interval))
 		}
 	}
 
@@ -239,7 +250,7 @@ func (cfg *Config) Validate() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("configuration validation failed: %w", errors.Join(errs...))
+		return errors.Join(errs...)
 	}
 
 	return nil

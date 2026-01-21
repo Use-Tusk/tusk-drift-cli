@@ -2,7 +2,8 @@ package runner
 
 import (
 	"fmt"
-	"log/slog"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
@@ -48,7 +49,7 @@ func GroupTestsByEnvironment(tests []Test, preAppStartSpans []*core.Span) (*Envi
 			envVars = make(map[string]string) // Use empty map on error
 		}
 		if envVarsSpan == nil && envName != "default" {
-			slog.Debug("No ENV_VARS span found for environment", "environment", envName)
+			log.Debug("No ENV_VARS span found for environment", "environment", envName)
 		}
 
 		result.Groups = append(result.Groups, &EnvironmentGroup{
@@ -60,7 +61,7 @@ func GroupTestsByEnvironment(tests []Test, preAppStartSpans []*core.Span) (*Envi
 	}
 
 	for _, group := range result.Groups {
-		slog.Debug("EnvironmentGrouping: environment", "envName", group.Name, "testCount", len(group.Tests), "envVarsLength", len(group.EnvVars))
+		log.Debug("EnvironmentGrouping: environment", "envName", group.Name, "testCount", len(group.Tests), "envVarsLength", len(group.EnvVars))
 	}
 
 	return result, nil
@@ -109,13 +110,13 @@ func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment str
 	}
 
 	if len(candidateSpans) == 0 {
-		slog.Debug("No ENV_VARS spans found in preAppStartSpans",
+		log.Debug("No ENV_VARS spans found in preAppStartSpans",
 			"environment", environment,
 			"preAppStartSpan_count", len(preAppStartSpans))
 		return make(map[string]string), nil, nil
 	}
 
-	slog.Debug("Found ENV_VARS span candidates",
+	log.Debug("Found ENV_VARS span candidates",
 		"environment", environment,
 		"candidate_count", len(candidateSpans))
 
@@ -128,14 +129,14 @@ func extractEnvVarsForEnvironment(preAppStartSpans []*core.Span, environment str
 	// Extract ENV_VARS from the selected span's output value
 	envVars, err := parseEnvVarsFromOutputValue(selectedSpan)
 	if err != nil {
-		slog.Debug("Failed to parse ENV_VARS from span output value",
+		log.Debug("Failed to parse ENV_VARS from span output value",
 			"environment", environment,
 			"spanId", selectedSpan.SpanId,
 			"error", err)
 		return make(map[string]string), selectedSpan, err
 	}
 
-	slog.Debug("Successfully extracted ENV_VARS",
+	log.Debug("Successfully extracted ENV_VARS",
 		"environment", environment,
 		"env_var_count", len(envVars))
 
@@ -164,7 +165,7 @@ func findMostRecentEnvVarsSpan(spans []*core.Span) *core.Span {
 // ENV_VARS is expected to be a nested object in output value
 func parseEnvVarsFromOutputValue(span *core.Span) (map[string]string, error) {
 	if span == nil || span.OutputValue == nil {
-		slog.Debug("parseEnvVarsFromOutputValue: span or output value is nil",
+		log.Debug("parseEnvVarsFromOutputValue: span or output value is nil",
 			"span_nil", span == nil,
 			"output_value_nil", span == nil || span.OutputValue == nil)
 		return make(map[string]string), nil
@@ -177,13 +178,13 @@ func parseEnvVarsFromOutputValue(span *core.Span) (map[string]string, error) {
 	for k := range outputValueMap {
 		keys = append(keys, k)
 	}
-	slog.Debug("parseEnvVarsFromOutputValue: checking output value",
+	log.Debug("parseEnvVarsFromOutputValue: checking output value",
 		"spanId", span.SpanId,
 		"metadata_keys", keys)
 
 	envVarsRaw, ok := outputValueMap["ENV_VARS"]
 	if !ok {
-		slog.Debug("parseEnvVarsFromOutputValue: ENV_VARS key not found in output value",
+		log.Debug("parseEnvVarsFromOutputValue: ENV_VARS key not found in output value",
 			"spanId", span.SpanId)
 		return make(map[string]string), nil
 	}
@@ -203,7 +204,7 @@ func parseEnvVarsFromOutputValue(span *core.Span) (map[string]string, error) {
 	case map[string]string:
 		envVars = v
 	default:
-		slog.Warn("ENV_VARS output value has unexpected type", "type", fmt.Sprintf("%T", v))
+		log.Warn("ENV_VARS output value has unexpected type", "type", fmt.Sprintf("%T", v))
 		return make(map[string]string), fmt.Errorf("ENV_VARS has unexpected type: %T", v)
 	}
 

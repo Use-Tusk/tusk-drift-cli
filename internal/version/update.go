@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"golang.org/x/mod/semver"
 )
 
@@ -88,9 +89,9 @@ func PromptAndUpdate(release *LatestRelease) bool {
 		return false
 	}
 
-	fmt.Printf("\nA new version of Tusk CLI is available: %s (current: %s)\n", release.Version, Version)
-	fmt.Printf("Release notes: %s\n", release.URL)
-	fmt.Print("\nWould you like to update now? [y/N]: ")
+	log.UserInfo(fmt.Sprintf("\nA new version of Tusk CLI is available: %s (current: %s)", release.Version, Version))
+	log.UserInfo(fmt.Sprintf("Release notes: %s", release.URL))
+	log.Print("\nWould you like to update now? [y/N]: ")
 
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
@@ -100,7 +101,7 @@ func PromptAndUpdate(release *LatestRelease) bool {
 
 	response = strings.TrimSpace(strings.ToLower(response))
 	if response != "y" && response != "yes" {
-		fmt.Println("Update skipped.")
+		log.UserInfo("Update skipped.")
 		return false
 	}
 
@@ -114,24 +115,24 @@ func AutoUpdate(release *LatestRelease) bool {
 		return false
 	}
 
-	fmt.Printf("\nA new version of Tusk CLI is available: %s (current: %s)\n", release.Version, Version)
-	fmt.Printf("Release notes: %s\n", release.URL)
-	fmt.Println("\nAuto-updating...")
+	log.UserInfo(fmt.Sprintf("\nA new version of Tusk CLI is available: %s (current: %s)", release.Version, Version))
+	log.UserInfo(fmt.Sprintf("Release notes: %s", release.URL))
+	log.UserInfo("\nAuto-updating...")
 
 	return performUpdate(release)
 }
 
 // performUpdate downloads and installs the update, printing status messages.
 func performUpdate(release *LatestRelease) bool {
-	fmt.Printf("Downloading %s...\n", release.Version)
+	log.UserProgress(fmt.Sprintf("Downloading %s...", release.Version))
 	if err := SelfUpdate(release); err != nil {
-		fmt.Printf("Update failed: %v\n", err)
-		fmt.Printf("You can download the latest release from: %s\n", release.URL)
+		log.UserError(fmt.Sprintf("Update failed: %v", err))
+		log.UserInfo(fmt.Sprintf("You can download the latest release from: %s", release.URL))
 		return false
 	}
 
-	fmt.Printf("\nSuccessfully updated to %s!\n", release.Version)
-	fmt.Println("Please restart tusk to use the new version.")
+	log.UserSuccess(fmt.Sprintf("\nSuccessfully updated to %s!", release.Version))
+	log.UserInfo("Please restart tusk to use the new version.")
 	return true
 }
 

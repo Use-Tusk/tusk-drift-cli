@@ -2,42 +2,41 @@ package runner
 
 import (
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 // StartEnvironment starts the mock server and service, then waits for the SDK ack.
 // It performs best-effort cleanup on failure.
 func (e *Executor) StartEnvironment() error {
-	logging.LogToService("Starting mock server...")
+	log.ServiceLog("Starting mock server...")
 	if err := e.StartServer(); err != nil {
-		logging.LogToService(fmt.Sprintf("❌ Failed to start mock server: %v", err))
+		log.ServiceLog(fmt.Sprintf("❌ Failed to start mock server: %v", err))
 		return fmt.Errorf("start mock server: %w", err)
 	}
-	logging.LogToService("✅ Mock server started")
+	log.ServiceLog("✅ Mock server started")
 
-	logging.LogToService("Starting service...")
+	log.ServiceLog("Starting service...")
 	if err := e.StartService(); err != nil {
 		_ = e.StopServer()
 		return fmt.Errorf("start service: %w", err)
 	}
-	logging.LogToService("✅ Service started")
+	log.ServiceLog("✅ Service started")
 
-	logging.LogToService("Waiting for SDK acknowledgement...")
+	log.ServiceLog("Waiting for SDK acknowledgement...")
 	if err := e.WaitForSDKAcknowledgement(); err != nil {
-		logging.LogToService(fmt.Sprintf("❌ Failed to get SDK acknowledgement: %v", err))
+		log.ServiceLog(fmt.Sprintf("❌ Failed to get SDK acknowledgement: %v", err))
 		_ = e.StopService()
 		_ = e.StopServer()
 		return fmt.Errorf("sdk acknowledgement: %w", err)
 	}
-	logging.LogToService("✅ SDK acknowledged")
+	log.ServiceLog("✅ SDK acknowledged")
 
-	slog.Debug("Environment is ready")
+	log.Debug("Environment is ready")
 	return nil
 }
 
@@ -56,19 +55,19 @@ func (e *Executor) StopEnvironment() error {
 // forceStopEnvironment aggressively stops the service and mock server
 // Used when the server has crashed and we need to ensure clean slate
 func (e *Executor) ForceStopEnvironment() error {
-	slog.Debug("Force stopping environment")
+	log.Debug("Force stopping environment")
 
 	// Force kill the service if it's running
 	if e.serviceCmd != nil && e.serviceCmd.Process != nil {
 		if err := e.serviceCmd.Process.Kill(); err != nil {
-			slog.Debug("Failed to kill service process", "error", err)
+			log.Debug("Failed to kill service process", "error", err)
 		}
 		e.serviceCmd = nil
 	}
 
 	// Stop the server
 	if err := e.StopServer(); err != nil {
-		slog.Debug("Failed to stop server during force stop", "error", err)
+		log.Debug("Failed to stop server during force stop", "error", err)
 	}
 
 	// Close service log file if open
@@ -127,10 +126,10 @@ func (e *Executor) StartServer() error {
 
 	if server.GetCommunicationType() == CommunicationTCP {
 		_, port := server.GetConnectionInfo()
-		slog.Debug("Mock server ready", "type", "TCP", "port", port)
+		log.Debug("Mock server ready", "type", "TCP", "port", port)
 	} else {
 		socketPath, _ := server.GetConnectionInfo()
-		slog.Debug("Mock server ready", "type", "Unix", "socket", socketPath)
+		log.Debug("Mock server ready", "type", "Unix", "socket", socketPath)
 	}
 
 	return nil
@@ -157,7 +156,7 @@ func (e *Executor) WaitForSDKAcknowledgement() error {
 		}
 	}
 
-	slog.Debug(fmt.Sprintf("Waiting for SDK acknowledgement from the service (timeout: %v)...", timeout))
+	log.Debug(fmt.Sprintf("Waiting for SDK acknowledgement from the service (timeout: %v)...", timeout))
 	err := e.server.WaitForSDKConnection(timeout)
 	if err != nil {
 		return err
@@ -178,11 +177,11 @@ func (e *Executor) RestartServerWithRetry(attempt int) error {
 	}
 
 	attemptNum := attempt + 1
-	logging.LogToService(fmt.Sprintf("🔄 Attempting to restart server (attempt %d/%d)...", attemptNum, MaxServerRestartAttempts))
+	log.ServiceLog(fmt.Sprintf("🔄 Attempting to restart server (attempt %d/%d)...", attemptNum, MaxServerRestartAttempts))
 
 	// 1. Force stop existing server/service
 	if err := e.ForceStopEnvironment(); err != nil {
-		slog.Warn("Force stop failed during restart", "error", err)
+		log.Warn("Force stop failed during restart", "error", err)
 	}
 
 	// 2. Wait with exponential backoff
@@ -191,12 +190,12 @@ func (e *Executor) RestartServerWithRetry(attempt int) error {
 		shift = 10
 	}
 	backoff := RestartBackoffBase * time.Duration(1<<shift)
-	slog.Debug("Waiting before restart", "backoff", backoff, "attempt", attemptNum)
+	log.Debug("Waiting before restart", "backoff", backoff, "attempt", attemptNum)
 	time.Sleep(backoff)
 
 	// 3. Restart environment
 	if err := e.StartEnvironment(); err != nil {
-		logging.LogToService(fmt.Sprintf("❌ Restart attempt %d failed: %v", attemptNum, err))
+		log.ServiceLog(fmt.Sprintf("❌ Restart attempt %d failed: %v", attemptNum, err))
 		// Try again with next attempt
 		if attempt+1 < MaxServerRestartAttempts {
 			return e.RestartServerWithRetry(attempt + 1)
@@ -204,7 +203,7 @@ func (e *Executor) RestartServerWithRetry(attempt int) error {
 		return fmt.Errorf("restart attempt %d failed: %w", attemptNum, err)
 	}
 
-	logging.LogToService(fmt.Sprintf("✅ Server restarted successfully (attempt %d)", attemptNum))
+	log.ServiceLog(fmt.Sprintf("✅ Server restarted successfully (attempt %d)", attemptNum))
 	return nil
 }
 

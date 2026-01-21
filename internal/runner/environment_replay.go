@@ -3,10 +3,9 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 // ReplayTestsByEnvironment orchestrates environment-based test replay
@@ -24,14 +23,14 @@ func ReplayTestsByEnvironment(
 	allResults := make([]TestResult, 0)
 
 	for i, group := range groups {
-		slog.Debug("Starting replay for environment group",
+		log.Debug("Starting replay for environment group",
 			"environment", group.Name,
 			"test_count", len(group.Tests),
 			"env_var_count", len(group.EnvVars),
 			"group_index", i+1,
 			"total_groups", len(groups))
 
-		logging.LogToService(fmt.Sprintf("Running %d tests for environment: %s", len(group.Tests), group.Name))
+		log.ServiceLog(fmt.Sprintf("Running %d tests for environment: %s", len(group.Tests), group.Name))
 
 		// 1. Set environment variables
 		cleanup, err := SetEnvironmentVariables(group.EnvVars)
@@ -59,21 +58,21 @@ func ReplayTestsByEnvironment(
 
 		// 5. Stop environment
 		if err := executor.StopEnvironment(); err != nil {
-			slog.Warn("Failed to stop environment cleanly",
+			log.Warn("Failed to stop environment cleanly",
 				"environment", group.Name,
 				"error", err)
-			logging.LogToService(fmt.Sprintf("⚠️  Warning: failed to stop environment for %s: %v", group.Name, err))
+			log.ServiceLog(fmt.Sprintf("⚠️  Warning: failed to stop environment for %s: %v", group.Name, err))
 		}
 
 		// 6. Restore environment variables
 		cleanup()
 
-		slog.Debug("Completed replay for environment group",
+		log.Debug("Completed replay for environment group",
 			"environment", group.Name,
 			"results_count", len(results))
 	}
 
-	slog.Debug("Completed all environment group replays",
+	log.Debug("Completed all environment group replays",
 		"total_groups", len(groups),
 		"total_results", len(allResults))
 
@@ -109,7 +108,7 @@ func SetEnvironmentVariables(envVars map[string]string) (cleanup func(), err err
 		}
 	}
 
-	slog.Debug("Set environment variables", "count", len(envVars))
+	log.Debug("Set environment variables", "count", len(envVars))
 
 	// Return cleanup function
 	cleanup = func() {
@@ -124,18 +123,18 @@ func restoreEnvironmentVariables(originalVars map[string]string, keysToUnset []s
 	// Restore original values
 	for key, val := range originalVars {
 		if err := os.Setenv(key, val); err != nil {
-			slog.Warn("Failed to restore env var", "key", key, "error", err)
+			log.Warn("Failed to restore env var", "key", key, "error", err)
 		}
 	}
 
 	// Unset keys that didn't exist before
 	for _, key := range keysToUnset {
 		if err := os.Unsetenv(key); err != nil {
-			slog.Warn("Failed to unset env var", "key", key, "error", err)
+			log.Warn("Failed to unset env var", "key", key, "error", err)
 		}
 	}
 
-	slog.Debug("Restored environment variables",
+	log.Debug("Restored environment variables",
 		"restored_count", len(originalVars),
 		"unset_count", len(keysToUnset))
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
@@ -231,15 +231,15 @@ func RunTestsInteractive(tests []runner.Test, executor *runner.Executor) ([]runn
 	m := newTestExecutorModel(tests, executor, nil)
 
 	// Register this model as the global test logger
-	logging.SetTestLogger(m)
+	log.SetTUILogger(m)
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		logging.SetTestLogger(nil)
+		log.SetTUILogger(nil)
 		return nil, err
 	}
 
-	logging.SetTestLogger(nil)
+	log.SetTUILogger(nil)
 	return m.results, nil
 }
 
@@ -247,7 +247,7 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 	m := newTestExecutorModel(tests, executor, opts)
 
 	// Register this model as the global test logger
-	logging.SetTestLogger(m)
+	log.SetTUILogger(m)
 
 	// Prepend initial service logs
 	if opts != nil && len(opts.InitialServiceLogs) > 0 {
@@ -258,11 +258,11 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		logging.SetTestLogger(nil)
+		log.SetTUILogger(nil)
 		return nil, err
 	}
 
-	logging.SetTestLogger(nil)
+	log.SetTUILogger(nil)
 	return m.results, nil
 }
 
@@ -398,7 +398,7 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.updateStats()
 
 	case testsLoadFailedMsg:
-		logging.LogToService(fmt.Sprintf("❌ Failed to load tests: %v", msg.err))
+		log.ServiceLog(fmt.Sprintf("❌ Failed to load tests: %v", msg.err))
 		return m, func() tea.Msg { return executionFailedMsg{reason: fmt.Sprintf("Failed to load tests: %v", msg.err)} }
 
 	case testStartedMsg:
@@ -1118,7 +1118,7 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 
 		// Check if this test crashed the server
 		if err != nil && !m.executor.CheckServerHealth() {
-			slog.Warn("Test crashed the server in interactive mode", "testID", test.TraceID, "error", err)
+			log.Warn("Test crashed the server in interactive mode", "testID", test.TraceID, "error", err)
 
 			if m.inRetryPhase {
 				// Second crash during retry - mark as definitively crashed
@@ -1159,7 +1159,7 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 				}
 			}
 		} else {
-			slog.Debug("Test completed", "testID", test.TraceID, "result", result)
+			log.Debug("Test completed", "testID", test.TraceID, "result", result)
 		}
 
 		return testCompletedMsg{

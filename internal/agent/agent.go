@@ -21,6 +21,7 @@ import (
 
 	agenttools "github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 const progressFileName = "PROGRESS.md"
@@ -170,7 +171,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	defer a.cancel()
 
 	if a.logger != nil {
-		fmt.Printf("Logs will be written to: %s\n\n", a.logger.FilePath())
+		log.UserInfo(fmt.Sprintf("Logs will be written to: %s\n", a.logger.FilePath()))
 	}
 
 	// Create UI based on mode
@@ -191,7 +192,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		go func() {
 			<-sigCh
-			fmt.Println("\n\nInterrupted. Cleaning up...")
+			log.UserWarn("\n\nInterrupted. Cleaning up...")
 			a.cancel()
 		}()
 
@@ -226,7 +227,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 
 	// Print final output so user can see what happened
 	if output := a.ui.GetFinalOutput(); output != "" {
-		fmt.Println(output)
+		log.Println(output)
 	}
 
 	select {

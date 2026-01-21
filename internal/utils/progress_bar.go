@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 const (
@@ -161,7 +161,7 @@ func (pt *ProgressTracker) SetTotal(total int) {
 	if pt.progress != nil {
 		pt.progress.SetTotal(total)
 	} else if pt.interactive && total > 0 {
-		logging.LogToService(fmt.Sprintf("%s (0/%d)...", pt.message, total))
+		log.ServiceLog(fmt.Sprintf("%s (0/%d)...", pt.message, total))
 	}
 }
 
@@ -174,7 +174,7 @@ func (pt *ProgressTracker) Update(current int) {
 		currentMilestone := int(percentage/25) * 25
 
 		if currentMilestone > pt.lastLoggedMilestone {
-			logging.LogToService(fmt.Sprintf("%s (%d/%d, %d%%)...", pt.message, current, pt.total, currentMilestone))
+			log.ServiceLog(fmt.Sprintf("%s (%d/%d, %d%%)...", pt.message, current, pt.total, currentMilestone))
 			pt.lastLoggedMilestone = currentMilestone
 		}
 	}
@@ -188,7 +188,7 @@ func (pt *ProgressTracker) Finish(finalMessage string) {
 			pt.progress.Stop()
 		}
 	} else if pt.interactive && finalMessage != "" {
-		logging.LogToService(finalMessage)
+		log.ServiceLog(finalMessage)
 	}
 }
 

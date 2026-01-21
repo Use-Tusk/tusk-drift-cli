@@ -5,10 +5,11 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 // createServiceCommand creates a shell command for Windows systems
@@ -37,7 +38,7 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 	}
 
 	pid := cmd.Process.Pid
-	slog.Debug("Stopping service", "pid", pid)
+	log.Debug("Stopping service", "pid", pid)
 
 	// On Windows, try to interrupt the process first
 	// Note: On Windows, Process.Signal doesn't work the same way as Unix
@@ -46,7 +47,7 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 	// First, try graceful termination using taskkill
 	killCmd := exec.Command("taskkill", "/T", "/PID", fmt.Sprintf("%d", pid))
 	if err := killCmd.Run(); err != nil {
-		slog.Debug("Failed to gracefully terminate process tree", "pid", pid, "error", err)
+		log.Debug("Failed to gracefully terminate process tree", "pid", pid, "error", err)
 	}
 
 	// Wait for the process to exit gracefully
@@ -55,14 +56,14 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 
 	select {
 	case <-done:
-		slog.Debug("Service stopped gracefully")
+		log.Debug("Service stopped gracefully")
 		return nil
 	case <-time.After(timeout):
-		slog.Debug("Service didn't stop gracefully, force killing")
+		log.Debug("Service didn't stop gracefully, force killing")
 		// Force kill the entire process tree
 		forceKillCmd := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
 		if err := forceKillCmd.Run(); err != nil {
-			slog.Debug("Failed to force kill process tree", "pid", pid, "error", err)
+			log.Debug("Failed to force kill process tree", "pid", pid, "error", err)
 			// Last resort: use Process.Kill()
 			_ = cmd.Process.Kill()
 		}

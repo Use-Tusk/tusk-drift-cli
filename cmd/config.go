@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 var configCmd = &cobra.Command{
@@ -49,21 +50,21 @@ Available keys:
 
 		switch strings.ToLower(key) {
 		case "analytics":
-			fmt.Println(cfg.AnalyticsEnabled)
+			log.Println(fmt.Sprintf("%v", cfg.AnalyticsEnabled))
 		case "darkmode":
 			if cfg.DarkMode != nil {
-				fmt.Println(*cfg.DarkMode)
+				log.Println(fmt.Sprintf("%v", *cfg.DarkMode))
 			} else {
-				fmt.Println("unset")
+				log.Println("unset")
 			}
 		case "autoupdate":
-			fmt.Println(cfg.AutoUpdate)
+			log.Println(fmt.Sprintf("%v", cfg.AutoUpdate))
 		case "autocheckupdates":
 			// nil means true (default)
 			if cfg.AutoCheckUpdates != nil {
-				fmt.Println(*cfg.AutoCheckUpdates)
+				log.Println(fmt.Sprintf("%v", *cfg.AutoCheckUpdates))
 			} else {
-				fmt.Println(true)
+				log.Println("true")
 			}
 		default:
 			return fmt.Errorf("unknown config key: %s\n\nAvailable keys: analytics, darkMode, autoUpdate, autoCheckUpdates", key)
@@ -130,7 +131,7 @@ Examples:
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 
-		fmt.Printf("%s = %s\n", key, value)
+		log.Println(fmt.Sprintf("%s = %s", key, value))
 		return nil
 	},
 }

@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -27,7 +28,7 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			slog.Warn("Failed to close file", "error", err, "filename", filename)
+			log.Warn("Failed to close file", "error", err, "filename", filename)
 		}
 	}()
 
@@ -50,7 +51,7 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 		}
 
 		// if span.IsPreAppStart {
-		// 	slog.Debug("Found pre-app-start span", "span", span)
+		// 	log.Debug("Found pre-app-start span", "span", span)
 		// }
 
 		// Apply filter if provided, otherwise include all spans

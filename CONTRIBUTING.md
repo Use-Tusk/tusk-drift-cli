@@ -27,9 +27,9 @@ If you have any questions, feel free to open an issue or email [support@usetusk.
   - `make lint` — run `golangci-lint`
   - `make build-ci` — build with version info (used in CI)
 - Logging:
-  - Use `slog.Debug` for debug logs.
-  - Use `fmt.Println` for runtime logs in headless mode.
-  - Use `logging.LogToService` or `logging.LogToCurrentTest` to display logs in the TUI.
+  - Use `log.Debug` for debug logs (from `internal/log`).
+  - Use `log.ServiceLog` or `log.TestLog` to display logs in the TUI.
+  - Use `log.UserInfo`, `log.UserWarn`, `log.UserError`, `log.UserSuccess` for styled user-facing output.
 
 ## Local replay (developer service)
 

@@ -70,8 +70,6 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			}
 			return fmt.Errorf("failed to check .tusk/config.yaml: %w", err)
 		}
-		fmt.Println("🔧 Skipping to cloud setup (--skip-to-cloud mode)")
-		fmt.Println()
 	}
 
 	cfg := agent.Config{

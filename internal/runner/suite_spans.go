@@ -3,12 +3,10 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 	"path/filepath"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
@@ -55,7 +53,7 @@ func BuildSuiteSpansForRun(
 		global, err := FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 		switch {
 		case err != nil:
-			slog.Warn("Failed to fetch global spans", "error", err)
+			log.Warn("Failed to fetch global spans", "error", err)
 		case opts.AllowSuiteWideMatching:
 			// Validation mode: add global spans directly to suite spans for matching
 			suiteSpans = append(suiteSpans, global...)
@@ -119,14 +117,14 @@ func PrepareAndSetSuiteSpans(
 		return err
 	}
 	if opts.Interactive {
-		logging.LogToService(fmt.Sprintf(
+		log.ServiceLog(fmt.Sprintf(
 			"Loading %d suite spans for matching (%d unique traces, %d pre-app-start)",
 			len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount,
 		))
 	} else if !opts.Quiet {
-		fmt.Fprintf(os.Stderr, "  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start)\n", len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount)
+		log.UserProgress(fmt.Sprintf("  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start)", len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount))
 	}
-	slog.Debug("Prepared suite spans for matching",
+	log.Debug("Prepared suite spans for matching",
 		"count", len(result.SuiteSpans),
 		"uniqueTraces", result.UniqueTraceCount,
 		"preAppSpans", result.PreAppStartCount,
@@ -261,7 +259,7 @@ func FetchLocalPreAppStartSpans(interactive bool) ([]*core.Span, error) {
 			spans, err := utils.ParseSpansFromFile(f, func(s *core.Span) bool { return s.IsPreAppStart })
 			if err != nil {
 				if interactive {
-					logging.LogToService(fmt.Sprintf("❌ Failed to parse spans from %s: %v", f, err))
+					log.ServiceLog(fmt.Sprintf("❌ Failed to parse spans from %s: %v", f, err))
 				}
 				continue
 			}
@@ -300,6 +298,6 @@ func DedupeSpans(spans []*core.Span) []*core.Span {
 		out = append(out, s)
 	}
 
-	slog.Debug("Deduplicated suite spans", "inCount", len(spans), "outCount", len(out))
+	log.Debug("Deduplicated suite spans", "inCount", len(spans), "outCount", len(out))
 	return out
 }
