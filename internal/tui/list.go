@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
@@ -42,23 +43,22 @@ const (
 )
 
 type listModel struct {
-	table               table.Model
-	tests               []runner.Test
-	executor            *runner.Executor
-	width               int
-	height              int
-	state               viewState
-	testExecutor        *testExecutorModel
-	selectedTest        *runner.Test
-	columns             []table.Column
-	suiteOpts           runner.SuiteSpanOptions
-	err                 error
-	sizeWarning         *components.TerminalSizeWarning
-	expandedTraces      map[string]bool // map of trace id to whether it's expanded
-	rowInfos            []rowInfo
-	detailsScrollOffset int
-	detailsCache        []string
-	detailsCursor       int
+	table          table.Model
+	tests          []runner.Test
+	executor       *runner.Executor
+	width          int
+	height         int
+	state          viewState
+	testExecutor   *testExecutorModel
+	selectedTest   *runner.Test
+	columns        []table.Column
+	suiteOpts      runner.SuiteSpanOptions
+	err            error
+	sizeWarning    *components.TerminalSizeWarning
+	expandedTraces map[string]bool // map of trace id to whether it's expanded
+	rowInfos       []rowInfo
+	detailsPanel   *components.DetailsPanel
+	lastCursor     int // Track cursor to detect selection changes
 }
 
 func ShowTestList(tests []runner.Test) error {
@@ -74,15 +74,15 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, su
 	}
 
 	m := &listModel{
-		tests:               tests,
-		executor:            executor,
-		state:               listView,
-		columns:             columns,
-		suiteOpts:           suiteOpts,
-		sizeWarning:         components.NewListViewSizeWarning(),
-		expandedTraces:      make(map[string]bool),
-		detailsScrollOffset: 0,
-		detailsCursor:       -1, // Force initial cache generation
+		tests:          tests,
+		executor:       executor,
+		state:          listView,
+		columns:        columns,
+		suiteOpts:      suiteOpts,
+		sizeWarning:    components.NewListViewSizeWarning(),
+		expandedTraces: make(map[string]bool),
+		detailsPanel:   components.NewDetailsPanel(),
+		lastCursor:     -1,
 	}
 
 	rows, rowMapping := m.buildRows()
@@ -164,9 +164,18 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.testExecutor = executor
 					m.selectedTest = &test
 					m.state = testExecutionView
-					// Initialize the test executor
 					return m, m.testExecutor.Init()
 				}
+			case "u":
+				m.detailsPanel.SetFocused(true)
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+				m.detailsPanel.SetFocused(false)
+				return m, nil
+			case "d":
+				m.detailsPanel.SetFocused(true)
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+				m.detailsPanel.SetFocused(false)
+				return m, nil
 			case "left", "h":
 				selectedIdx := m.table.Cursor()
 				if selectedIdx >= 0 && selectedIdx < len(m.rowInfos) {
@@ -188,22 +197,11 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case "g":
-				m.table.GotoTop()
-				m.detailsScrollOffset = 0
+				m.detailsPanel.GotoTop()
 			case "G":
-				m.table.GotoBottom()
-				m.detailsScrollOffset = 0
-			case "u":
-				if m.detailsScrollOffset > 0 {
-					m.detailsScrollOffset--
-				}
-				return m, nil
-			case "d":
-				m.detailsScrollOffset++
-				return m, nil
+				m.detailsPanel.GotoBottom()
 			}
 		case testExecutionView:
-			// Handle return from test execution
 			if m.testExecutor != nil && m.testExecutor.state == stateCompleted {
 				switch msg.String() {
 				case "q", "ctrl+c", "esc", "enter", " ":
@@ -264,13 +262,22 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update the table only in list view
+	// Update the table in list view
 	if m.state == listView {
 		prevCursor := m.table.Cursor()
 		m.table, cmd = m.table.Update(msg)
 		cmds = append(cmds, cmd)
 		if m.table.Cursor() != prevCursor {
-			m.detailsScrollOffset = 0
+			m.updateDetailsContent()
+		}
+	}
+
+	if m.state == listView {
+		if _, ok := msg.(tea.MouseMsg); ok {
+			cmd := m.detailsPanel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 	}
 
@@ -322,26 +329,25 @@ func (m *listModel) View() string {
 		availableWidthForHelp := m.width - usedWidth
 		availableWidthForHelp = max(availableWidthForHelp, 20)
 
-		helpText := utils.TruncateWithEllipsis("↑/↓: navigate • ←/→: collapse/expand • u/d: scroll details • enter: run • q: quit", availableWidthForHelp)
+		helpText := utils.TruncateWithEllipsis("• ↑/↓/j/k: navigate • ←/→: collapse/expand • u/d: scroll details • enter: run • q: quit", availableWidthForHelp)
 
 		footer := fmt.Sprintf("%s%s%s", testCount, separator, helpText)
 		help := components.Footer(m.width, footer)
 
 		tableWidth := m.width / 2
-		detailsWidth := m.width - tableWidth - 1 // -1 for border
+		detailsWidth := m.width - tableWidth
 
-		detailsContent := m.renderDetails(detailsWidth, m.height-7)
+		m.detailsPanel.SetSize(detailsWidth, m.height-5)
 
-		detailsStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(lipgloss.Color("240")).
-			Width(detailsWidth).
-			Height(m.height - 7)
+		if m.table.Cursor() != m.lastCursor {
+			m.lastCursor = m.table.Cursor()
+			m.updateDetailsContent()
+		}
 
 		mainContent := lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			m.table.View(),
-			detailsStyle.Render(detailsContent),
+			m.detailsPanel.View(),
 		)
 
 		return fmt.Sprintf("%s\n\n%s\n%s", header, mainContent, help)
@@ -356,51 +362,32 @@ func (m *listModel) View() string {
 	}
 }
 
-// renderDetails renders the details panel for the currently selected item
-func (m *listModel) renderDetails(width, height int) string {
+// updateDetailsContent updates the details panel content based on current selection
+func (m *listModel) updateDetailsContent() {
 	selectedIdx := m.table.Cursor()
 	if selectedIdx < 0 || selectedIdx >= len(m.rowInfos) {
-		return "No selection"
+		m.detailsPanel.SetContent("No selection")
+		m.detailsPanel.SetTitle("Details")
+		return
 	}
 
-	// The cache is primarily there to prevent contents from changing from
-	// redraws. The primary culprit is `map`, because iteration order is
-	// random, so redrawing will cause contents to shift
+	info := m.rowInfos[selectedIdx]
+	test := m.tests[info.testIndex]
 
-	if selectedIdx != m.detailsCursor {
-		m.detailsCursor = selectedIdx
-		m.detailsCache = m.generateDetailsContent()
-	}
-
-	lines := m.detailsCache
-
-	totalLines := len(lines)
-	if totalLines <= height {
-		m.detailsScrollOffset = 0
+	// Set title based on selection type
+	if info.isTrace {
+		m.detailsPanel.SetTitle("Trace Details")
 	} else {
-		maxScroll := totalLines - height
-		if m.detailsScrollOffset > maxScroll {
-			m.detailsScrollOffset = maxScroll
-		}
+		m.detailsPanel.SetTitle("Span Details")
 	}
 
-	visibleLines := make([]string, len(lines))
-	copy(visibleLines, lines)
+	// Generate and render content
+	lines := m.generateDetailsContent()
+	content := utils.RenderMarkdown(strings.Join(lines, "\n"))
+	m.detailsPanel.SetContent(content)
+	m.detailsPanel.GotoTop()
 
-	if m.detailsScrollOffset > 0 && m.detailsScrollOffset < len(visibleLines) {
-		visibleLines = visibleLines[m.detailsScrollOffset:]
-	}
-	if len(visibleLines) > height {
-		visibleLines = visibleLines[:height]
-	}
-
-	for i, line := range visibleLines {
-		if lipgloss.Width(line) > width-2 {
-			visibleLines[i] = utils.TruncateWithEllipsis(line, width-2)
-		}
-	}
-
-	return strings.Join(visibleLines, "\n")
+	_ = test // Used in generateDetailsContent
 }
 
 // lineBuilder helps build lines for the details panel efficiently
@@ -412,46 +399,46 @@ func newLineBuilder(capacity int) *lineBuilder {
 	return &lineBuilder{lines: make([]string, 0, capacity)}
 }
 
-func (b *lineBuilder) add(line string) {
-	b.lines = append(b.lines, line)
-}
-
 func (b *lineBuilder) blank() {
 	b.lines = append(b.lines, "")
 }
 
 func (b *lineBuilder) header(title string) {
-	b.lines = append(b.lines, styles.HeadingStyle.Render(title))
+	b.lines = append(b.lines, fmt.Sprintf("# %s", title))
 }
 
 func (b *lineBuilder) field(key string, value any) {
-	b.lines = append(b.lines, fmt.Sprintf("%s: %v", key, value))
+	b.lines = append(b.lines, fmt.Sprintf("- %s: %v", key, value))
 }
 
 func (b *lineBuilder) addSortedMap(header string, m map[string]string) {
 	if len(m) == 0 {
 		return
 	}
-	b.add(header)
+	b.lines = append(b.lines, fmt.Sprintf("- %s:", header))
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		b.add(fmt.Sprintf("  %s: %s", k, m[k]))
+		b.lines = append(b.lines, fmt.Sprintf("  - %s: %s", k, m[k]))
 	}
 }
 
-func (b *lineBuilder) addJSON(label string, data any) {
+func (b *lineBuilder) addJSON(label string, indent string, data any) {
 	if data == nil {
 		return
 	}
-	b.add(label)
-	jsonBytes, _ := json.MarshalIndent(data, "  ", "  ")
-	for _, line := range strings.Split(string(jsonBytes), "\n") {
-		b.add("  " + line)
+	if label != "" {
+		b.lines = append(b.lines, fmt.Sprintf("- %s:", label))
 	}
+	b.lines = append(b.lines, "```json")
+	jsonBytes, _ := json.MarshalIndent(data, "", "  ")
+	for line := range strings.SplitSeq(string(jsonBytes), "\n") {
+		b.lines = append(b.lines, indent+line)
+	}
+	b.lines = append(b.lines, "```")
 }
 
 func (b *lineBuilder) build() []string {
@@ -484,18 +471,47 @@ func (m *listModel) generateDetailsContent() []string {
 		b.field("File", test.FileName)
 		b.field("Spans", len(test.Spans))
 
+		var rootSpan *core.Span
+		for _, span := range test.Spans {
+			if span.IsRootSpan {
+				rootSpan = span
+				break
+			}
+		}
+
 		b.blank()
 		b.header("REQUEST")
+		b.blank()
 		b.field("Method", test.Request.Method)
 		b.field("Path", test.Request.Path)
-		b.addSortedMap("Headers:", test.Request.Headers)
-		b.addJSON("Body:", test.Request.Body)
+		b.addSortedMap("Headers", test.Request.Headers)
+
+		reqBody := test.Request.Body
+		if reqBody != nil && rootSpan != nil && rootSpan.InputSchema != nil {
+			if bodySchema := rootSpan.InputSchema.Properties["body"]; bodySchema != nil {
+				if _, decoded, err := runner.DecodeValueBySchema(reqBody, bodySchema); err == nil {
+					reqBody = decoded
+				}
+			}
+		}
+		b.addJSON("Body", "  ", reqBody)
 
 		b.blank()
 		b.header("RESPONSE")
+		b.blank()
 		b.field("Status", test.Response.Status)
-		b.addSortedMap("Headers:", test.Response.Headers)
-		b.addJSON("Body:", test.Response.Body)
+		b.addSortedMap("Headers", test.Response.Headers)
+
+		// Decode response body using schema
+		respBody := test.Response.Body
+		if respBody != nil && rootSpan != nil && rootSpan.OutputSchema != nil {
+			if bodySchema := rootSpan.OutputSchema.Properties["body"]; bodySchema != nil {
+				if _, decoded, err := runner.DecodeValueBySchema(respBody, bodySchema); err == nil {
+					respBody = decoded
+				}
+			}
+		}
+		b.addJSON("Body", "  ", respBody)
 	} else {
 		span := m.findSpan(test.Spans, info.spanID)
 		if span == nil {
@@ -529,23 +545,56 @@ func (m *listModel) generateDetailsContent() []string {
 		if span.InputValue != nil {
 			b.blank()
 			b.header("INPUT")
-			b.addJSON("", span.InputValue.AsMap())
+			decodedInput := decodeStructValue(span.InputValue, span.InputSchema)
+			b.addJSON("", "", decodedInput)
 		}
 
 		if span.OutputValue != nil {
 			b.blank()
 			b.header("OUTPUT")
-			b.addJSON("", span.OutputValue.AsMap())
+			decodedOutput := decodeStructValue(span.OutputValue, span.OutputSchema)
+			b.addJSON("", "", decodedOutput)
 		}
 
 		if span.Metadata != nil {
 			b.blank()
 			b.header("METADATA")
-			b.addJSON("", span.Metadata.AsMap())
+			b.addJSON("", "", span.Metadata.AsMap())
 		}
 	}
 
 	return b.build()
+}
+
+// decodeStructValue decodes a protobuf struct value using its schema.
+// For each field in the struct, it attempts to decode using the corresponding schema property.
+// This handles base64-encoded values that need decoding.
+func decodeStructValue(value *structpb.Struct, schema *core.JsonSchema) map[string]any {
+	if value == nil {
+		return nil
+	}
+
+	result := make(map[string]any)
+	for key, field := range value.Fields {
+		fieldValue := field.AsInterface()
+
+		var fieldSchema *core.JsonSchema
+		if schema != nil && schema.Properties != nil {
+			fieldSchema = schema.Properties[key]
+		}
+
+		if fieldValue != nil {
+			_, decoded, err := runner.DecodeValueBySchema(fieldValue, fieldSchema)
+			if err == nil && decoded != nil {
+				result[key] = decoded
+			} else {
+				result[key] = fieldValue
+			}
+		} else {
+			result[key] = fieldValue
+		}
+	}
+	return result
 }
 
 // findSpan finds a span by ID in the test's spans
