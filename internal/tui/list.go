@@ -103,7 +103,7 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, su
 
 	m.table = t
 
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		return err
 	}
 
@@ -167,14 +167,10 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.testExecutor.Init()
 				}
 			case "u":
-				m.detailsPanel.SetFocused(true)
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
-				m.detailsPanel.SetFocused(false)
 				return m, nil
 			case "d":
-				m.detailsPanel.SetFocused(true)
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-				m.detailsPanel.SetFocused(false)
 				return m, nil
 			case "left", "h":
 				selectedIdx := m.table.Cursor()
@@ -196,10 +192,6 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.rebuildTable()
 					}
 				}
-			case "g":
-				m.detailsPanel.GotoTop()
-			case "G":
-				m.detailsPanel.GotoBottom()
 			}
 		case testExecutionView:
 			if m.testExecutor != nil && m.testExecutor.state == stateCompleted {
@@ -224,6 +216,15 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, executorCmd
 			}
+		}
+
+	case tea.MouseMsg:
+		if m.state == listView {
+			cmd := m.detailsPanel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
 		}
 
 	case tea.WindowSizeMsg:
@@ -253,7 +254,13 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	default:
 		// Forward all other messages to the appropriate view
-		if m.state == testExecutionView && m.testExecutor != nil {
+		if m.state == listView {
+			// Forward to details panel (for auto-scroll messages, etc.)
+			cmd := m.detailsPanel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		} else if m.state == testExecutionView && m.testExecutor != nil {
 			updatedExecutor, cmd := m.testExecutor.Update(msg)
 			if exec, ok := updatedExecutor.(*testExecutorModel); ok {
 				m.testExecutor = exec
@@ -262,22 +269,12 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update the table in list view
 	if m.state == listView {
 		prevCursor := m.table.Cursor()
 		m.table, cmd = m.table.Update(msg)
 		cmds = append(cmds, cmd)
 		if m.table.Cursor() != prevCursor {
 			m.updateDetailsContent()
-		}
-	}
-
-	if m.state == listView {
-		if _, ok := msg.(tea.MouseMsg); ok {
-			cmd := m.detailsPanel.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
 		}
 	}
 
@@ -338,15 +335,28 @@ func (m *listModel) View() string {
 		detailsWidth := m.width - tableWidth
 
 		m.detailsPanel.SetSize(detailsWidth, m.height-5)
+		m.detailsPanel.SetXOffset(tableWidth + 2) // panel position + border (1) + padding (1)
+		m.detailsPanel.SetYOffset(5)              // header (1) + empty line (1) + title (1) + margin (1) + border (1)
 
 		if m.table.Cursor() != m.lastCursor {
 			m.lastCursor = m.table.Cursor()
 			m.updateDetailsContent()
 		}
 
+		testsSectionTitle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color(styles.PrimaryColor)).
+			MarginBottom(1).
+			Render("Tests")
+
+		leftSide := lipgloss.JoinVertical(lipgloss.Left,
+			testsSectionTitle,
+			m.table.View(),
+		)
+
 		mainContent := lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			m.table.View(),
+			leftSide,
 			m.detailsPanel.View(),
 		)
 
