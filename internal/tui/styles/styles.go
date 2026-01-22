@@ -22,6 +22,34 @@ var (
 	SecondaryColor = "55"
 
 	WarningColor = "214"
+
+	// BorderColor is used for borders and dividers
+	BorderColor = "240"
+
+	// AccentColor is used for highlights and focus indicators
+	AccentColor = "205"
+
+	// SubtleBgColor is used for subtle background highlights
+	SubtleBgColor = func() string {
+		if HasDarkBackground {
+			return "236"
+		}
+		return "254"
+	}()
+
+	// ErrorColor is used for error states
+	ErrorColor = "196"
+
+	// SuccessColor is used for success states
+	SuccessColor = func() string {
+		if HasDarkBackground {
+			return "42"
+		}
+		return "34"
+	}()
+
+	// LinkColor is used for hyperlinks
+	LinkColor = "32"
 )
 
 var (
@@ -34,16 +62,11 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color(PrimaryColor))
 
-	SuccessStyle = func() lipgloss.Style {
-		color := "34"
-		if HasDarkBackground {
-			color = "42"
-		}
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-	}()
+	SuccessStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(SuccessColor))
 
 	ErrorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
+			Foreground(lipgloss.Color(ErrorColor))
 
 	WarningStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color(WarningColor))
@@ -54,8 +77,12 @@ var (
 	HelpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
 
+	// BorderDimStyle is used for borders and panel titles
+	BorderDimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(BorderColor))
+
 	SelectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).
+			Foreground(lipgloss.Color(AccentColor)).
 			Bold(true)
 
 	TableRowSelectedStyle = func() lipgloss.Style {
@@ -87,11 +114,11 @@ var (
 
 	FocusedInputStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(lipgloss.Color("205"))
+				BorderForeground(lipgloss.Color(AccentColor))
 
 	TableHeaderStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(lipgloss.Color("240")).
+				BorderForeground(lipgloss.Color(BorderColor)).
 				BorderBottom(true).
 				Bold(true).
 				PaddingLeft(1).
@@ -101,7 +128,17 @@ var (
 			PaddingLeft(1).
 			PaddingRight(1)
 
-	LinkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("32")).Bold(true).Underline(true)
+	LinkStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(LinkColor)).
+			Bold(true).
+			Underline(true)
+
+	// ScrollbarThumbStyle is for the scrollbar thumb/handle
+	ScrollbarThumbStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(PrimaryColor))
+
+	// ScrollbarTrackStyle is for the scrollbar track
+	ScrollbarTrackStyle = DimStyle
 )
 
 func NoColor() bool {

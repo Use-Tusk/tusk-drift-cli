@@ -811,7 +811,7 @@ func (m *testExecutorModel) horizontalLayout() string {
 	logView := m.logPanel.View(rightWidth, contentHeight)
 
 	separator := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
+		Foreground(lipgloss.Color(styles.BorderColor)).
 		Render(" ")
 
 	content := lipgloss.JoinHorizontal(

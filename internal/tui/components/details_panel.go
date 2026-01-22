@@ -263,20 +263,13 @@ func (dp *DetailsPanel) handleAutoScroll() tea.Cmd {
 
 // View renders the panel
 func (dp *DetailsPanel) View() string {
-	borderColor := lipgloss.Color("240")
 	title := dp.title
 	copiedIndicator := ""
 	if dp.showCopied {
-		copiedIndicator = lipgloss.NewStyle().
-			Foreground(lipgloss.Color(styles.PrimaryColor)).
-			Render(" [copied]")
+		copiedIndicator = styles.SuccessStyle.Render(" [copied]")
 	}
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(borderColor).
-		MarginBottom(1)
-
+	titleStyle := styles.BorderDimStyle.Bold(true).MarginBottom(1)
 	titleText := title + copiedIndicator
 
 	scrollbar := dp.renderScrollbar()
@@ -289,7 +282,7 @@ func (dp *DetailsPanel) View() string {
 
 	panelStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
+		BorderForeground(lipgloss.Color(styles.BorderColor)).
 		PaddingLeft(1).
 		PaddingRight(1).
 		Width(dp.width - 2).  // Account for padding
@@ -327,18 +320,15 @@ func (dp *DetailsPanel) renderScrollbar() string {
 		thumbStart = height - thumbSize
 	}
 
-	trackStyle := styles.DimStyle
-	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(styles.PrimaryColor))
-
 	var sb strings.Builder
 	for i := range height {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
 		if i >= thumbStart && i < thumbStart+thumbSize {
-			sb.WriteString(thumbStyle.Render("┃"))
+			sb.WriteString(styles.ScrollbarThumbStyle.Render("┃"))
 		} else {
-			sb.WriteString(trackStyle.Render("│"))
+			sb.WriteString(styles.ScrollbarTrackStyle.Render("│"))
 		}
 	}
 

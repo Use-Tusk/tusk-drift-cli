@@ -91,7 +91,7 @@ func (tt *TestTableComponent) View(width, height int) string {
 
 	// Update styles based on focus
 	style := table.DefaultStyles()
-	borderColor := lipgloss.Color("240")
+	borderColor := lipgloss.Color(styles.BorderColor)
 	if tt.focused {
 		borderColor = lipgloss.Color(styles.PrimaryColor)
 	}

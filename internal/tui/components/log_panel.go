@@ -24,7 +24,7 @@ func NewLogPanelComponent() *LogPanelComponent {
 	vp := viewport.New(50, 20)
 	vp.Style = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(lipgloss.Color(styles.BorderColor)).
 		PaddingLeft(1).
 		PaddingRight(1)
 
@@ -93,7 +93,7 @@ func (lp *LogPanelComponent) View(width, height int) string {
 	lp.viewport.Height = viewportHeight
 
 	// Update border color based on focus
-	borderColor := lipgloss.Color("240") // Dim
+	borderColor := lipgloss.Color(styles.BorderColor)
 	if lp.focused {
 		borderColor = lipgloss.Color(styles.PrimaryColor)
 	}
