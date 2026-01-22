@@ -349,15 +349,18 @@ func (m *listModel) View() string {
 			MarginBottom(1).
 			Render("Tests")
 
-		leftSide := lipgloss.JoinVertical(lipgloss.Left,
+		leftStyle := lipgloss.NewStyle().Width(tableWidth).MaxWidth(tableWidth)
+		rightStyle := lipgloss.NewStyle().Width(detailsWidth).MaxWidth(detailsWidth)
+
+		leftSide := leftStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
 			testsSectionTitle,
 			m.table.View(),
-		)
+		))
 
 		mainContent := lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			leftSide,
-			m.detailsPanel.View(),
+			rightStyle.Render(m.detailsPanel.View()),
 		)
 
 		return fmt.Sprintf("%s\n\n%s\n%s", header, mainContent, help)
