@@ -1,23 +1,65 @@
 package components
 
 import (
+	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/ansi"
 )
+
+// logPanelAutoScrollMsg is sent to trigger continuous scrolling during selection
+type logPanelAutoScrollMsg struct {
+	panelID int
+}
+
+// logScrollDirection indicates the direction of auto-scroll
+type logScrollDirection int
+
+const (
+	logScrollNone logScrollDirection = iota
+	logScrollUp
+	logScrollDown
+)
+
+// logPanelIDCounter is used to generate unique panel IDs
+var logPanelIDCounter int
 
 type LogPanelComponent struct {
 	viewport      viewport.Model
 	serviceLogs   []string
 	testLogs      map[string][]string
 	currentTestID string
-	focused       bool
 	logMutex      sync.RWMutex
+
+	// Selection state
+	selecting    bool
+	selStart     SelectionPos
+	selEnd       SelectionPos
+	hasSelection bool
+
+	// Screen position (set by parent)
+	xOffset int
+	yOffset int
+
+	// Content lines for selection (after wrapping)
+	contentLines []string
+
+	// Copied indicator
+	showCopied bool
+
+	// Auto-scroll state
+	panelID       int
+	autoScrollDir logScrollDirection
+	lastMouseX    int
+	lastMouseY    int
 }
 
 func NewLogPanelComponent() *LogPanelComponent {
@@ -30,48 +72,177 @@ func NewLogPanelComponent() *LogPanelComponent {
 		BorderRight(false).
 		BorderLeft(true).
 		PaddingLeft(1)
+	vp.MouseWheelEnabled = false
 
+	logPanelIDCounter++
 	return &LogPanelComponent{
 		viewport:    vp,
 		serviceLogs: []string{},
 		testLogs:    make(map[string][]string),
-		focused:     false,
+		selStart:    SelectionPos{-1, -1},
+		selEnd:      SelectionPos{-1, -1},
+		panelID:     logPanelIDCounter,
+		yOffset:     2, // title + empty line
 	}
 }
 
 func (lp *LogPanelComponent) Update(msg tea.Msg) tea.Cmd {
-	if lp.focused {
+	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		return lp.handleMouse(msg)
 
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "g":
-				lp.viewport.GotoTop()
+	case logPanelAutoScrollMsg:
+		if msg.panelID != lp.panelID {
+			return nil
+		}
+		return lp.handleAutoScroll()
+	}
+
+	var cmd tea.Cmd
+	lp.viewport, cmd = lp.viewport.Update(msg)
+	return cmd
+}
+
+const (
+	logAutoScrollInterval = 50 * time.Millisecond
+	logScrollZone         = 2
+)
+
+func (lp *LogPanelComponent) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	x := msg.X - lp.xOffset
+	y := msg.Y - lp.yOffset
+
+	if x < 0 || x >= lp.viewport.Width || y < 0 {
+		return nil
+	}
+
+	contentLine := y + lp.viewport.YOffset
+	contentCol := x
+
+	switch msg.Button {
+	case tea.MouseButtonLeft:
+		switch msg.Action {
+		case tea.MouseActionPress:
+			lp.selecting = true
+			lp.selStart = SelectionPos{Line: contentLine, Col: contentCol}
+			lp.selEnd = lp.selStart
+			lp.hasSelection = false
+			lp.autoScrollDir = logScrollNone
+			lp.updateViewportWithSelection()
+
+		case tea.MouseActionMotion:
+			if !lp.selecting {
 				return nil
-			case "G":
-				lp.viewport.GotoBottom()
-				return nil
-			case "j":
-				lp.viewport.ScrollDown(1)
-				return nil
-			case "k":
+			}
+
+			lp.lastMouseX = x
+			lp.lastMouseY = y
+
+			prevDir := lp.autoScrollDir
+			lp.autoScrollDir = logScrollNone
+
+			if y < logScrollZone && lp.viewport.YOffset > 0 {
+				lp.autoScrollDir = logScrollUp
 				lp.viewport.ScrollUp(1)
+			} else if y >= lp.viewport.Height-logScrollZone &&
+				lp.viewport.YOffset < lp.viewport.TotalLineCount()-lp.viewport.Height {
+				lp.autoScrollDir = logScrollDown
+				lp.viewport.ScrollDown(1)
+			}
+
+			contentLine = y + lp.viewport.YOffset
+			lp.selEnd = SelectionPos{Line: contentLine, Col: contentCol}
+			lp.hasSelection = true
+			lp.updateViewportWithSelection()
+
+			if lp.autoScrollDir != logScrollNone && prevDir == logScrollNone {
+				return lp.scheduleAutoScroll()
+			}
+
+		case tea.MouseActionRelease:
+			if !lp.selecting {
 				return nil
+			}
+
+			lp.selEnd = SelectionPos{Line: contentLine, Col: contentCol}
+			hasSelection := lp.selStart != lp.selEnd
+
+			var textToCopy string
+			if hasSelection {
+				lp.hasSelection = true
+				textToCopy = lp.getSelectedText()
+			}
+
+			lp.selecting = false
+			lp.hasSelection = false
+			lp.autoScrollDir = logScrollNone
+			lp.selStart = SelectionPos{-1, -1}
+			lp.selEnd = SelectionPos{-1, -1}
+			lp.copyToClipboard(textToCopy)
+			lp.updateViewportWithSelection()
+
+			if textToCopy != "" {
+				lp.showCopied = true
+				return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					lp.showCopied = false
+					return struct{}{}
+				})
 			}
 		}
 
-		var cmd tea.Cmd
-		lp.viewport, cmd = lp.viewport.Update(msg)
-		return cmd
+	case tea.MouseButtonWheelUp:
+		lp.viewport.ScrollUp(3)
+		return nil
+
+	case tea.MouseButtonWheelDown:
+		lp.viewport.ScrollDown(3)
+		return nil
 	}
+
 	return nil
+}
+
+func (lp *LogPanelComponent) scheduleAutoScroll() tea.Cmd {
+	id := lp.panelID
+	return tea.Tick(logAutoScrollInterval, func(t time.Time) tea.Msg {
+		return logPanelAutoScrollMsg{panelID: id}
+	})
+}
+
+func (lp *LogPanelComponent) handleAutoScroll() tea.Cmd {
+	if !lp.selecting || lp.autoScrollDir == logScrollNone {
+		return nil
+	}
+
+	canScrollUp := lp.viewport.YOffset > 0
+	canScrollDown := lp.viewport.YOffset < lp.viewport.TotalLineCount()-lp.viewport.Height
+
+	switch lp.autoScrollDir {
+	case logScrollUp:
+		if !canScrollUp {
+			lp.autoScrollDir = logScrollNone
+			return nil
+		}
+		lp.viewport.ScrollUp(1)
+	case logScrollDown:
+		if !canScrollDown {
+			lp.autoScrollDir = logScrollNone
+			return nil
+		}
+		lp.viewport.ScrollDown(1)
+	}
+
+	contentLine := lp.lastMouseY + lp.viewport.YOffset
+	lp.selEnd = SelectionPos{Line: contentLine, Col: lp.lastMouseX}
+	lp.updateViewportWithSelection()
+
+	return lp.scheduleAutoScroll()
 }
 
 func (lp *LogPanelComponent) View(width, height int) string {
 	lp.logMutex.Lock()
 	defer lp.logMutex.Unlock()
 
-	// Safety checks for dimensions
 	if width <= 0 {
 		width = 50
 	}
@@ -82,11 +253,10 @@ func (lp *LogPanelComponent) View(width, height int) string {
 	lp.updateViewport(false)
 
 	// Account for left border (1) + padding (1) + scrollbar (1) = 3
+	// Account for title (1) + empty line (1) = 2 in height
 	viewportWidth := width - 3
-	// Title only (no top/bottom borders)
-	viewportHeight := height - 1
+	viewportHeight := height - 2
 
-	// Ensure minimum viewport dimensions
 	if viewportWidth < 10 {
 		viewportWidth = 10
 	}
@@ -97,23 +267,8 @@ func (lp *LogPanelComponent) View(width, height int) string {
 	lp.viewport.Width = viewportWidth
 	lp.viewport.Height = viewportHeight
 
-	// Update border color based on focus
-	borderColor := lipgloss.Color(styles.BorderColor)
-	if lp.focused {
-		borderColor = lipgloss.Color(styles.PrimaryColor)
-	}
+	lp.viewport.Style = lipgloss.NewStyle()
 
-	lp.viewport.Style = lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		BorderTop(false).
-		BorderBottom(false).
-		BorderRight(false).
-		BorderLeft(true).
-		PaddingLeft(1).
-		MaxWidth(width - 1) // -1 for scrollbar
-
-	// Determine title and content
 	title := "Logs"
 	if lp.currentTestID != "" {
 		title = "Test Logs"
@@ -124,16 +279,14 @@ func (lp *LogPanelComponent) View(width, height int) string {
 		}
 	}
 
-	if lp.focused {
-		title = "► " + title
+	if lp.showCopied {
+		title += styles.SuccessStyle.Render(" [copied]")
 	}
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(styles.PrimaryColor)).
-		MarginBottom(1)
+		Foreground(lipgloss.Color(styles.PrimaryColor))
 
-	// Add scrollbar next to viewport content
 	scrollbar := RenderScrollbar(lp.viewport.Height, lp.viewport.TotalLineCount(), lp.viewport.YOffset)
 
 	viewportWithScrollbar := lipgloss.JoinHorizontal(
@@ -142,10 +295,22 @@ func (lp *LogPanelComponent) View(width, height int) string {
 		scrollbar,
 	)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	content := lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render(title),
+		"",
 		viewportWithScrollbar,
 	)
+
+	containerStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color(styles.BorderColor)).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderRight(false).
+		BorderLeft(true).
+		PaddingLeft(1)
+
+	return containerStyle.Render(content)
 }
 
 func (lp *LogPanelComponent) AddServiceLog(line string) {
@@ -154,12 +319,10 @@ func (lp *LogPanelComponent) AddServiceLog(line string) {
 
 	lp.serviceLogs = append(lp.serviceLogs, line)
 
-	// Keep only last 1000 lines
 	if len(lp.serviceLogs) > 1000 {
 		lp.serviceLogs = lp.serviceLogs[len(lp.serviceLogs)-1000:]
 	}
 
-	// Update viewport if showing service logs
 	if lp.currentTestID == "" {
 		lp.updateViewport(true)
 	}
@@ -175,18 +338,15 @@ func (lp *LogPanelComponent) AddTestLog(testID, line string) {
 
 	lp.testLogs[testID] = append(lp.testLogs[testID], line)
 
-	// Keep only last 500 lines per test
 	if len(lp.testLogs[testID]) > 500 {
 		lp.testLogs[testID] = lp.testLogs[testID][len(lp.testLogs[testID])-500:]
 	}
 
-	// Update viewport if showing this test's logs
 	if lp.currentTestID == testID {
 		lp.updateViewport(true)
 	}
 }
 
-// GetRawLogs returns unwrapped logs for copy mode
 func (lp *LogPanelComponent) GetRawLogs() string {
 	lp.logMutex.RLock()
 	defer lp.logMutex.RUnlock()
@@ -213,57 +373,238 @@ func (lp *LogPanelComponent) SetCurrentTest(testID string) {
 	lp.updateViewport(true)
 }
 
-func (lp *LogPanelComponent) SetFocused(focused bool) {
-	lp.focused = focused
-	// Note: viewport doesn't have Focus/Blur methods, so we just track the state
-}
-
-func (lp *LogPanelComponent) IsFocused() bool {
-	return lp.focused
+func (lp *LogPanelComponent) SetOffset(x, y int) {
+	lp.xOffset = x
+	lp.yOffset = y
 }
 
 func (lp *LogPanelComponent) updateViewport(gotoBottom bool) {
-	var content string
-
-	// Subtract left border (1) and padding (1) = 2
 	wrapWidth := lp.viewport.Width - 2
 	if wrapWidth <= 0 {
-		wrapWidth = 70 // Conservative fallback
+		wrapWidth = 70
 	}
 
-	if lp.currentTestID == "" {
-		// Wrap service logs at display time
-		var wrappedLines []string
+	var wrappedLines []string
 
+	if lp.currentTestID == "" {
 		for _, line := range lp.serviceLogs {
-			subLines := strings.SplitSeq(line, "\n")
-			for subLine := range subLines {
+			subLines := strings.Split(line, "\n")
+			for _, subLine := range subLines {
 				wrapped := utils.WrapLine(subLine, wrapWidth)
 				wrappedLines = append(wrappedLines, wrapped...)
 			}
 		}
-		content = strings.Join(wrappedLines, "\n")
 	} else {
 		if logs, exists := lp.testLogs[lp.currentTestID]; exists {
-			var wrappedLines []string
-
 			for _, line := range logs {
-				subLines := strings.SplitSeq(line, "\n")
-				for subLine := range subLines {
+				subLines := strings.Split(line, "\n")
+				for _, subLine := range subLines {
 					wrapped := utils.WrapLine(subLine, wrapWidth)
 					wrappedLines = append(wrappedLines, wrapped...)
 				}
 			}
-			content = strings.Join(wrappedLines, "\n")
 		} else {
-			content = "No logs available for this test yet..."
+			wrappedLines = []string{"No logs available for this test yet..."}
 		}
 	}
 
-	lp.viewport.SetContent(utils.StripNoWrapMarker(content))
+	lp.contentLines = wrappedLines
+
+	if lp.selecting || lp.hasSelection {
+		lp.applySelectionHighlighting()
+	} else {
+		content := strings.Join(wrappedLines, "\n")
+		lp.viewport.SetContent(utils.StripNoWrapMarker(content))
+	}
+
 	if gotoBottom {
 		lp.viewport.GotoBottom()
 	}
+}
+
+// applySelectionHighlighting applies selection highlighting to the viewport content
+// This is separate from updateViewportWithSelection to avoid recursion
+func (lp *LogPanelComponent) applySelectionHighlighting() {
+	if len(lp.contentLines) == 0 {
+		return
+	}
+
+	var highlighted strings.Builder
+	selStyle := styles.SelectedStyle.Background(lipgloss.Color(styles.SecondaryColor))
+
+	start, end := lp.normalizeSelection()
+
+	for i, line := range lp.contentLines {
+		if i > 0 {
+			highlighted.WriteString("\n")
+		}
+
+		lineWidth := ansi.PrintableRuneWidth(line)
+
+		if i < start.Line || i > end.Line {
+			highlighted.WriteString(line)
+			continue
+		}
+
+		highlighted.WriteString(lp.highlightLine(line, lineWidth, i, start, end, selStyle))
+	}
+
+	lp.viewport.SetContent(utils.StripNoWrapMarker(highlighted.String()))
+}
+
+func (lp *LogPanelComponent) updateViewportWithSelection() {
+	lp.applySelectionHighlighting()
+}
+
+func (lp *LogPanelComponent) highlightLine(line string, lineWidth, lineNum int, start, end SelectionPos, selStyle lipgloss.Style) string {
+	selStartCol := 0
+	selEndCol := lineWidth
+
+	if lineNum == start.Line {
+		selStartCol = start.Col
+	}
+	if lineNum == end.Line {
+		selEndCol = end.Col
+	}
+
+	if selStartCol < 0 {
+		selStartCol = 0
+	}
+	if selEndCol > lineWidth {
+		selEndCol = lineWidth
+	}
+	if selStartCol > lineWidth {
+		selStartCol = lineWidth
+	}
+
+	if selStartCol >= selEndCol {
+		return line
+	}
+
+	return lp.applyHighlight(line, selStartCol, selEndCol, selStyle)
+}
+
+func (lp *LogPanelComponent) applyHighlight(line string, startCol, endCol int, selStyle lipgloss.Style) string {
+	var result strings.Builder
+	var currentCol int
+	var inAnsi bool
+	var ansiSeq strings.Builder
+
+	runes := []rune(line)
+	for i := range runes {
+		r := runes[i]
+
+		if r == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+			inAnsi = true
+			ansiSeq.Reset()
+			ansiSeq.WriteRune(r)
+			continue
+		}
+
+		if inAnsi {
+			ansiSeq.WriteRune(r)
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inAnsi = false
+				result.WriteString(ansiSeq.String())
+			}
+			continue
+		}
+
+		if currentCol >= startCol && currentCol < endCol {
+			result.WriteString(selStyle.Render(string(r)))
+		} else {
+			result.WriteRune(r)
+		}
+		currentCol++
+	}
+
+	return result.String()
+}
+
+func (lp *LogPanelComponent) normalizeSelection() (SelectionPos, SelectionPos) {
+	start, end := lp.selStart, lp.selEnd
+
+	if start.Line > end.Line || (start.Line == end.Line && start.Col > end.Col) {
+		start, end = end, start
+	}
+
+	return start, end
+}
+
+func (lp *LogPanelComponent) getSelectedText() string {
+	if !lp.hasSelection || len(lp.contentLines) == 0 {
+		return ""
+	}
+
+	start, end := lp.normalizeSelection()
+
+	var result strings.Builder
+
+	for i := start.Line; i <= end.Line && i < len(lp.contentLines); i++ {
+		if i < 0 {
+			continue
+		}
+
+		line := lp.contentLines[i]
+		plainLine := stripAnsi(line)
+		runes := []rune(plainLine)
+
+		startCol := 0
+		endCol := len(runes)
+
+		if i == start.Line {
+			startCol = start.Col
+		}
+		if i == end.Line {
+			endCol = end.Col
+		}
+
+		if startCol < 0 {
+			startCol = 0
+		}
+		if endCol > len(runes) {
+			endCol = len(runes)
+		}
+		if startCol > len(runes) {
+			startCol = len(runes)
+		}
+
+		if startCol < endCol {
+			result.WriteString(string(runes[startCol:endCol]))
+		}
+
+		if i < end.Line {
+			result.WriteString("\n")
+		}
+	}
+
+	return result.String()
+}
+
+func (lp *LogPanelComponent) copyToClipboard(text string) {
+	if text == "" {
+		return
+	}
+
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "linux":
+		if _, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		} else if _, err := exec.LookPath("xsel"); err == nil {
+			cmd = exec.Command("xsel", "--clipboard", "--input")
+		} else {
+			return
+		}
+	default:
+		return
+	}
+
+	cmd.Stdin = strings.NewReader(text)
+	_ = cmd.Run()
 }
 
 func (lp *LogPanelComponent) ScrollUp(n int) {

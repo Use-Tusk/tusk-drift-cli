@@ -78,7 +78,7 @@ func NewDetailsPanel() *DetailsPanel {
 	return &DetailsPanel{
 		viewport: vp,
 		title:    "Details",
-		yOffset:  2, // border + header line
+		yOffset:  1, // title only (border wraps everything now)
 		selStart: SelectionPos{-1, -1},
 		selEnd:   SelectionPos{-1, -1},
 		panelID:  panelIDCounter,
@@ -280,6 +280,9 @@ func (dp *DetailsPanel) View() string {
 		Foreground(lipgloss.Color(styles.PrimaryColor))
 	titleText := title + copiedIndicator
 
+	// Remove border from viewport - we'll add it to the container
+	dp.viewport.Style = lipgloss.NewStyle()
+
 	scrollbar := dp.renderScrollbar()
 
 	viewportWithScrollbar := lipgloss.JoinHorizontal(
@@ -288,21 +291,23 @@ func (dp *DetailsPanel) View() string {
 		scrollbar,
 	)
 
-	panelStyle := lipgloss.NewStyle().
+	// Combine title and viewport, then wrap with border
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(titleText),
+		viewportWithScrollbar,
+	)
+
+	// Container with left border that spans the full height
+	containerStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(styles.BorderColor)).
 		BorderTop(false).
 		BorderBottom(false).
 		BorderRight(false).
 		BorderLeft(true).
-		PaddingLeft(1).
-		Width(dp.width - 1). // Account for left border only (padding is internal)
-		Height(dp.height - 1) // Account for title only
+		PaddingLeft(1)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		titleStyle.Render(titleText),
-		panelStyle.Render(viewportWithScrollbar),
-	)
+	return containerStyle.Render(content)
 }
 
 // renderScrollbar renders a vertical scrollbar

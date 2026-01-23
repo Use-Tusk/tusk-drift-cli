@@ -19,26 +19,17 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
-type (
-	executionState int
-	viewMode       int
-)
+type executionState int
 
 const (
 	stateRunning executionState = iota
 	stateCompleted
 )
 
-const (
-	tableNavigation viewMode = iota
-	logNavigation
-)
-
 type testExecutorModel struct {
 	tests    []runner.Test
 	executor *runner.Executor
 	state    executionState
-	viewMode viewMode
 
 	// Progress tracking
 	activeTests       map[int]bool
@@ -77,8 +68,6 @@ type testExecutorModel struct {
 
 	sizeWarning *components.TerminalSizeWarning
 
-	copyNotice bool
-
 	opts *InteractiveOpts
 }
 
@@ -109,8 +98,6 @@ type executionFailedMsg struct {
 }
 
 type environmentGroupCompleteMsg struct{}
-
-type hideCopyNoticeMsg struct{}
 
 // TUI log writer to capture slog output
 type tuiLogWriter struct {
@@ -268,7 +255,6 @@ func newTestExecutorModel(tests []runner.Test, executor *runner.Executor, opts *
 		tests:             tests,
 		executor:          executor,
 		state:             stateRunning,
-		viewMode:          tableNavigation,
 		activeTests:       make(map[int]bool),
 		currentTestTraces: make(map[string]bool),
 		completedCount:    0,
@@ -369,18 +355,13 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		switch m.viewMode {
-		case tableNavigation:
-			return m.handleTableNavigation(msg)
-		case logNavigation:
-			return m.handleLogNavigation(msg)
-		}
+		return m.handleTableNavigation(msg)
 
 	case tea.MouseMsg:
-		// Handle mouse scroll for left (table) and right (log) panels
 		leftWidth := m.width / 2
+		headerHeight := 4 // header takes 4 lines
+
 		if msg.X < leftWidth {
-			// Mouse is over the table (left side)
 			switch msg.Button {
 			case tea.MouseButtonWheelUp:
 				m.testTable.MoveUp(3)
@@ -402,15 +383,13 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		} else {
-			// Mouse is over the log panel (right side)
-			switch msg.Button {
-			case tea.MouseButtonWheelUp:
-				m.logPanel.ScrollUp(3)
-				return m, nil
-			case tea.MouseButtonWheelDown:
-				m.logPanel.ScrollDown(3)
-				return m, nil
+			// - X: leftWidth + border(1) + padding(1) = leftWidth + 2
+			// - Y: headerHeight + title(1) + empty line(1) = headerHeight + 2
+			m.logPanel.SetOffset(leftWidth+2, headerHeight+2)
+			if cmd := m.logPanel.Update(msg); cmd != nil {
+				return m, cmd
 			}
+			return m, nil
 		}
 
 	case testsLoadedMsg:
@@ -636,9 +615,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addServiceLog("\n" + strings.Repeat("=", 60))
 		m.addServiceLog("❌ Execution failed - no tests were run")
 		m.cleanup()
-
-	case hideCopyNoticeMsg:
-		m.copyNotice = false
 	}
 
 	// Update components
@@ -715,12 +691,6 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 		m.logPanel.HalfPageDown()
 		return m, nil
 
-	case "right", "l":
-		m.viewMode = logNavigation
-		m.testTable.SetFocused(false)
-		m.logPanel.SetFocused(true)
-		return m, nil
-
 	case "g":
 		m.testTable.GotoTop()
 
@@ -751,39 +721,9 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 	return m, nil
 }
 
-func (m *testExecutorModel) handleLogNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "up", "down", "pgup", "pgdown", "g", "G", "j", "k":
-		return m, m.logPanel.Update(msg)
-
-	case "y":
-		return m, m.copyLogsToClipboard()
-
-	case "left", "esc", "h":
-		m.viewMode = tableNavigation
-		m.testTable.SetFocused(true)
-		m.logPanel.SetFocused(false)
-		return m, nil
-
-	case "q", "ctrl+c":
-		m.cleanup()
-		return m, tea.Quit
-	}
-
-	return m, nil
-}
-
-
 func (m *testExecutorModel) getFooterText() string {
 	testCount := fmt.Sprintf("%d TESTS ", len(m.tests))
-	switch m.viewMode {
-	case tableNavigation:
-		return testCount + "• j/k: navigate • u/d: page • J/K: scroll logs • U/D: page logs • →/l: focus logs • q: quit"
-	case logNavigation:
-		return testCount + "• j/k: scroll • g/G: top/bottom • y: copy • ←/h/Esc: back • q: quit"
-	default:
-		return ""
-	}
+	return testCount + "• j/k: navigate • u/d: page • J/K: scroll logs • U/D: page logs • q: quit"
 }
 
 func (m *testExecutorModel) View() string {
@@ -797,10 +737,6 @@ func (m *testExecutorModel) View() string {
 	return m.horizontalLayout()
 }
 
-func (m *testExecutorModel) displayCopyText() string {
-	return styles.SuccessStyle.Render("Copied ✓")
-}
-
 func (m *testExecutorModel) horizontalLayout() string {
 	// header (4) + footer (1) = 5
 	contentHeight := m.height - 5
@@ -811,11 +747,7 @@ func (m *testExecutorModel) horizontalLayout() string {
 	header := m.header.View(m.width)
 
 	// Build footer with test count prefix like list view
-	footerText := m.getFooterText()
-	if m.copyNotice {
-		footerText = footerText + " • " + m.displayCopyText()
-	}
-	footer := components.Footer(m.width, utils.TruncateWithEllipsis(footerText, m.width))
+	footer := components.Footer(m.width, utils.TruncateWithEllipsis(m.getFooterText(), m.width))
 
 	// Render table with scrollbar (-1 for scrollbar width)
 	tableView := m.testTable.View(leftWidth-1, contentHeight)
@@ -861,12 +793,7 @@ func (m *testExecutorModel) verticalLayout() string {
 
 	header := m.header.View(m.width)
 
-	// Build footer with test count prefix like list view
-	footerText := m.getFooterText()
-	if m.copyNotice {
-		footerText = footerText + " • " + m.displayCopyText()
-	}
-	footer := components.Footer(m.width, utils.TruncateWithEllipsis(footerText, m.width))
+	footer := components.Footer(m.width, utils.TruncateWithEllipsis(m.getFooterText(), m.width))
 
 	infoMsg := "Vertical layout enabled for narrow terminal. Seeing weird formatting? Make this window wider for horizontal layout."
 	wrappedInfo := utils.WrapText(infoMsg, m.width)
@@ -1200,11 +1127,4 @@ func (m *testExecutorModel) cleanup() {
 			}
 		}
 	}
-}
-
-func (m *testExecutorModel) copyLogsToClipboard() tea.Cmd {
-	text := m.logPanel.GetRawLogs()
-	_ = utils.CopyToClipboard(text)
-	m.copyNotice = true
-	return tea.Tick(3*time.Second, func(time.Time) tea.Msg { return hideCopyNoticeMsg{} })
 }

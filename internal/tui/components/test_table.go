@@ -15,7 +15,6 @@ type TestTableComponent struct {
 	tests   []runner.Test
 	results []runner.TestResult
 	errors  []error
-	focused bool
 	// Fixed baseline (original titles and widths) defined at construction
 	baseColumns []table.Column
 	// Mutable, resized copy applied to the table for current terminal width.
@@ -44,7 +43,6 @@ func NewTestTableComponent(tests []runner.Test) *TestTableComponent {
 		tests:       tests,
 		results:     make([]runner.TestResult, len(tests)),
 		errors:      make([]error, len(tests)),
-		focused:     true, // Track our internal focus state
 		baseColumns: columns,
 		columns:     columns,
 		completed:   make([]bool, len(tests)),
@@ -89,13 +87,8 @@ func (tt *TestTableComponent) View(width, height int) string {
 	tableHeight := max(height-3, 3)
 	tt.table.SetHeight(tableHeight)
 
-	// Update styles based on focus
+	// Update styles
 	style := table.DefaultStyles()
-	borderColor := lipgloss.Color(styles.BorderColor)
-	if tt.focused {
-		borderColor = lipgloss.Color(styles.PrimaryColor)
-	}
-
 	style.Header = styles.TableHeaderStyle
 	style.Cell = styles.TableCellStyle
 	style.Selected = styles.TableRowSelectedStyle
@@ -105,18 +98,13 @@ func (tt *TestTableComponent) View(width, height int) string {
 	// Build rows
 	tt.buildRows()
 
-	title := "Tests"
-	if tt.focused {
-		title = "► Tests"
-	}
-
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(borderColor).
+		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		MarginBottom(1)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		titleStyle.Render(title),
+		titleStyle.Render("Tests"),
 		tt.table.View(),
 	)
 }
@@ -192,19 +180,6 @@ func (tt *TestTableComponent) truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
-}
-
-func (tt *TestTableComponent) SetFocused(focused bool) {
-	tt.focused = focused
-	if focused {
-		tt.table.Focus()
-	} else {
-		tt.table.Blur()
-	}
-}
-
-func (tt *TestTableComponent) IsFocused() bool {
-	return tt.table.Focused()
 }
 
 func (tt *TestTableComponent) GetSelectedTest() *runner.Test {
