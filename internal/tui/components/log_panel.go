@@ -23,10 +23,13 @@ type LogPanelComponent struct {
 func NewLogPanelComponent() *LogPanelComponent {
 	vp := viewport.New(50, 20)
 	vp.Style = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(styles.BorderColor)).
-		PaddingLeft(1).
-		PaddingRight(1)
+		BorderTop(false).
+		BorderBottom(false).
+		BorderRight(false).
+		BorderLeft(true).
+		PaddingLeft(1)
 
 	return &LogPanelComponent{
 		viewport:    vp,
@@ -78,8 +81,10 @@ func (lp *LogPanelComponent) View(width, height int) string {
 
 	lp.updateViewport(false)
 
-	viewportWidth := width - 4   // Account for borders (2) and padding (2)
-	viewportHeight := height - 3 // Space for title and borders
+	// Account for left border (1) + padding (1) + scrollbar (1) = 3
+	viewportWidth := width - 3
+	// Title only (no top/bottom borders)
+	viewportHeight := height - 1
 
 	// Ensure minimum viewport dimensions
 	if viewportWidth < 10 {
@@ -99,14 +104,17 @@ func (lp *LogPanelComponent) View(width, height int) string {
 	}
 
 	lp.viewport.Style = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderRight(false).
+		BorderLeft(true).
 		PaddingLeft(1).
-		PaddingRight(1).
-		MaxWidth(width)
+		MaxWidth(width - 1) // -1 for scrollbar
 
 	// Determine title and content
-	title := "Service Logs"
+	title := "Logs"
 	if lp.currentTestID != "" {
 		title = "Test Logs"
 		if len(lp.currentTestID) > 35 {
@@ -122,12 +130,21 @@ func (lp *LogPanelComponent) View(width, height int) string {
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(borderColor).
+		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		MarginBottom(1)
+
+	// Add scrollbar next to viewport content
+	scrollbar := RenderScrollbar(lp.viewport.Height, lp.viewport.TotalLineCount(), lp.viewport.YOffset)
+
+	viewportWithScrollbar := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		lp.viewport.View(),
+		scrollbar,
+	)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render(title),
-		lp.viewport.View(),
+		viewportWithScrollbar,
 	)
 }
 
@@ -208,7 +225,8 @@ func (lp *LogPanelComponent) IsFocused() bool {
 func (lp *LogPanelComponent) updateViewport(gotoBottom bool) {
 	var content string
 
-	wrapWidth := lp.viewport.Width - 4 // Subtract borders (2) and padding (2)
+	// Subtract left border (1) and padding (1) = 2
+	wrapWidth := lp.viewport.Width - 2
 	if wrapWidth <= 0 {
 		wrapWidth = 70 // Conservative fallback
 	}
@@ -246,4 +264,22 @@ func (lp *LogPanelComponent) updateViewport(gotoBottom bool) {
 	if gotoBottom {
 		lp.viewport.GotoBottom()
 	}
+}
+
+func (lp *LogPanelComponent) ScrollUp(n int) {
+	lp.viewport.ScrollUp(n)
+}
+
+func (lp *LogPanelComponent) ScrollDown(n int) {
+	lp.viewport.ScrollDown(n)
+}
+
+func (lp *LogPanelComponent) HalfPageUp() {
+	halfPage := max(lp.viewport.Height/2, 1)
+	lp.viewport.ScrollUp(halfPage)
+}
+
+func (lp *LogPanelComponent) HalfPageDown() {
+	halfPage := max(lp.viewport.Height/2, 1)
+	lp.viewport.ScrollDown(halfPage)
 }

@@ -250,3 +250,27 @@ func (tt *TestTableComponent) GotoTop() {
 func (tt *TestTableComponent) GotoBottom() {
 	tt.table.GotoBottom()
 }
+
+func (tt *TestTableComponent) Height() int {
+	return tt.table.Height()
+}
+
+func (tt *TestTableComponent) TotalRows() int {
+	return len(tt.table.Rows())
+}
+
+func (tt *TestTableComponent) Cursor() int {
+	return tt.table.Cursor()
+}
+
+func (tt *TestTableComponent) MoveUp(n int) {
+	for range n {
+		tt.table.MoveUp(1)
+	}
+}
+
+func (tt *TestTableComponent) MoveDown(n int) {
+	for range n {
+		tt.table.MoveDown(1)
+	}
+}
