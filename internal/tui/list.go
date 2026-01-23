@@ -167,10 +167,36 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.testExecutor.Init()
 				}
 			case "u":
-				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+				// Half-page up on left side (table)
+				halfPage := max(m.table.Height()/2, 1)
+				for range halfPage {
+					m.table.MoveUp(1)
+				}
+				m.updateDetailsContent()
 				return m, nil
 			case "d":
-				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+				// Half-page down on left side (table)
+				halfPage := max(m.table.Height()/2, 1)
+				for range halfPage {
+					m.table.MoveDown(1)
+				}
+				m.updateDetailsContent()
+				return m, nil
+			case "J":
+				// Scroll right side (details panel) down
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
+				return m, nil
+			case "K":
+				// Scroll right side (details panel) up
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+				return m, nil
+			case "U":
+				// Page up on right side (details panel)
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
+				return m, nil
+			case "D":
+				// Page down on right side (details panel)
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
 				return m, nil
 			case "left", "h":
 				selectedIdx := m.table.Cursor()
@@ -220,11 +246,28 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if m.state == listView {
-			cmd := m.detailsPanel.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
+			tableWidth := m.width / 2
+
+			// Check if mouse is over the table (left side)
+			if msg.X < tableWidth {
+				switch msg.Button {
+				case tea.MouseButtonWheelUp:
+					m.table.MoveUp(3)
+					m.updateDetailsContent()
+					return m, nil
+				case tea.MouseButtonWheelDown:
+					m.table.MoveDown(3)
+					m.updateDetailsContent()
+					return m, nil
+				}
+			} else {
+				// Mouse is over details panel (right side)
+				cmd := m.detailsPanel.Update(msg)
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return m, tea.Batch(cmds...)
 			}
-			return m, tea.Batch(cmds...)
 		}
 
 	case tea.WindowSizeMsg:
@@ -242,6 +285,7 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.state == listView {
 			m.resizeColumns(msg.Width)
+			// header (1) + empty line (1) + "Tests" title (1) + margin (1) + footer (1) = 5
 			m.table.SetHeight(msg.Height - 5)
 		} else if m.state == testExecutionView && m.testExecutor != nil {
 			// Forward window size to test executor
@@ -289,7 +333,7 @@ func (m *listModel) resizeColumns(totalWidth int) {
 		return
 	}
 
-	tableWidth := totalWidth / 2
+	tableWidth := totalWidth/2 - 1 // -1 for scrollbar
 
 	// Match padding
 	padPerCol := styles.TableCellStyle.GetPaddingLeft() + styles.TableCellStyle.GetPaddingRight()
@@ -319,24 +363,25 @@ func (m *listModel) View() string {
 		}
 
 		header := components.Title(m.width, "AVAILABLE TESTS")
-		testCount := fmt.Sprintf("%d TESTS", len(m.tests))
-		separator := " • "
+		testCount := fmt.Sprintf("%d TESTS ", len(m.tests))
 
-		usedWidth := lipgloss.Width(testCount) + lipgloss.Width(separator)
+		usedWidth := lipgloss.Width(testCount)
 		availableWidthForHelp := m.width - usedWidth
 		availableWidthForHelp = max(availableWidthForHelp, 20)
 
-		helpText := utils.TruncateWithEllipsis("• ↑/↓/j/k: navigate • ←/→: collapse/expand • u/d: scroll details • enter: run • q: quit", availableWidthForHelp)
+		footer := utils.TruncateWithEllipsis(
+			testCount+"• j/k: navigate • u/d: page • J/K: scroll details • U/D: page details • ←/→: expand • enter: run • q: quit",
+			availableWidthForHelp,
+		)
 
-		footer := fmt.Sprintf("%s%s%s", testCount, separator, helpText)
 		help := components.Footer(m.width, footer)
 
 		tableWidth := m.width / 2
 		detailsWidth := m.width - tableWidth
 
-		m.detailsPanel.SetSize(detailsWidth, m.height-5)
+		m.detailsPanel.SetSize(detailsWidth, m.height-3)
 		m.detailsPanel.SetXOffset(tableWidth + 2) // panel position + border (1) + padding (1)
-		m.detailsPanel.SetYOffset(5)              // header (1) + empty line (1) + title (1) + margin (1) + border (1)
+		m.detailsPanel.SetYOffset(3)              // header (1) + empty line (1) + title (1)
 
 		if m.table.Cursor() != m.lastCursor {
 			m.lastCursor = m.table.Cursor()
@@ -349,12 +394,19 @@ func (m *listModel) View() string {
 			MarginBottom(1).
 			Render("Tests")
 
-		leftStyle := lipgloss.NewStyle().Width(tableWidth).MaxWidth(tableWidth)
-		rightStyle := lipgloss.NewStyle().Width(detailsWidth).MaxWidth(detailsWidth)
+		// Render table with scrollbar
+		tableWithScrollbar := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			m.table.View(),
+			m.renderTableScrollbar(),
+		)
+
+		leftStyle := lipgloss.NewStyle().MaxWidth(tableWidth)
+		rightStyle := lipgloss.NewStyle().MaxWidth(detailsWidth)
 
 		leftSide := leftStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
 			testsSectionTitle,
-			m.table.View(),
+			tableWithScrollbar,
 		))
 
 		mainContent := lipgloss.JoinHorizontal(
@@ -363,7 +415,7 @@ func (m *listModel) View() string {
 			rightStyle.Render(m.detailsPanel.View()),
 		)
 
-		return fmt.Sprintf("%s\n\n%s\n%s", header, mainContent, help)
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", mainContent, help)
 
 	case testExecutionView:
 		if m.testExecutor != nil {
@@ -773,4 +825,23 @@ func (m *listModel) rebuildTable() {
 		cursor = 0
 	}
 	m.table.SetCursor(cursor)
+}
+
+// renderTableScrollbar renders a vertical scrollbar for the table
+func (m *listModel) renderTableScrollbar() string {
+	visibleRows := m.table.Height()
+	totalRows := len(m.rowInfos)
+	cursor := m.table.Cursor()
+
+	// Calculate scroll offset (the table keeps cursor visible)
+	scrollOffset := 0
+	if cursor > visibleRows-1 {
+		scrollOffset = cursor - visibleRows + 1
+	}
+
+	// Table renders: header (1) + header border (1) + visible rows
+	// Scrollbar height should match the full table height
+	scrollbarHeight := visibleRows + 2
+
+	return components.RenderScrollbar(scrollbarHeight, totalRows, scrollOffset)
 }

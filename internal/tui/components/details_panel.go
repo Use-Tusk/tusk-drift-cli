@@ -97,10 +97,16 @@ func (dp *DetailsPanel) Update(msg tea.Msg) tea.Cmd {
 		case "G":
 			dp.viewport.GotoBottom()
 			return nil
-		case "d", "ctrl+d":
+		case "J":
+			dp.viewport.ScrollDown(1)
+			return nil
+		case "K":
+			dp.viewport.ScrollUp(1)
+			return nil
+		case "D", "ctrl+d":
 			dp.viewport.HalfPageDown()
 			return nil
-		case "u", "ctrl+u":
+		case "U", "ctrl+u":
 			dp.viewport.HalfPageUp()
 			return nil
 		}
@@ -269,7 +275,9 @@ func (dp *DetailsPanel) View() string {
 		copiedIndicator = styles.SuccessStyle.Render(" [copied]")
 	}
 
-	titleStyle := styles.BorderDimStyle.Bold(true).MarginBottom(1)
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(styles.PrimaryColor))
 	titleText := title + copiedIndicator
 
 	scrollbar := dp.renderScrollbar()
@@ -281,12 +289,15 @@ func (dp *DetailsPanel) View() string {
 	)
 
 	panelStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(styles.BorderColor)).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderRight(false).
+		BorderLeft(true).
 		PaddingLeft(1).
-		PaddingRight(1).
-		Width(dp.width - 2).  // Account for padding
-		Height(dp.height - 2) // Account for title
+		Width(dp.width - 1). // Account for left border only (padding is internal)
+		Height(dp.height - 1) // Account for title only
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render(titleText),
@@ -296,43 +307,7 @@ func (dp *DetailsPanel) View() string {
 
 // renderScrollbar renders a vertical scrollbar
 func (dp *DetailsPanel) renderScrollbar() string {
-	height := dp.viewport.Height
-	totalLines := dp.viewport.TotalLineCount()
-
-	// If content fits, show empty space (no scrollbar needed)
-	if totalLines <= height {
-		var sb strings.Builder
-		for i := range height {
-			if i > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(" ")
-		}
-		return sb.String()
-	}
-
-	thumbSize := max(1, height*height/totalLines)
-	scrollableLines := totalLines - height
-	scrollProgress := float64(dp.viewport.YOffset) / float64(scrollableLines)
-	thumbStart := int(scrollProgress * float64(height-thumbSize))
-
-	if thumbStart+thumbSize > height {
-		thumbStart = height - thumbSize
-	}
-
-	var sb strings.Builder
-	for i := range height {
-		if i > 0 {
-			sb.WriteString("\n")
-		}
-		if i >= thumbStart && i < thumbStart+thumbSize {
-			sb.WriteString(styles.ScrollbarThumbStyle.Render("┃"))
-		} else {
-			sb.WriteString(styles.ScrollbarTrackStyle.Render("│"))
-		}
-	}
-
-	return sb.String()
+	return RenderScrollbar(dp.viewport.Height, dp.viewport.TotalLineCount(), dp.viewport.YOffset)
 }
 
 // updateViewportContent re-renders content with selection highlighting
@@ -535,10 +510,10 @@ func (dp *DetailsPanel) SetSize(width, height int) {
 	dp.width = width
 	dp.height = height
 
-	// Account for: border (2), padding (2), scrollbar (1) = 5
-	viewportWidth := width - 5
-	// Account for: title with margin (2), border (2) = 4
-	viewportHeight := height - 4
+	// Account for: left border (1), left padding (1), scrollbar (1) = 3
+	viewportWidth := width - 3
+	// Account for: title (1) - no top/bottom borders
+	viewportHeight := height - 1
 
 	if viewportWidth < 10 {
 		viewportWidth = 10
