@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -42,8 +42,16 @@ const (
 	testExecutionView
 )
 
+// tableRow holds the data for a single row
+type tableRow struct {
+	number  string
+	traceID string
+	rowType string
+	name    string
+}
+
 type listModel struct {
-	table          table.Model
+	viewport       viewport.Model
 	tests          []runner.Test
 	executor       *runner.Executor
 	width          int
@@ -51,14 +59,15 @@ type listModel struct {
 	state          viewState
 	testExecutor   *testExecutorModel
 	selectedTest   *runner.Test
-	columns        []table.Column
 	suiteOpts      runner.SuiteSpanOptions
 	err            error
 	sizeWarning    *components.TerminalSizeWarning
 	expandedTraces map[string]bool // map of trace id to whether it's expanded
 	rowInfos       []rowInfo
+	rows           []tableRow // Pre-built row data
+	cursor         int        // Currently selected row
 	detailsPanel   *components.DetailsPanel
-	lastCursor     int // Track cursor to detect selection changes
+	lastCursor     int
 }
 
 func ShowTestList(tests []runner.Test) error {
@@ -66,42 +75,23 @@ func ShowTestList(tests []runner.Test) error {
 }
 
 func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, suiteOpts runner.SuiteSpanOptions) error {
-	columns := []table.Column{
-		{Title: "#", Width: 4},
-		{Title: "Trace ID", Width: 32},
-		{Title: "Type", Width: 10},
-		{Title: "Name", Width: 30},
-	}
+	vp := viewport.New(50, 20)
+	vp.Style = lipgloss.NewStyle()
 
 	m := &listModel{
+		viewport:       vp,
 		tests:          tests,
 		executor:       executor,
 		state:          listView,
-		columns:        columns,
 		suiteOpts:      suiteOpts,
 		sizeWarning:    components.NewListViewSizeWarning(),
 		expandedTraces: make(map[string]bool),
 		detailsPanel:   components.NewDetailsPanel(),
+		cursor:         0,
 		lastCursor:     -1,
 	}
 
-	rows, rowMapping := m.buildRows()
-	m.rowInfos = rowMapping
-
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(20),
-	)
-
-	s := table.DefaultStyles()
-	s.Header = styles.TableHeaderStyle
-	s.Cell = styles.TableCellStyle
-	s.Selected = styles.TableRowSelectedStyle
-	t.SetStyles(s)
-
-	m.table = t
+	m.rebuildRows()
 
 	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		return err
@@ -115,7 +105,6 @@ func (m *listModel) Init() tea.Cmd {
 }
 
 func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -141,11 +130,10 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "ctrl+c", "esc":
 				return m, tea.Quit
 			case "enter":
-				selectedIdx := m.table.Cursor()
-				if selectedIdx >= 0 &&
-					selectedIdx < len(m.rowInfos) &&
+				if m.cursor >= 0 &&
+					m.cursor < len(m.rowInfos) &&
 					m.executor != nil {
-					info := m.rowInfos[selectedIdx]
+					info := m.rowInfos[m.cursor]
 					test := m.tests[info.testIndex]
 					opts := &InteractiveOpts{
 						IsCloudMode:              m.suiteOpts.IsCloudMode,
@@ -166,58 +154,76 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = testExecutionView
 					return m, m.testExecutor.Init()
 				}
-			case "u":
-				// Half-page up on left side (table)
-				halfPage := max(m.table.Height()/2, 1)
-				for range halfPage {
-					m.table.MoveUp(1)
+			case "j", "down":
+				if m.cursor < len(m.rows)-1 {
+					m.cursor++
+					m.ensureCursorVisible()
+					m.updateViewportContent()
 				}
-				m.updateDetailsContent()
 				return m, nil
-			case "d":
-				// Half-page down on left side (table)
-				halfPage := max(m.table.Height()/2, 1)
-				for range halfPage {
-					m.table.MoveDown(1)
+			case "k", "up":
+				if m.cursor > 0 {
+					m.cursor--
+					m.ensureCursorVisible()
+					m.updateViewportContent()
 				}
-				m.updateDetailsContent()
+				return m, nil
+			case "u", "ctrl+u":
+				m.viewport.HalfPageUp()
+				m.clampCursorToViewport()
+				m.updateViewportContent()
+				return m, nil
+			case "d", "ctrl+d":
+				m.viewport.HalfPageDown()
+				m.clampCursorToViewport()
+				m.updateViewportContent()
 				return m, nil
 			case "J":
-				// Scroll right side (details panel) down
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
 				return m, nil
 			case "K":
-				// Scroll right side (details panel) up
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
 				return m, nil
 			case "U":
-				// Page up on right side (details panel)
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
 				return m, nil
 			case "D":
-				// Page down on right side (details panel)
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
 				return m, nil
+			case "g":
+				// Go to top
+				m.cursor = 0
+				m.viewport.GotoTop()
+				m.updateViewportContent()
+				return m, nil
+			case "G":
+				// Go to bottom
+				if len(m.rows) > 0 {
+					m.cursor = len(m.rows) - 1
+					m.viewport.GotoBottom()
+					m.updateViewportContent()
+				}
+				return m, nil
 			case "left", "h":
-				selectedIdx := m.table.Cursor()
-				if selectedIdx >= 0 && selectedIdx < len(m.rowInfos) {
-					info := m.rowInfos[selectedIdx]
+				if m.cursor >= 0 && m.cursor < len(m.rowInfos) {
+					info := m.rowInfos[m.cursor]
 					traceID := m.tests[info.testIndex].TraceID
 					if m.expandedTraces[traceID] {
 						m.expandedTraces[traceID] = false
-						m.rebuildTable()
+						m.rebuildRows()
 					}
 				}
+				return m, nil
 			case "right", "l":
-				selectedIdx := m.table.Cursor()
-				if selectedIdx >= 0 && selectedIdx < len(m.rowInfos) {
-					info := m.rowInfos[selectedIdx]
+				if m.cursor >= 0 && m.cursor < len(m.rowInfos) {
+					info := m.rowInfos[m.cursor]
 					test := m.tests[info.testIndex]
 					if len(test.Spans) > 0 && !m.expandedTraces[test.TraceID] {
 						m.expandedTraces[test.TraceID] = true
-						m.rebuildTable()
+						m.rebuildRows()
 					}
 				}
+				return m, nil
 			}
 		case testExecutionView:
 			if m.testExecutor != nil && m.testExecutor.state == stateCompleted {
@@ -252,12 +258,14 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.X < tableWidth {
 				switch msg.Button {
 				case tea.MouseButtonWheelUp:
-					m.table.MoveUp(3)
-					m.updateDetailsContent()
+					m.viewport.ScrollUp(3)
+					m.clampCursorToViewport()
+					m.updateViewportContent()
 					return m, nil
 				case tea.MouseButtonWheelDown:
-					m.table.MoveDown(3)
-					m.updateDetailsContent()
+					m.viewport.ScrollDown(3)
+					m.clampCursorToViewport()
+					m.updateViewportContent()
 					return m, nil
 				}
 			} else {
@@ -284,9 +292,15 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.state == listView {
-			m.resizeColumns(msg.Width)
-			// header (1) + empty line (1) + "Tests" title (1) + margin (1) + footer (1) = 5
-			m.table.SetHeight(msg.Height - 5)
+			tableWidth := msg.Width/2 - 1 // -1 for scrollbar
+			// header (1) + empty line (1) + "Tests" title (1) + table header (2) + margin (1) + footer (1) = 7
+			tableHeight := msg.Height - 7
+			if tableHeight < 1 {
+				tableHeight = 1
+			}
+			m.viewport.Width = tableWidth
+			m.viewport.Height = tableHeight
+			m.updateViewportContent()
 		} else if m.state == testExecutionView && m.testExecutor != nil {
 			// Forward window size to test executor
 			updatedExecutor, cmd := m.testExecutor.Update(msg)
@@ -313,46 +327,74 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.state == listView {
-		prevCursor := m.table.Cursor()
-		m.table, cmd = m.table.Update(msg)
-		cmds = append(cmds, cmd)
-		if m.table.Cursor() != prevCursor {
-			m.updateDetailsContent()
-		}
-	}
-
 	if len(cmds) > 0 {
 		return m, tea.Batch(cmds...)
 	}
-	return m, cmd
+	return m, nil
 }
 
-func (m *listModel) resizeColumns(totalWidth int) {
-	if totalWidth <= 0 || len(m.columns) == 0 {
-		return
+// ensureCursorVisible scrolls the viewport to keep the cursor visible
+func (m *listModel) ensureCursorVisible() {
+	if m.cursor < m.viewport.YOffset {
+		m.viewport.SetYOffset(m.cursor)
+	} else if m.cursor >= m.viewport.YOffset+m.viewport.Height {
+		m.viewport.SetYOffset(m.cursor - m.viewport.Height + 1)
+	}
+}
+
+// clampCursorToViewport keeps the cursor within the visible viewport bounds
+func (m *listModel) clampCursorToViewport() {
+	firstVisible := m.viewport.YOffset
+	lastVisible := m.viewport.YOffset + m.viewport.Height - 1
+	if lastVisible >= len(m.rows) {
+		lastVisible = len(m.rows) - 1
 	}
 
-	tableWidth := totalWidth/2 - 1 // -1 for scrollbar
+	if m.cursor < firstVisible {
+		m.cursor = firstVisible
+	} else if m.cursor > lastVisible {
+		m.cursor = lastVisible
+	}
+}
 
-	// Match padding
-	padPerCol := styles.TableCellStyle.GetPaddingLeft() + styles.TableCellStyle.GetPaddingRight()
-	contentWidth := max(tableWidth-padPerCol*len(m.columns), 0)
+// updateViewportContent re-renders the table rows into the viewport
+func (m *listModel) updateViewportContent() {
+	var sb strings.Builder
+	tableWidth := m.viewport.Width
 
-	sum := 0
-	for _, c := range m.columns {
-		sum += c.Width
+	numWidth := 4
+	traceWidth := 32
+	typeWidth := 10
+	nameWidth := tableWidth - numWidth - traceWidth - typeWidth - 6 // 6 for spacing
+	if nameWidth < 10 {
+		nameWidth = 10
 	}
 
-	cols := make([]table.Column, len(m.columns))
-	copy(cols, m.columns)
+	for i, row := range m.rows {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
 
-	if contentWidth > sum {
-		cols[3].Width += contentWidth - sum // grow Name column
+		line := fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+			numWidth, utils.TruncateWithEllipsis(row.number, numWidth),
+			traceWidth, utils.TruncateWithEllipsis(row.traceID, traceWidth),
+			typeWidth, utils.TruncateWithEllipsis(row.rowType, typeWidth),
+			nameWidth, utils.TruncateWithEllipsis(row.name, nameWidth),
+		)
+
+		if i == m.cursor {
+			sb.WriteString(styles.TableRowSelectedStyle.Render(line))
+		} else {
+			sb.WriteString(styles.TableCellStyle.Render(line))
+		}
 	}
 
-	m.table.SetColumns(cols)
-	m.table.SetWidth(tableWidth)
+	m.viewport.SetContent(sb.String())
+
+	if m.cursor != m.lastCursor {
+		m.lastCursor = m.cursor
+		m.updateDetailsContent()
+	}
 }
 
 func (m *listModel) View() string {
@@ -370,7 +412,7 @@ func (m *listModel) View() string {
 		availableWidthForHelp = max(availableWidthForHelp, 20)
 
 		footer := utils.TruncateWithEllipsis(
-			testCount+"• j/k: navigate • u/d: page • J/K: scroll details • U/D: page details • ←/→: expand • enter: run • q: quit",
+			testCount+"• j/k: select • u/d: scroll • J/K/U/D: scroll details • ←/→: expand • enter: run • q: quit",
 			availableWidthForHelp,
 		)
 
@@ -383,21 +425,21 @@ func (m *listModel) View() string {
 		m.detailsPanel.SetXOffset(tableWidth + 2) // panel position + border (1) + padding (1)
 		m.detailsPanel.SetYOffset(3)              // header (1) + empty line (1) + title (1)
 
-		if m.table.Cursor() != m.lastCursor {
-			m.lastCursor = m.table.Cursor()
-			m.updateDetailsContent()
-		}
-
 		testsSectionTitle := lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color(styles.PrimaryColor)).
 			MarginBottom(1).
 			Render("Tests")
 
+		// Render table header
+		tableHeaderStyle := styles.TableHeaderStyle
+		headerLine := fmt.Sprintf(" %-4s %-32s %-10s %s", "#", "Trace ID", "Type", "Name")
+		tableHeader := tableHeaderStyle.Render(headerLine)
+
 		// Render table with scrollbar
 		tableWithScrollbar := lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			m.table.View(),
+			m.viewport.View(),
 			m.renderTableScrollbar(),
 		)
 
@@ -406,6 +448,7 @@ func (m *listModel) View() string {
 
 		leftSide := leftStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
 			testsSectionTitle,
+			tableHeader,
 			tableWithScrollbar,
 		))
 
@@ -429,14 +472,13 @@ func (m *listModel) View() string {
 
 // updateDetailsContent updates the details panel content based on current selection
 func (m *listModel) updateDetailsContent() {
-	selectedIdx := m.table.Cursor()
-	if selectedIdx < 0 || selectedIdx >= len(m.rowInfos) {
+	if m.cursor < 0 || m.cursor >= len(m.rowInfos) {
 		m.detailsPanel.SetContent("No selection")
 		m.detailsPanel.SetTitle("Details")
 		return
 	}
 
-	info := m.rowInfos[selectedIdx]
+	info := m.rowInfos[m.cursor]
 	test := m.tests[info.testIndex]
 
 	// Set title based on selection type
@@ -512,12 +554,11 @@ func (b *lineBuilder) build() []string {
 
 // generateDetailsContent generates the details content for the currently selected item
 func (m *listModel) generateDetailsContent() []string {
-	selectedIdx := m.table.Cursor()
-	if selectedIdx < 0 || selectedIdx >= len(m.rowInfos) {
+	if m.cursor < 0 || m.cursor >= len(m.rowInfos) {
 		return []string{"No selection"}
 	}
 
-	info := m.rowInfos[selectedIdx]
+	info := m.rowInfos[m.cursor]
 	test := m.tests[info.testIndex]
 
 	b := newLineBuilder(64) // Pre-allocate reasonable capacity
@@ -685,8 +726,8 @@ func (m *listModel) createSuiteSpanPreparation() func(*runner.Executor, []runner
 }
 
 // buildRows generates table rows and row mapping based on current expand state
-func (m *listModel) buildRows() ([]table.Row, []rowInfo) {
-	rows := []table.Row{}
+func (m *listModel) buildRows() ([]tableRow, []rowInfo) {
+	rows := []tableRow{}
 	rowMapping := []rowInfo{}
 
 	for i, test := range m.tests {
@@ -709,11 +750,11 @@ func (m *listModel) buildRows() ([]table.Row, []rowInfo) {
 			}
 		}
 
-		rows = append(rows, table.Row{
-			fmt.Sprintf("%d", i+1),
-			expandIndicator + test.TraceID,
-			displayType,
-			displayPath,
+		rows = append(rows, tableRow{
+			number:  fmt.Sprintf("%d", i+1),
+			traceID: expandIndicator + test.TraceID,
+			rowType: displayType,
+			name:    displayPath,
 		})
 		rowMapping = append(rowMapping, rowInfo{testIndex: i, isTrace: true})
 
@@ -757,7 +798,7 @@ func buildSpanTree(spans []*core.Span) []*spanTreeNode {
 }
 
 // addSpanRows recursively adds span rows to the table with tree visualization
-func (m *listModel) addSpanRows(rows *[]table.Row, rowMapping *[]rowInfo, nodes []*spanTreeNode, testIndex int, prefix string, isRoot bool) {
+func (m *listModel) addSpanRows(rows *[]tableRow, rowMapping *[]rowInfo, nodes []*spanTreeNode, testIndex int, prefix string, isRoot bool) {
 	for i, node := range nodes {
 		isLast := i == len(nodes)-1
 
@@ -795,11 +836,11 @@ func (m *listModel) addSpanRows(rows *[]table.Row, rowMapping *[]rowInfo, nodes 
 			spanType = "span"
 		}
 
-		*rows = append(*rows, table.Row{
-			"", // No row number for child spans
-			prefix + branchChar + node.span.SpanId[:min(8, len(node.span.SpanId))], // Truncated span ID with tree
-			spanType,
-			spanName,
+		*rows = append(*rows, tableRow{
+			number:  "", // No row number for child spans
+			traceID: prefix + branchChar + node.span.SpanId[:min(8, len(node.span.SpanId))],
+			rowType: spanType,
+			name:    spanName,
 		})
 		*rowMapping = append(*rowMapping, rowInfo{testIndex: testIndex, spanID: node.span.SpanId, isTrace: false})
 
@@ -810,38 +851,30 @@ func (m *listModel) addSpanRows(rows *[]table.Row, rowMapping *[]rowInfo, nodes 
 	}
 }
 
-// rebuildTable rebuilds the table rows while preserving cursor position
-func (m *listModel) rebuildTable() {
-	cursor := m.table.Cursor()
+// rebuildRows rebuilds the rows and updates the viewport content
+func (m *listModel) rebuildRows() {
 	rows, rowMapping := m.buildRows()
+	m.rows = rows
 	m.rowInfos = rowMapping
-	m.table.SetRows(rows)
 
-	// Try to keep cursor at a valid position
-	if cursor >= len(rows) {
-		cursor = len(rows) - 1
+	// Keep cursor at a valid position
+	if m.cursor >= len(rows) {
+		m.cursor = len(rows) - 1
 	}
-	if cursor < 0 {
-		cursor = 0
+	if m.cursor < 0 {
+		m.cursor = 0
 	}
-	m.table.SetCursor(cursor)
+
+	m.updateViewportContent()
 }
 
 // renderTableScrollbar renders a vertical scrollbar for the table
 func (m *listModel) renderTableScrollbar() string {
-	visibleRows := m.table.Height()
-	totalRows := len(m.rowInfos)
-	cursor := m.table.Cursor()
+	visibleRows := m.viewport.Height
+	totalRows := len(m.rows)
+	scrollOffset := m.viewport.YOffset
 
-	// Calculate scroll offset (the table keeps cursor visible)
-	scrollOffset := 0
-	if cursor > visibleRows-1 {
-		scrollOffset = cursor - visibleRows + 1
-	}
-
-	// Table renders: header (1) + header border (1) + visible rows
-	// Scrollbar height should match the full table height
-	scrollbarHeight := visibleRows + 2
+	scrollbarHeight := visibleRows
 
 	return components.RenderScrollbar(scrollbarHeight, totalRows, scrollOffset)
 }
