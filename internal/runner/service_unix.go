@@ -5,10 +5,11 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 // createServiceCommand creates a shell command for Unix systems
@@ -35,25 +36,25 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 	}
 
 	pid := cmd.Process.Pid
-	slog.Debug("Stopping service", "pid", pid)
+	log.Debug("Stopping service", "pid", pid)
 
 	// Try to get the process group ID
 	pgid, err := syscall.Getpgid(pid)
 	if err == nil {
 		// Send SIGTERM to the entire process group
-		slog.Debug("Killing process group", "pgid", pgid)
+		log.Debug("Killing process group", "pgid", pgid)
 		if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil {
-			slog.Debug("Failed to send SIGTERM to process group", "pgid", pgid, "error", err)
+			log.Debug("Failed to send SIGTERM to process group", "pgid", pgid, "error", err)
 			// Fallback to interrupting the main process
 			if err := cmd.Process.Signal(syscall.Signal(syscall.SIGINT)); err != nil {
-				slog.Debug("Failed to send interrupt signal", "pid", pid, "error", err)
+				log.Debug("Failed to send interrupt signal", "pid", pid, "error", err)
 			}
 		}
 	} else {
 		// If we can't get the process group, just interrupt the main process
-		slog.Debug("Failed to get process group", "pid", pid, "error", err)
+		log.Debug("Failed to get process group", "pid", pid, "error", err)
 		if err := cmd.Process.Signal(syscall.Signal(syscall.SIGINT)); err != nil {
-			slog.Debug("Failed to send interrupt signal", "pid", pid, "error", err)
+			log.Debug("Failed to send interrupt signal", "pid", pid, "error", err)
 		}
 	}
 
@@ -63,20 +64,20 @@ func killProcessGroup(cmd *exec.Cmd, timeout time.Duration) error {
 
 	select {
 	case <-done:
-		slog.Debug("Service stopped gracefully")
+		log.Debug("Service stopped gracefully")
 		return nil
 	case <-time.After(timeout):
-		slog.Debug("Service didn't stop gracefully, force killing")
+		log.Debug("Service didn't stop gracefully, force killing")
 		// Force kill the process group
 		if pgid, err := syscall.Getpgid(pid); err == nil {
-			slog.Debug("Force killing process group", "pgid", pgid)
+			log.Debug("Force killing process group", "pgid", pgid)
 			if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
-				slog.Debug("Failed to SIGKILL process group", "pgid", pgid, "error", err)
+				log.Debug("Failed to SIGKILL process group", "pgid", pgid, "error", err)
 				// Last resort: kill the main process
 				_ = cmd.Process.Kill()
 			}
 		} else {
-			slog.Debug("Final fallback: killing main process", "pid", pid)
+			log.Debug("Final fallback: killing main process", "pid", pid)
 			_ = cmd.Process.Kill()
 		}
 		_ = cmd.Wait()

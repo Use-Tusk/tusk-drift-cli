@@ -2,12 +2,11 @@ package runner
 
 import (
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
 // DynamicFieldMatcher defines patterns for identifying dynamic fields that should be ignored
@@ -71,8 +70,8 @@ func NewDynamicFieldMatcherWithConfig(cfg *config.ComparisonConfig) *DynamicFiel
 func (m *DynamicFieldMatcher) ShouldIgnoreField(fieldName string, expectedValue, actualValue any, testID string) bool {
 	// Check exact field names first
 	if shouldIgnore, exists := m.ignoreFields[strings.ToLower(fieldName)]; exists && shouldIgnore {
-		logging.LogToCurrentTest(testID, fmt.Sprintf("🔄 Ignoring field '%s' (configured field name): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
-		slog.Debug("Field ignored by name match", "field", fieldName, "expected", expectedValue, "actual", actualValue)
+		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (configured field name): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
+		log.Debug("Field ignored by name match", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 		return true
 	}
 
@@ -82,34 +81,34 @@ func (m *DynamicFieldMatcher) ShouldIgnoreField(fieldName string, expectedValue,
 
 	// Check for UUID pattern - BOTH values must be UUIDs
 	if m.uuidRegex != nil && m.uuidRegex.MatchString(expectedStr) && m.uuidRegex.MatchString(actualStr) {
-		logging.LogToCurrentTest(testID, fmt.Sprintf("🔄 Ignoring field '%s' (UUID pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
-		slog.Debug("Field ignored by UUID pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
+		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (UUID pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
+		log.Debug("Field ignored by UUID pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 		return true
 	}
 
 	// Check for timestamp pattern - BOTH values must be timestamps
 	if m.timestampRegex != nil && m.timestampRegex.MatchString(expectedStr) && m.timestampRegex.MatchString(actualStr) {
-		logging.LogToCurrentTest(testID, fmt.Sprintf("🔄 Ignoring field '%s' (timestamp pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
-		slog.Debug("Field ignored by timestamp pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
+		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (timestamp pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
+		log.Debug("Field ignored by timestamp pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 		return true
 	}
 
 	// Check for date pattern - BOTH values must be dates
 	if m.dateRegex != nil && m.dateRegex.MatchString(expectedStr) && m.dateRegex.MatchString(actualStr) {
-		logging.LogToCurrentTest(testID, fmt.Sprintf("🔄 Ignoring field '%s' (date pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
-		slog.Debug("Field ignored by date pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
+		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (date pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
+		log.Debug("Field ignored by date pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 		return true
 	}
 
 	// Check custom patterns - BOTH values must match the pattern
 	for _, pattern := range m.customPatterns {
 		if pattern.MatchString(expectedStr) && pattern.MatchString(actualStr) {
-			logging.LogToCurrentTest(testID, fmt.Sprintf("🔄 Ignoring field '%s' (custom pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
-			slog.Debug("Field ignored by custom pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
+			log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (custom pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
+			log.Debug("Field ignored by custom pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 			return true
 		}
 	}
 
-	slog.Debug("Field NOT ignored", "field", fieldName, "expected", expectedValue, "actual", actualValue)
+	log.Debug("Field NOT ignored", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 	return false
 }

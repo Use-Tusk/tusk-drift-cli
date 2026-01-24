@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -17,7 +16,6 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
@@ -104,7 +102,7 @@ func init() {
 func runTests(cmd *cobra.Command, args []string) error {
 	setupSignalHandling()
 
-	slog.Debug("Starting test execution",
+	log.Debug("Starting test execution",
 		"trace-dir", traceDir,
 		"trace-file", traceFile,
 		"trace-id", traceID,
@@ -136,11 +134,9 @@ func runTests(cmd *cobra.Command, args []string) error {
 		executor.SetConcurrency(cfg.TestExecution.Concurrency)
 	}
 	if getConfigErr == nil && cfg.TestExecution.Timeout != "" {
-		if d, err := time.ParseDuration(cfg.TestExecution.Timeout); err == nil {
-			executor.SetTestTimeout(d)
-		} else {
-			slog.Warn("Invalid test_execution.timeout; using default", "value", cfg.TestExecution.Timeout, "error", err)
-		}
+		// Already validated for correct duration
+		d, _ := time.ParseDuration(cfg.TestExecution.Timeout)
+		executor.SetTestTimeout(d)
 	}
 
 	if traceDir != "" {
@@ -178,10 +174,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 			// Check if we're on the default branch
 			currentBranch := getBranchFromEnv()
 			if currentBranch == info.DefaultBranch {
-				slog.Debug("On default branch, running validation run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
+				log.Debug("On default branch, running validation run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
 				isValidation = true
 			} else {
-				slog.Debug("Not on default branch, running regular run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
+				log.Debug("Not on default branch, running regular run", "currentBranch", currentBranch, "defaultBranch", info.DefaultBranch)
 			}
 		}
 
@@ -242,9 +238,13 @@ func runTests(cmd *cobra.Command, args []string) error {
 				CiStatus:   backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_RUNNING,
 			}
 			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
-				slog.Warn("Failed to update CI status to RUNNING", "error", err)
+				log.Warn("Failed to update CI status to RUNNING", "error", err)
 			}
 		}
+	} else if getConfigErr != nil {
+		// Non-cloud mode: config is required
+		cmd.SilenceUsage = true
+		return getConfigErr
 	}
 
 	if cmd.Flags().Changed("concurrency") {
@@ -312,12 +312,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				lastUploadErr = err
 				if interactive {
-					logging.LogToCurrentTest(test.TraceID, fmt.Sprintf("\n🟠 Failed to upload test results: %v\n", err))
+					log.TestLog(test.TraceID, fmt.Sprintf("\n🟠 Failed to upload test results: %v\n", err))
 				}
 			} else {
 				uploadedCount++
 				if interactive {
-					logging.LogToCurrentTest(test.TraceID, "\n📝 Test result successfully uploaded\n")
+					log.TestLog(test.TraceID, "\n📝 Test result successfully uploaded\n")
 				}
 			}
 			mu.Unlock()
@@ -396,7 +396,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				CiStatusMessage: stringPtr(noTestsMsg),
 			}
 			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
-				slog.Warn("Failed to update CI status to SUCCESS", "error", err)
+				log.Warn("Failed to update CI status to SUCCESS", "error", err)
 			}
 		}
 
@@ -417,12 +417,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 		if cloud && client != nil {
 			preAppStartSpans, err = runner.FetchPreAppStartSpansFromCloud(context.Background(), client, authOptions, cfg.Service.ID, false, quiet)
 			if err != nil {
-				slog.Warn("Failed to fetch pre-app-start spans from cloud", "error", err)
+				log.Warn("Failed to fetch pre-app-start spans from cloud", "error", err)
 			}
 		} else {
 			preAppStartSpans, err = runner.FetchLocalPreAppStartSpans(false)
 			if err != nil {
-				slog.Debug("Failed to fetch local pre-app-start spans", "error", err)
+				log.Debug("Failed to fetch local pre-app-start spans", "error", err)
 			}
 		}
 	}
@@ -451,7 +451,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				},
 				testsForSuiteSpans,
 			); err != nil {
-				slog.Warn("Failed to prepare suite spans", "error", err)
+				log.Warn("Failed to prepare suite spans", "error", err)
 			}
 
 			// Filter out error responses for execution
@@ -477,7 +477,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				},
 				tests,
 			); err != nil {
-				slog.Warn("Failed to prepare suite spans", "error", err)
+				log.Warn("Failed to prepare suite spans", "error", err)
 			}
 		}
 
@@ -496,12 +496,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	RegisterCleanup(func() {
-		slog.Debug("Cleanup: Cancelling running tests")
+		log.Debug("Cleanup: Cancelling running tests")
 		executor.CancelTests()
 
-		slog.Debug("Cleanup: Stopping services from signal handler")
+		log.Debug("Cleanup: Stopping services from signal handler")
 		if err := executor.StopEnvironment(); err != nil {
-			slog.Debug("Cleanup: Failed to stop environment", "error", err)
+			log.Debug("Cleanup: Failed to stop environment", "error", err)
 		}
 
 		if cloud && client != nil {
@@ -511,7 +511,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				CiStatusMessage: stringPtr("Test execution interrupted"),
 			}
 			if err := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); err != nil {
-				slog.Debug("Failed to update CI status to FAILURE", "error", err)
+				log.Debug("Failed to update CI status to FAILURE", "error", err)
 			}
 		}
 	})
@@ -569,10 +569,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 				allTestsForSuiteSpans = tests
 
 				// For local traces: filter out error responses for execution
-				var excludedCount int
-				tests, excludedCount = runner.FilterLocalTestsForExecution(tests)
-				if excludedCount > 0 {
-					logging.LogToService(fmt.Sprintf("Skipping %d tests with HTTP status >= 300 (spans still available for mocking)", excludedCount))
+				if !cloud {
+					var excludedCount int
+					tests, excludedCount = runner.FilterLocalTestsForExecution(tests)
+					if excludedCount > 0 {
+						log.ServiceLog(fmt.Sprintf("Skipping %d tests with HTTP status >= 300 (spans still available for mocking)", excludedCount))
+					}
 				}
 				return tests, nil
 			}
@@ -612,12 +614,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 						statusMessage = fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)
 					}
 					if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
-						slog.Warn("Interactive: cloud finalize failed", "error", err)
+						log.Warn("Interactive: cloud finalize failed", "error", err)
 					}
 					mu.Lock()
 					summary := fmt.Sprintf("Upload summary: %d/%d results uploaded", uploadedCount, attemptedCount)
 					mu.Unlock()
-					logging.LogToService(summary)
+					log.ServiceLog(summary)
 				}
 			},
 		})
@@ -654,7 +656,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			// Update CI status to FAILURE if in cloud mode
 			if cloud && client != nil && (ci || isValidation) {
 				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
-					slog.Warn("Headless: cloud finalize failed", "error", err)
+					log.Warn("Headless: cloud finalize failed", "error", err)
 				}
 				mu.Lock()
 				log.Stderr(fmt.Sprintf("Successfully uploaded %d/%d test results", uploadedCount, attemptedCount))
@@ -683,7 +685,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 					CiStatusMessage: stringPtr(fmt.Sprintf("Failed to start environment: %v", err)),
 				}
 				if updateErr := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); updateErr != nil {
-					slog.Warn("Failed to update CI status to FAILURE", "error", updateErr)
+					log.Warn("Failed to update CI status to FAILURE", "error", updateErr)
 				}
 			}
 
@@ -692,7 +694,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		defer func() {
 			if stopErr := executor.StopEnvironment(); stopErr != nil {
-				slog.Warn("Failed to stop environment", "error", stopErr)
+				log.Warn("Failed to stop environment", "error", stopErr)
 			}
 		}()
 
@@ -708,7 +710,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			// Update CI status to FAILURE if in cloud mode
 			if cloud && client != nil && (ci || isValidation) {
 				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
-					slog.Warn("Headless: cloud finalize failed", "error", err)
+					log.Warn("Headless: cloud finalize failed", "error", err)
 				}
 				mu.Lock()
 				log.Stderr(fmt.Sprintf("Successfully uploaded %d/%d test results", uploadedCount, attemptedCount))
@@ -743,7 +745,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		// streamed is always true here so this only updates the CI status
 		// Does NOT upload results to the backend as they are already uploaded via UploadSingleTestResult during the callback
 		if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
-			slog.Warn("Headless: cloud finalize failed", "error", err)
+			log.Warn("Headless: cloud finalize failed", "error", err)
 		}
 		if isValidation {
 			log.Println("\nSuite validation completed - backend will process results and update suite")

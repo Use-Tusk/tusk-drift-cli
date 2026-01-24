@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"gopkg.in/yaml.v3"
 )
@@ -161,9 +162,9 @@ func (m *Model) saveConfig() error {
 
 	if m.DockerType == dockerTypeCompose {
 		if err := m.createDockerComposeOverrideFile(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Could not create docker-compose override file: %v\n", err)
-			fmt.Fprintf(os.Stderr, "You will need to manually create docker-compose.tusk-override.yml.\n")
-			fmt.Fprintf(os.Stderr, "Refer to: %s\n", styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md#docker-support"))
+			log.UserWarn(fmt.Sprintf("Warning: Could not create docker-compose override file: %v", err))
+			log.UserWarn("You will need to manually create docker-compose.tusk-override.yml.")
+			log.UserWarn(fmt.Sprintf("Refer to: %s", styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md#docker-support")))
 		}
 	}
 	return nil

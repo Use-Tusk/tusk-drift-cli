@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,7 +11,7 @@ import (
 
 	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/logging"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
@@ -35,12 +34,12 @@ func (e *Executor) StartService() error {
 
 	processExists, err := e.checkProcessOnPort(cfg.Service.Port)
 	if err != nil {
-		slog.Debug("Failed to check for existing processes on port", "port", cfg.Service.Port, "error", err)
+		log.Debug("Failed to check for existing processes on port", "port", cfg.Service.Port, "error", err)
 	} else if processExists {
 		return fmt.Errorf("port %d is already in use, if your service is already running you should stop it first", cfg.Service.Port)
 	}
 
-	slog.Debug("Starting service", "command", cfg.Service.Start.Command)
+	log.Debug("Starting service", "command", cfg.Service.Start.Command)
 
 	// Wrap command with fence sandboxing (if supported and not disabled)
 	command := cfg.Service.Start.Command
@@ -50,19 +49,19 @@ func (e *Executor) StartService() error {
 		e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
 
 		if err := e.fenceManager.Initialize(); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  Sandbox unavailable: %s\n", friendlySandboxError(err))
-			fmt.Fprintf(os.Stderr, "   Tests will run without network isolation (real connections allowed)\n\n")
+			log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
+			log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
 			e.fenceManager = nil
 		} else {
 			wrappedCmd, err := e.fenceManager.WrapCommand(command)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "⚠️  Sandbox unavailable: %s\n", friendlySandboxError(err))
-				fmt.Fprintf(os.Stderr, "   Tests will run without network isolation (real connections allowed)\n\n")
+				log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
+				log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
 				e.fenceManager.Cleanup()
 				e.fenceManager = nil
 			} else {
 				command = wrappedCmd
-				logging.LogToService("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
+				log.ServiceLog("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
 			}
 		}
 	}
@@ -83,13 +82,13 @@ func (e *Executor) StartService() error {
 			env = append(env, fmt.Sprintf("TUSK_MOCK_PORT=%d", tcpPort))
 			env = append(env, "TUSK_MOCK_HOST=host.docker.internal") // Mac/Windows
 
-			slog.Debug("Setting TCP environment variables",
+			log.Debug("Setting TCP environment variables",
 				"TUSK_MOCK_PORT", tcpPort,
 				"TUSK_MOCK_HOST", "host.docker.internal")
 		} else {
 			// Unix socket mode
 			env = append(env, fmt.Sprintf("TUSK_MOCK_SOCKET=%s", socketPath))
-			slog.Debug("Setting socket environment variable", "TUSK_MOCK_SOCKET", socketPath)
+			log.Debug("Setting socket environment variable", "TUSK_MOCK_SOCKET", socketPath)
 
 			if _, err := os.Stat(socketPath); err != nil {
 				return fmt.Errorf("socket file does not exist before starting service: %w", err)
@@ -103,7 +102,7 @@ func (e *Executor) StartService() error {
 	// Dump service logs to file in .tusk/logs instead of suppressing
 	// TODO: provide option whether to store these logs
 	if err := e.setupServiceLogging(); err != nil {
-		slog.Debug("Failed to setup service logging, suppressing output", "error", err)
+		log.Debug("Failed to setup service logging, suppressing output", "error", err)
 		e.serviceCmd.Stdout = nil
 		e.serviceCmd.Stderr = nil
 	} else {
@@ -124,7 +123,7 @@ func (e *Executor) StartService() error {
 		return fmt.Errorf("service readiness check failed: %w", err)
 	}
 
-	slog.Debug("Service is ready", "url", e.serviceURL)
+	log.Debug("Service is ready", "url", e.serviceURL)
 
 	return nil
 }
@@ -195,16 +194,16 @@ func (e *Executor) StopService() error {
 			e.fenceManager.Cleanup()
 			e.fenceManager = nil
 		}
-		logging.LogToService("Service stopped")
+		log.ServiceLog("Service stopped")
 	}()
 
 	// Use custom stop command if provided
 	if cfg != nil && cfg.Service.Stop.Command != "" {
-		slog.Debug("Using custom stop command", "command", cfg.Service.Stop.Command)
+		log.Debug("Using custom stop command", "command", cfg.Service.Stop.Command)
 
 		stopCmd := createServiceCommand(context.Background(), cfg.Service.Stop.Command)
 		if err := stopCmd.Run(); err != nil {
-			slog.Warn("Stop command failed", "error", err)
+			log.Warn("Stop command failed", "error", err)
 			// Continue to fallback method
 		} else {
 			return nil
@@ -215,7 +214,7 @@ func (e *Executor) StopService() error {
 	if e.serviceCmd != nil && e.serviceCmd.Process != nil {
 		// Use platform-specific process group killing with 3 second timeout
 		if err := killProcessGroup(e.serviceCmd, 3*time.Second); err != nil {
-			slog.Debug("Process group kill completed with error", "error", err)
+			log.Debug("Process group kill completed with error", "error", err)
 		}
 		e.serviceCmd = nil
 	}
@@ -234,7 +233,7 @@ func (e *Executor) GetServiceLogPath() string {
 // Returns true if a process is found, false otherwise
 // This uses a connection-based approach to check if the port is already in use.
 func (e *Executor) checkProcessOnPort(port int) (bool, error) {
-	slog.Debug("Checking for existing processes on port", "port", port)
+	log.Debug("Checking for existing processes on port", "port", port)
 
 	// Try to connect to the port
 	addr := fmt.Sprintf("localhost:%d", port)
@@ -242,13 +241,13 @@ func (e *Executor) checkProcessOnPort(port int) (bool, error) {
 	if err == nil {
 		// Successfully connected - port is in use
 		_ = conn.Close()
-		slog.Debug("Port is already in use", "port", port)
+		log.Debug("Port is already in use", "port", port)
 		return true, nil
 	}
 
 	// Check if it's a connection refused (means port is available)
 	// vs other errors (network issues, etc.)
-	slog.Debug("Port appears to be available", "port", port, "error", err)
+	log.Debug("Port appears to be available", "port", port, "error", err)
 	return false, nil
 }
 
@@ -327,7 +326,7 @@ func (e *Executor) setupServiceLogging() error {
 
 	e.serviceLogFile = logFile
 
-	logging.LogToService(fmt.Sprintf("Service logs will be written to: %s", logPath))
+	log.ServiceLog(fmt.Sprintf("Service logs will be written to: %s", logPath))
 
 	return nil
 }
