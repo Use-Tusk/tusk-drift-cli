@@ -85,16 +85,7 @@ var (
 			Foreground(lipgloss.Color(AccentColor)).
 			Bold(true)
 
-	TableRowSelectedStyle = func() lipgloss.Style {
-		foreground := "231"
-		if HasDarkBackground {
-			foreground = "229"
-		}
-		return lipgloss.NewStyle().
-			Foreground(lipgloss.Color(foreground)).
-			Background(lipgloss.Color(SecondaryColor)).
-			Bold(false)
-	}()
+	TableRowSelectedStyle lipgloss.Style
 
 	BoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -140,6 +131,17 @@ var (
 	// ScrollbarTrackStyle is for the scrollbar track
 	ScrollbarTrackStyle = DimStyle
 )
+
+func init() {
+	// Initialize TableRowSelectedStyle based on TableCellStyle with different colors
+	foreground := "231"
+	if HasDarkBackground {
+		foreground = "229"
+	}
+	TableRowSelectedStyle = TableCellStyle.
+		Foreground(lipgloss.Color(foreground)).
+		Background(lipgloss.Color(SecondaryColor))
+}
 
 func NoColor() bool {
 	return termenv.EnvNoColor()

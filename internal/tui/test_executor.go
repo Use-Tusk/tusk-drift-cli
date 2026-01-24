@@ -69,6 +69,9 @@ type testExecutorModel struct {
 	sizeWarning *components.TerminalSizeWarning
 
 	opts *InteractiveOpts
+
+	// Program reference for sending refresh messages from goroutines
+	program *tea.Program
 }
 
 type testsLoadedMsg struct {
@@ -98,6 +101,9 @@ type executionFailedMsg struct {
 }
 
 type environmentGroupCompleteMsg struct{}
+
+// refreshTickMsg triggers periodic UI refresh for live log updates
+type refreshTickMsg struct{}
 
 // TUI log writer to capture slog output
 type tuiLogWriter struct {
@@ -218,6 +224,7 @@ func RunTestsInteractive(tests []runner.Test, executor *runner.Executor) ([]runn
 	logging.SetTestLogger(m)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	m.program = p
 	if _, err := p.Run(); err != nil {
 		logging.SetTestLogger(nil)
 		return nil, err
@@ -241,6 +248,7 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	m.program = p
 	if _, err := p.Run(); err != nil {
 		logging.SetTestLogger(nil)
 		return nil, err
@@ -326,6 +334,10 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case refreshTickMsg:
+		// Just triggers a re-render, no action needed
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		oldWidth := m.width
 		oldHeight := m.height
@@ -708,7 +720,7 @@ func (m *testExecutorModel) updateLogPanelFromSelection() {
 
 func (m *testExecutorModel) getFooterText() string {
 	testCount := fmt.Sprintf("%d TESTS ", len(m.tests))
-	return testCount + "• j/k: select • u/d: scroll • J/K/U/D: scroll logs • q: quit"
+	return testCount + "• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll logs • q: quit"
 }
 
 func (m *testExecutorModel) View() string {
@@ -792,10 +804,16 @@ func (m *testExecutorModel) verticalLayout() string {
 
 func (m *testExecutorModel) addServiceLog(line string) {
 	m.logPanel.AddServiceLog(line)
+	if m.program != nil {
+		m.program.Send(refreshTickMsg{})
+	}
 }
 
 func (m *testExecutorModel) addTestLog(testID, line string) {
 	m.logPanel.AddTestLog(testID, line)
+	if m.program != nil {
+		m.program.Send(refreshTickMsg{})
+	}
 }
 
 func (m *testExecutorModel) updateStats() tea.Cmd {

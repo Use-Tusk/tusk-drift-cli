@@ -50,6 +50,14 @@ type tableRow struct {
 	name    string
 }
 
+// detailsUpdateInterval is the minimum time between details panel updates.
+// Because details is usually a lot of content it causes some lag when scrolling
+// rapidly, so we have to "debounce" it a little.
+const detailsUpdateInterval = 100 * time.Millisecond
+
+// detailsTickMsg is sent to trigger a pending details update
+type detailsTickMsg struct{}
+
 type listModel struct {
 	viewport       viewport.Model
 	tests          []runner.Test
@@ -68,6 +76,16 @@ type listModel struct {
 	cursor         int        // Currently selected row
 	detailsPanel   *components.DetailsPanel
 	lastCursor     int
+	detailsCache   map[string]string
+
+	// Debouncing for details panel updates
+	lastDetailsUpdate    time.Time
+	pendingDetailsUpdate bool
+
+	// Pre-rendered row cache (invalidated when width or rows change)
+	renderedRowsNormal   []string // Each row rendered with normal style
+	renderedRowsSelected []string // Each row rendered with selected style
+	lastRenderedWidth    int      // Width used for last render
 }
 
 func ShowTestList(tests []runner.Test) error {
@@ -89,6 +107,7 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, su
 		detailsPanel:   components.NewDetailsPanel(),
 		cursor:         0,
 		lastCursor:     -1,
+		detailsCache:   make(map[string]string),
 	}
 
 	m.rebuildRows()
@@ -108,6 +127,15 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case detailsTickMsg:
+		if m.pendingDetailsUpdate && m.cursor != m.lastCursor {
+			m.lastCursor = m.cursor
+			m.lastDetailsUpdate = time.Now()
+			m.pendingDetailsUpdate = false
+			m.updateDetailsContent()
+		}
+		return m, nil
+
 	case testsLoadFailedMsg:
 		m.err = msg.err
 		return m, tea.Quit
@@ -160,24 +188,24 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ensureCursorVisible()
 					m.updateViewportContent()
 				}
-				return m, nil
+				return m, m.scheduleDetailsUpdate()
 			case "k", "up":
 				if m.cursor > 0 {
 					m.cursor--
 					m.ensureCursorVisible()
 					m.updateViewportContent()
 				}
-				return m, nil
+				return m, m.scheduleDetailsUpdate()
 			case "u", "ctrl+u":
 				m.viewport.HalfPageUp()
 				m.clampCursorToViewport()
 				m.updateViewportContent()
-				return m, nil
+				return m, m.scheduleDetailsUpdate()
 			case "d", "ctrl+d":
 				m.viewport.HalfPageDown()
 				m.clampCursorToViewport()
 				m.updateViewportContent()
-				return m, nil
+				return m, m.scheduleDetailsUpdate()
 			case "J":
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
 				return m, nil
@@ -191,19 +219,17 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
 				return m, nil
 			case "g":
-				// Go to top
 				m.cursor = 0
 				m.viewport.GotoTop()
 				m.updateViewportContent()
-				return m, nil
+				return m, m.scheduleDetailsUpdate()
 			case "G":
-				// Go to bottom
 				if len(m.rows) > 0 {
 					m.cursor = len(m.rows) - 1
 					m.viewport.GotoBottom()
 					m.updateViewportContent()
 				}
-				return m, nil
+				return m, m.scheduleDetailsUpdate()
 			case "left", "h":
 				if m.cursor >= 0 && m.cursor < len(m.rowInfos) {
 					info := m.rowInfos[m.cursor]
@@ -211,6 +237,8 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.expandedTraces[traceID] {
 						m.expandedTraces[traceID] = false
 						m.rebuildRows()
+						m.lastCursor = -1
+						m.updateDetailsContent()
 					}
 				}
 				return m, nil
@@ -221,6 +249,8 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if len(test.Spans) > 0 && !m.expandedTraces[test.TraceID] {
 						m.expandedTraces[test.TraceID] = true
 						m.rebuildRows()
+						m.lastCursor = -1
+						m.updateDetailsContent()
 					}
 				}
 				return m, nil
@@ -258,15 +288,23 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.X < tableWidth {
 				switch msg.Button {
 				case tea.MouseButtonWheelUp:
+					oldCursor := m.cursor
 					m.viewport.ScrollUp(3)
 					m.clampCursorToViewport()
-					m.updateViewportContent()
-					return m, nil
+					// Only rebuild content if cursor changed (needs new highlighting)
+					if m.cursor != oldCursor {
+						m.updateViewportContent()
+					}
+					return m, m.scheduleDetailsUpdate()
 				case tea.MouseButtonWheelDown:
+					oldCursor := m.cursor
 					m.viewport.ScrollDown(3)
 					m.clampCursorToViewport()
-					m.updateViewportContent()
-					return m, nil
+					// Only rebuild content if cursor changed (needs new highlighting)
+					if m.cursor != oldCursor {
+						m.updateViewportContent()
+					}
+					return m, m.scheduleDetailsUpdate()
 				}
 			} else {
 				// Mouse is over details panel (right side)
@@ -357,44 +395,72 @@ func (m *listModel) clampCursorToViewport() {
 	}
 }
 
-// updateViewportContent re-renders the table rows into the viewport
-func (m *listModel) updateViewportContent() {
-	var sb strings.Builder
+// renderRowCache pre-renders all rows in both normal and selected styles.
+// This is called when width changes or rows are rebuilt.
+func (m *listModel) renderRowCache() {
 	tableWidth := m.viewport.Width
-
 	numWidth := 4
 	traceWidth := 32
 	typeWidth := 10
-	nameWidth := tableWidth - numWidth - traceWidth - typeWidth - 6 // 6 for spacing
-	if nameWidth < 10 {
-		nameWidth = 10
-	}
+	nameWidth := max(tableWidth-numWidth-traceWidth-typeWidth-6, 10)
+
+	m.renderedRowsNormal = make([]string, len(m.rows))
+	m.renderedRowsSelected = make([]string, len(m.rows))
+	m.lastRenderedWidth = tableWidth
 
 	for i, row := range m.rows {
-		if i > 0 {
-			sb.WriteString("\n")
-		}
-
 		line := fmt.Sprintf(" %-*s %-*s %-*s %-*s",
 			numWidth, utils.TruncateWithEllipsis(row.number, numWidth),
 			traceWidth, utils.TruncateWithEllipsis(row.traceID, traceWidth),
 			typeWidth, utils.TruncateWithEllipsis(row.rowType, typeWidth),
 			nameWidth, utils.TruncateWithEllipsis(row.name, nameWidth),
 		)
+		m.renderedRowsNormal[i] = styles.TableCellStyle.Render(line)
+		m.renderedRowsSelected[i] = styles.TableRowSelectedStyle.Render(line)
+	}
+}
 
+// updateViewportContent assembles the viewport content from pre-rendered rows.
+// Only re-renders rows if width changed.
+func (m *listModel) updateViewportContent() {
+	tableWidth := m.viewport.Width
+
+	// Re-render cache if width changed or cache is empty
+	if tableWidth != m.lastRenderedWidth || len(m.renderedRowsNormal) != len(m.rows) {
+		m.renderRowCache()
+	}
+
+	// Fast path: just assemble from pre-rendered strings
+	var sb strings.Builder
+	for i := range m.rows {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
 		if i == m.cursor {
-			sb.WriteString(styles.TableRowSelectedStyle.Render(line))
+			sb.WriteString(m.renderedRowsSelected[i])
 		} else {
-			sb.WriteString(styles.TableCellStyle.Render(line))
+			sb.WriteString(m.renderedRowsNormal[i])
 		}
 	}
 
 	m.viewport.SetContent(sb.String())
+}
 
-	if m.cursor != m.lastCursor {
-		m.lastCursor = m.cursor
-		m.updateDetailsContent()
+// scheduleDetailsUpdate schedules a debounced update to the details panel.
+// Updates are ALWAYS deferred via tea.Tick to avoid blocking the main update loop.
+func (m *listModel) scheduleDetailsUpdate() tea.Cmd {
+	if m.cursor == m.lastCursor {
+		return nil
 	}
+
+	// Always schedule via tick with full debounce interval
+	if !m.pendingDetailsUpdate {
+		m.pendingDetailsUpdate = true
+		return tea.Tick(detailsUpdateInterval, func(t time.Time) tea.Msg {
+			return detailsTickMsg{}
+		})
+	}
+	return nil
 }
 
 func (m *listModel) View() string {
@@ -412,7 +478,7 @@ func (m *listModel) View() string {
 		availableWidthForHelp = max(availableWidthForHelp, 20)
 
 		footer := utils.TruncateWithEllipsis(
-			testCount+"• j/k: select • u/d: scroll • J/K/U/D: scroll details • ←/→: expand • enter: run • q: quit",
+			testCount+"• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll details • ←/→: expand • enter: run • q: quit",
 			availableWidthForHelp,
 		)
 
@@ -431,10 +497,16 @@ func (m *listModel) View() string {
 			MarginBottom(1).
 			Render("Tests")
 
-		// Render table header
-		tableHeaderStyle := styles.TableHeaderStyle
-		headerLine := fmt.Sprintf(" %-4s %-32s %-10s %s", "#", "Trace ID", "Type", "Name")
-		tableHeader := tableHeaderStyle.Render(headerLine)
+		// Render table header - use same widths as updateViewportContent
+		numWidth := 4
+		traceWidth := 32
+		typeWidth := 10
+		nameWidth := tableWidth - numWidth - traceWidth - typeWidth - 6 // 6 for spacing
+		if nameWidth < 10 {
+			nameWidth = 10
+		}
+		headerLine := fmt.Sprintf(" %-*s %-*s %-*s %-*s", numWidth, "#", traceWidth, "Trace ID", typeWidth, "Type", nameWidth, "Name")
+		tableHeader := styles.TableHeaderStyle.Render(headerLine)
 
 		// Render table with scrollbar
 		tableWithScrollbar := lipgloss.JoinHorizontal(
@@ -479,7 +551,6 @@ func (m *listModel) updateDetailsContent() {
 	}
 
 	info := m.rowInfos[m.cursor]
-	test := m.tests[info.testIndex]
 
 	// Set title based on selection type
 	if info.isTrace {
@@ -488,13 +559,19 @@ func (m *listModel) updateDetailsContent() {
 		m.detailsPanel.SetTitle("Span Details")
 	}
 
-	// Generate and render content
+	cacheKey := fmt.Sprintf("%d:%s", info.testIndex, info.spanID)
+
+	if cached, ok := m.detailsCache[cacheKey]; ok {
+		m.detailsPanel.SetContent(cached)
+		m.detailsPanel.GotoTop()
+		return
+	}
+
 	lines := m.generateDetailsContent()
 	content := utils.RenderMarkdown(strings.Join(lines, "\n"))
+	m.detailsCache[cacheKey] = content
 	m.detailsPanel.SetContent(content)
 	m.detailsPanel.GotoTop()
-
-	_ = test // Used in generateDetailsContent
 }
 
 // lineBuilder helps build lines for the details panel efficiently

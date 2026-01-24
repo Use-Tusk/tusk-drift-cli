@@ -521,36 +521,42 @@ func runTests(cmd *cobra.Command, args []string) error {
 		if driftRunID != "" {
 			initialLogs = append(initialLogs, fmt.Sprintf("Created Tusk Drift run: %s", driftRunID))
 		}
-		switch {
-		case isValidation:
-			initialLogs = append(initialLogs, "📡 Fetching traces to validate from Tusk Drift Cloud...")
-		case cloud && client != nil:
-			initialLogs = append(initialLogs, "📡 Fetching tests from Tusk Drift Cloud...")
-		default:
-			initialLogs = append(initialLogs, "📁 Loading tests from local traces...")
-		}
 
-		// Create LoadTests function based on mode
-		// For local traces, we need to store all tests (before filtering) for suite span preparation,
-		// while returning filtered tests for execution.
+		// For cloud mode, load tests upfront (with progress bar) before starting TUI
+		// For local mode, defer loading to the TUI
 		var allTestsForSuiteSpans []runner.Test
+		var preloadedTests []runner.Test
 		var loadTestsFn func(ctx context.Context) ([]runner.Test, error)
-		if isValidation {
-			loadTestsFn = func(ctx context.Context) ([]runner.Test, error) {
-				tests, err := fetchValidationTraceTests(ctx, client, authOptions, cfg.Service.ID)
-				allTestsForSuiteSpans = tests
-				return tests, err
+
+		if cloud && client != nil {
+			// Load tests upfront with progress bar
+			var err error
+			if isValidation {
+				preloadedTests, err = fetchValidationTraceTests(context.Background(), client, authOptions, cfg.Service.ID)
+			} else {
+				preloadedTests, err = loadCloudTests(context.Background(), client, authOptions, cfg.Service.ID, driftRunID, traceTestID, allCloudTraceTests || !ci, quiet)
 			}
+			if err != nil {
+				return fmt.Errorf("failed to load cloud tests: %w", err)
+			}
+			if filter != "" {
+				preloadedTests, err = runner.FilterTests(preloadedTests, filter)
+				if err != nil {
+					return fmt.Errorf("invalid filter: %w", err)
+				}
+			}
+			allTestsForSuiteSpans = preloadedTests
 		} else {
+			initialLogs = append(initialLogs, "📁 Loading tests from local traces...")
 			baseLoadTestsFn := makeLoadTestsFunc(
 				executor,
-				client,
+				nil, // no client for local mode
 				authOptions,
 				cfg.Service.ID,
 				driftRunID,
 				traceID,
 				traceTestID,
-				allCloudTraceTests || !ci,
+				false,
 				filter,
 				quiet,
 			)
@@ -563,20 +569,18 @@ func runTests(cmd *cobra.Command, args []string) error {
 				allTestsForSuiteSpans = tests
 
 				// For local traces: filter out error responses for execution
-				if !cloud {
-					var excludedCount int
-					tests, excludedCount = runner.FilterLocalTestsForExecution(tests)
-					if excludedCount > 0 {
-						logging.LogToService(fmt.Sprintf("Skipping %d tests with HTTP status >= 300 (spans still available for mocking)", excludedCount))
-					}
+				var excludedCount int
+				tests, excludedCount = runner.FilterLocalTestsForExecution(tests)
+				if excludedCount > 0 {
+					logging.LogToService(fmt.Sprintf("Skipping %d tests with HTTP status >= 300 (spans still available for mocking)", excludedCount))
 				}
 				return tests, nil
 			}
 		}
 
-		_, err := tui.RunTestsInteractiveWithOpts(nil, executor, &tui.InteractiveOpts{
+		_, err := tui.RunTestsInteractiveWithOpts(preloadedTests, executor, &tui.InteractiveOpts{
 			InitialServiceLogs:    initialLogs,
-			StartAfterTestsLoaded: true,
+			StartAfterTestsLoaded: len(preloadedTests) == 0, // Only wait for loading if tests aren't preloaded
 			IsCloudMode:           cloud,
 			LoadTests:             loadTestsFn,
 			OnBeforeEnvironmentStart: func(exec *runner.Executor, tests []runner.Test) error {

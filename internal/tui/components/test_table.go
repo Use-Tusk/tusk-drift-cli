@@ -18,9 +18,11 @@ type TestTableComponent struct {
 	results  []runner.TestResult
 	errors   []error
 
-	// Column widths
+	// Column widths (matching list view: #, Trace ID, Type, Name, Status, Duration)
 	numWidth      int
-	testWidth     int
+	traceWidth    int
+	typeWidth     int
+	nameWidth     int
 	statusWidth   int
 	durationWidth int
 
@@ -43,7 +45,9 @@ func NewTestTableComponent(tests []runner.Test) *TestTableComponent {
 		cursor:        0,
 		lastCursor:    -1,
 		numWidth:      4,
-		testWidth:     35,
+		traceWidth:    20,
+		typeWidth:     10,
+		nameWidth:     20,
 		statusWidth:   17,
 		durationWidth: 8,
 	}
@@ -62,13 +66,14 @@ func (tt *TestTableComponent) View(width, height int) string {
 		height = 10
 	}
 
-	// title (1) + margin (1) + header (1) = 3
-	viewportHeight := max(height-3, 3)
+	// title (1) + margin (1) + header (1) + header border (1) = 4
+	viewportHeight := max(height-4, 3)
 	tt.viewport.Width = width
 	tt.viewport.Height = viewportHeight
 
-	fixedWidth := tt.numWidth + tt.statusWidth + tt.durationWidth + 6 // 6 for spacing
-	tt.testWidth = max(width-fixedWidth, 10)
+	// Calculate dynamic name width (columns: #, Trace ID, Type, Name, Status, Duration)
+	fixedWidth := tt.numWidth + tt.traceWidth + tt.typeWidth + tt.statusWidth + tt.durationWidth + 10 // 10 for spacing
+	tt.nameWidth = max(width-fixedWidth, 10)
 
 	// Build and set content
 	tt.updateViewportContent()
@@ -78,9 +83,11 @@ func (tt *TestTableComponent) View(width, height int) string {
 		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		MarginBottom(1)
 
-	headerLine := fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+	headerLine := fmt.Sprintf(" %-*s %-*s %-*s %-*s %-*s %-*s",
 		tt.numWidth, "#",
-		tt.testWidth, "Test",
+		tt.traceWidth, "Trace ID",
+		tt.typeWidth, "Type",
+		tt.nameWidth, "Name",
 		tt.statusWidth, "Status",
 		tt.durationWidth, "Duration",
 	)
@@ -105,13 +112,12 @@ func (tt *TestTableComponent) updateViewportContent() {
 
 		var line string
 		if i == 0 {
-			serviceLabel := "(service logs)"
-			if styles.NoColor() && tt.cursor == 0 {
-				serviceLabel = "▶ " + serviceLabel
-			}
-			line = fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+			// Service logs row - show in Name column
+			line = fmt.Sprintf(" %-*s %-*s %-*s %-*s %-*s %-*s",
 				tt.numWidth, "",
-				tt.testWidth, serviceLabel,
+				tt.traceWidth, "",
+				tt.typeWidth, "",
+				tt.nameWidth, "(service logs)",
 				tt.statusWidth, "",
 				tt.durationWidth, "",
 			)
@@ -138,14 +144,17 @@ func (tt *TestTableComponent) updateViewportContent() {
 				duration = fmt.Sprintf("%dms", result.Duration)
 			}
 
-			testDescription := fmt.Sprintf("%s %s", test.DisplayType, test.DisplayName)
-			if styles.NoColor() && tt.cursor == i {
-				testDescription = "▶ " + testDescription
+			// Get display name (path if no display name)
+			displayName := test.DisplayName
+			if displayName == "" {
+				displayName = test.Path
 			}
 
-			line = fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+			line = fmt.Sprintf(" %-*s %-*s %-*s %-*s %-*s %-*s",
 				tt.numWidth, fmt.Sprintf("%d", testIdx+1),
-				tt.testWidth, utils.TruncateWithEllipsis(testDescription, tt.testWidth),
+				tt.traceWidth, utils.TruncateWithEllipsis(test.TraceID, tt.traceWidth),
+				tt.typeWidth, utils.TruncateWithEllipsis(test.DisplayType, tt.typeWidth),
+				tt.nameWidth, utils.TruncateWithEllipsis(displayName, tt.nameWidth),
 				tt.statusWidth, status,
 				tt.durationWidth, duration,
 			)
