@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
@@ -20,27 +19,17 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
-type (
-	executionState int
-	viewMode       int
-)
+type executionState int
 
 const (
 	stateRunning executionState = iota
 	stateCompleted
 )
 
-const (
-	tableNavigation viewMode = iota
-	logNavigation
-	logCopyMode
-)
-
 type testExecutorModel struct {
 	tests    []runner.Test
 	executor *runner.Executor
 	state    executionState
-	viewMode viewMode
 
 	// Progress tracking
 	activeTests       map[int]bool
@@ -79,10 +68,10 @@ type testExecutorModel struct {
 
 	sizeWarning *components.TerminalSizeWarning
 
-	copyModeViewport viewport.Model
-	copyNotice       bool
-
 	opts *InteractiveOpts
+
+	// Program reference for sending refresh messages from goroutines
+	program *tea.Program
 }
 
 type testsLoadedMsg struct {
@@ -113,7 +102,8 @@ type executionFailedMsg struct {
 
 type environmentGroupCompleteMsg struct{}
 
-type hideCopyNoticeMsg struct{}
+// refreshTickMsg triggers periodic UI refresh for live log updates
+type refreshTickMsg struct{}
 
 // TUI log writer to capture slog output
 type tuiLogWriter struct {
@@ -233,7 +223,8 @@ func RunTestsInteractive(tests []runner.Test, executor *runner.Executor) ([]runn
 	// Register this model as the global test logger
 	log.SetTUILogger(m)
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	m.program = p
 	if _, err := p.Run(); err != nil {
 		log.SetTUILogger(nil)
 		return nil, err
@@ -256,7 +247,8 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 		}
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	m.program = p
 	if _, err := p.Run(); err != nil {
 		log.SetTUILogger(nil)
 		return nil, err
@@ -271,7 +263,6 @@ func newTestExecutorModel(tests []runner.Test, executor *runner.Executor, opts *
 		tests:             tests,
 		executor:          executor,
 		state:             stateRunning,
-		viewMode:          tableNavigation,
 		activeTests:       make(map[int]bool),
 		currentTestTraces: make(map[string]bool),
 		completedCount:    0,
@@ -343,6 +334,10 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case refreshTickMsg:
+		// Just triggers a re-render, no action needed
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		oldWidth := m.width
 		oldHeight := m.height
@@ -372,13 +367,43 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		switch m.viewMode {
-		case tableNavigation:
-			return m.handleTableNavigation(msg)
-		case logNavigation:
-			return m.handleLogNavigation(msg)
-		case logCopyMode:
-			return m.handleLogCopyMode(msg)
+		return m.handleTableNavigation(msg)
+
+	case tea.MouseMsg:
+		leftWidth := m.width / 2
+		headerHeight := 4 // header takes 4 lines
+
+		if msg.X < leftWidth {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				// Scroll viewport only, clamp cursor to visible bounds
+				m.testTable.ScrollUp(3)
+				// Update log panel based on selection
+				if m.testTable.IsServiceLogsSelected() {
+					m.logPanel.SetCurrentTest("")
+				} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
+					m.logPanel.SetCurrentTest(selectedTest.TraceID)
+				}
+				return m, nil
+			case tea.MouseButtonWheelDown:
+				// Scroll viewport only, clamp cursor to visible bounds
+				m.testTable.ScrollDown(3)
+				// Update log panel based on selection
+				if m.testTable.IsServiceLogsSelected() {
+					m.logPanel.SetCurrentTest("")
+				} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
+					m.logPanel.SetCurrentTest(selectedTest.TraceID)
+				}
+				return m, nil
+			}
+		} else {
+			// - X: leftWidth + border(1) + padding(1) = leftWidth + 2
+			// - Y: headerHeight + title(1) + empty line(1) = headerHeight + 2
+			m.logPanel.SetOffset(leftWidth+2, headerHeight+2)
+			if cmd := m.logPanel.Update(msg); cmd != nil {
+				return m, cmd
+			}
+			return m, nil
 		}
 
 	case testsLoadedMsg:
@@ -604,9 +629,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addServiceLog("\n" + strings.Repeat("=", 60))
 		m.addServiceLog("❌ Execution failed - no tests were run")
 		m.cleanup()
-
-	case hideCopyNoticeMsg:
-		m.copyNotice = false
 	}
 
 	// Update components
@@ -625,29 +647,59 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "down", "j", "k":
-		cmd := m.testTable.Update(msg)
+	case "up", "k":
+		// Move selection up (updates log panel)
+		m.testTable.SelectUp(1)
+		m.updateLogPanelFromSelection()
+		return m, nil
 
-		// Update log panel based on selection
-		if m.testTable.IsServiceLogsSelected() {
-			m.logPanel.SetCurrentTest("") // Show service logs
-		} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
-			m.logPanel.SetCurrentTest(selectedTest.TraceID)
-		}
+	case "down", "j":
+		// Move selection down (updates log panel)
+		m.testTable.SelectDown(1)
+		m.updateLogPanelFromSelection()
+		return m, nil
 
-		return m, cmd
+	case "u":
+		// Scroll viewport up (no selection change, clamp cursor to visible)
+		m.testTable.HalfPageUp()
+		m.updateLogPanelFromSelection()
+		return m, nil
 
-	case "right", "l":
-		m.viewMode = logNavigation
-		m.testTable.SetFocused(false)
-		m.logPanel.SetFocused(true)
+	case "d":
+		// Scroll viewport down (no selection change, clamp cursor to visible)
+		m.testTable.HalfPageDown()
+		m.updateLogPanelFromSelection()
+		return m, nil
+
+	case "J":
+		// Scroll right side (log panel) down by 1
+		m.logPanel.ScrollDown(1)
+		return m, nil
+
+	case "K":
+		// Scroll right side (log panel) up by 1
+		m.logPanel.ScrollUp(1)
+		return m, nil
+
+	case "U":
+		// Page up on right side (log panel)
+		m.logPanel.HalfPageUp()
+		return m, nil
+
+	case "D":
+		// Page down on right side (log panel)
+		m.logPanel.HalfPageDown()
 		return m, nil
 
 	case "g":
 		m.testTable.GotoTop()
+		m.updateLogPanelFromSelection()
+		return m, nil
 
 	case "G":
 		m.testTable.GotoBottom()
+		m.updateLogPanelFromSelection()
+		return m, nil
 
 	case "q", "ctrl+c", "esc":
 		m.cleanup()
@@ -657,90 +709,23 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 	return m, nil
 }
 
-func (m *testExecutorModel) handleLogNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "up", "down", "pgup", "pgdown", "g", "G", "j", "k":
-		return m, m.logPanel.Update(msg)
-
-	case "y":
-		return m, m.copyLogsToClipboard()
-
-	case "f":
-		m.viewMode = logCopyMode
-		m.copyModeViewport = viewport.Model{}
-
-		return m, nil
-
-	case "left", "esc", "h":
-		m.viewMode = tableNavigation
-		m.testTable.SetFocused(true)
-		m.logPanel.SetFocused(false)
-		return m, nil
-
-	case "q", "ctrl+c":
-		m.cleanup()
-		return m, tea.Quit
+// updateLogPanelFromSelection updates the log panel based on current table selection
+func (m *testExecutorModel) updateLogPanelFromSelection() {
+	if m.testTable.IsServiceLogsSelected() {
+		m.logPanel.SetCurrentTest("")
+	} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
+		m.logPanel.SetCurrentTest(selectedTest.TraceID)
 	}
-
-	return m, nil
-}
-
-func (m *testExecutorModel) handleLogCopyMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "up", "down", "pgup", "pgdown":
-		var cmd tea.Cmd
-		m.copyModeViewport, cmd = m.copyModeViewport.Update(msg)
-		return m, cmd
-
-	case "j":
-		m.copyModeViewport.ScrollDown(1)
-		return m, nil
-
-	case "k":
-		m.copyModeViewport.ScrollUp(1)
-		return m, nil
-
-	case "g":
-		m.copyModeViewport.GotoTop()
-
-	case "G":
-		m.copyModeViewport.GotoBottom()
-
-	case "y":
-		return m, m.copyLogsToClipboard()
-
-	case "esc", "f":
-		m.viewMode = logNavigation
-		return m, nil
-
-	case "q", "ctrl+c":
-		m.cleanup()
-		return m, tea.Quit
-	}
-
-	return m, nil
 }
 
 func (m *testExecutorModel) getFooterText() string {
-	switch m.viewMode {
-	case tableNavigation:
-		return "↑/↓/j/k: navigate • g: go to top • G: go to bottom • →/l: view logs • q: quit"
-	case logNavigation:
-		return "↑/↓/j/k: scroll • g: go to top • G: go to bottom • y: copy • f: full screen • ←/h/Esc: back to table • q: quit"
-	case logCopyMode:
-		return "FULL SCREEN MODE • ↑/↓/j/k: scroll • g: go to top • G: go to bottom • y: copy • f/Esc: exit full screen • q: quit"
-	default:
-		return ""
-	}
+	testCount := fmt.Sprintf("%d TESTS ", len(m.tests))
+	return testCount + "• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll logs • q: quit"
 }
 
 func (m *testExecutorModel) View() string {
 	if m.sizeWarning.ShouldShow(m.width, m.height) {
 		return m.sizeWarning.View(m.width, m.height)
-	}
-
-	if m.viewMode == logCopyMode {
-		return m.fullScreenLogView()
 	}
 
 	if m.width < 100 {
@@ -749,108 +734,52 @@ func (m *testExecutorModel) View() string {
 	return m.horizontalLayout()
 }
 
-func (m *testExecutorModel) displayCopyText() string {
-	return styles.SuccessStyle.Render("Copied ✓")
-}
-
-func (m *testExecutorModel) fullScreenLogView() string {
-	footerHeight := 1
-	contentHeight := m.height - footerHeight
-
-	// Initialize copy mode viewport if needed
-	if m.copyModeViewport.Width == 0 {
-		m.copyModeViewport = viewport.New(m.width, contentHeight)
-		// Remove all borders and styling for true full screen
-		m.copyModeViewport.Style = lipgloss.NewStyle()
-
-		// Get raw content and wrap it to terminal width
-		rawContent := m.logPanel.GetRawLogs()
-		wrappedContent := utils.WrapText(rawContent, m.width)
-		m.copyModeViewport.SetContent(wrappedContent)
-		m.copyModeViewport.GotoBottom() // Start at bottom like normal mode
-	}
-
-	m.copyModeViewport.Width = m.width
-	m.copyModeViewport.Height = contentHeight
-
-	left := components.Footer(m.width, m.getFooterText())
-	footer := left
-	if m.copyNotice {
-		right := m.displayCopyText()
-		space := max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
-		footer = left + strings.Repeat(" ", space) + right
-	}
-
-	return m.copyModeViewport.View() + "\n" + footer
-}
-
 func (m *testExecutorModel) horizontalLayout() string {
-	headerHeight := 4
-	footerHeight := 1
-	contentHeight := m.height - headerHeight - footerHeight
+	// header (4) + footer (1) = 5
+	contentHeight := m.height - 5
 
 	leftWidth := m.width / 2
-	rightWidth := m.width - leftWidth - 1 // Account for separator
+	rightWidth := m.width - leftWidth
 
 	header := m.header.View(m.width)
 
-	// Truncate help text if necessary
-	helpText := utils.TruncateWithEllipsis(m.getFooterText(), m.width)
-	left := components.Footer(m.width, helpText)
-	footer := left
-	if m.copyNotice {
-		right := m.displayCopyText()
-		availableWidth := m.width - lipgloss.Width(right) - 1
-		helpText = utils.TruncateWithEllipsis(m.getFooterText(), availableWidth)
-		left = components.Footer(availableWidth, helpText)
-		space := max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
-		footer = left + strings.Repeat(" ", space) + right
-	}
+	// Build footer with test count prefix like list view
+	footer := components.Footer(m.width, utils.TruncateWithEllipsis(m.getFooterText(), m.width))
 
-	tableView := m.testTable.View(leftWidth, contentHeight)
-	logView := m.logPanel.View(rightWidth, contentHeight)
-
-	separator := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Render(" ")
-
-	content := lipgloss.JoinHorizontal(
+	// Render table with scrollbar (-1 for scrollbar width)
+	tableView := m.testTable.View(leftWidth-1, contentHeight)
+	tableWithScrollbar := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		tableView,
-		separator,
+		m.renderTableScrollbar(contentHeight),
+	)
+
+	logView := m.logPanel.View(rightWidth, contentHeight)
+
+	mainContent := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		tableWithScrollbar,
 		logView,
 	)
 
-	// Calculate spacing to push footer to the very last line
-	totalUsedLines := headerHeight + contentHeight + footerHeight
-	remainingLines := m.height - totalUsedLines
+	return lipgloss.JoinVertical(lipgloss.Left, header, mainContent, footer)
+}
 
-	var spacing string
-	if remainingLines > 0 {
-		spacing = strings.Repeat("\n", remainingLines)
-	}
+// renderTableScrollbar renders a vertical scrollbar for the test table
+func (m *testExecutorModel) renderTableScrollbar(contentHeight int) string {
+	totalRows := m.testTable.TotalRows()
+	scrollOffset := m.testTable.ViewportYOffset()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, spacing, footer)
+	return components.RenderScrollbar(contentHeight, totalRows, scrollOffset)
 }
 
 func (m *testExecutorModel) verticalLayout() string {
-	headerHeight := 4
-	footerHeight := 1
-	contentHeight := m.height - headerHeight - footerHeight
+	// header (4) + info (2) + footer (1) = 7
+	contentHeight := m.height - 7
 
 	header := m.header.View(m.width)
 
-	helpText := utils.TruncateWithEllipsis(m.getFooterText(), m.width)
-	left := components.Footer(m.width, helpText)
-	footer := left
-	if m.copyNotice {
-		right := m.displayCopyText()
-		availableWidth := m.width - lipgloss.Width(right) - 1
-		helpText = utils.TruncateWithEllipsis(m.getFooterText(), availableWidth)
-		left = components.Footer(availableWidth, helpText)
-		space := max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
-		footer = left + strings.Repeat(" ", space) + right
-	}
+	footer := components.Footer(m.width, utils.TruncateWithEllipsis(m.getFooterText(), m.width))
 
 	infoMsg := "Vertical layout enabled for narrow terminal. Seeing weird formatting? Make this window wider for horizontal layout."
 	wrappedInfo := utils.WrapText(infoMsg, m.width)
@@ -864,28 +793,10 @@ func (m *testExecutorModel) verticalLayout() string {
 	tableView := m.testTable.View(m.width, tableHeight)
 	logView := m.logPanel.View(m.width, logHeight)
 
-	// Calculate actual heights of rendered components
-	actualHeaderHeight := lipgloss.Height(header)
-	actualTableHeight := lipgloss.Height(tableView)
-	actualLogHeight := lipgloss.Height(logView)
-	actualInfoHeight := lipgloss.Height(styledInfo)
-	actualFooterHeight := lipgloss.Height(footer)
-
-	// Calculate spacing needed to push footer section to bottom
-	totalUsedLines := actualHeaderHeight + actualTableHeight + actualLogHeight + actualInfoHeight + actualFooterHeight
-	remainingLines := m.height - totalUsedLines
-
-	var spacing string
-	if remainingLines > 0 {
-		spacing = strings.Repeat("\n", remainingLines)
-	}
-
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		tableView,
-		"", // Empty line for visual separation
 		logView,
-		spacing,
 		styledInfo,
 		footer,
 	)
@@ -893,10 +804,16 @@ func (m *testExecutorModel) verticalLayout() string {
 
 func (m *testExecutorModel) addServiceLog(line string) {
 	m.logPanel.AddServiceLog(line)
+	if m.program != nil {
+		m.program.Send(refreshTickMsg{})
+	}
 }
 
 func (m *testExecutorModel) addTestLog(testID, line string) {
 	m.logPanel.AddTestLog(testID, line)
+	if m.program != nil {
+		m.program.Send(refreshTickMsg{})
+	}
 }
 
 func (m *testExecutorModel) updateStats() tea.Cmd {
@@ -1202,11 +1119,4 @@ func (m *testExecutorModel) cleanup() {
 			}
 		}
 	}
-}
-
-func (m *testExecutorModel) copyLogsToClipboard() tea.Cmd {
-	text := m.logPanel.GetRawLogs()
-	_ = utils.CopyToClipboard(text)
-	m.copyNotice = true
-	return tea.Tick(3*time.Second, func(time.Time) tea.Msg { return hideCopyNoticeMsg{} })
 }

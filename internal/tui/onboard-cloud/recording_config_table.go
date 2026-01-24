@@ -41,7 +41,7 @@ func NewRecordingConfigTable(samplingRate string, exportSpans, enableEnvVarRecor
 		Padding(0, 1)
 	s.Selected = lipgloss.NewStyle().
 		Foreground(lipgloss.Color(styles.PrimaryColor)).
-		Background(lipgloss.Color("236")).
+		Background(lipgloss.Color(styles.SubtleBgColor)).
 		Bold(true).
 		Padding(0, 1)
 	s.Cell = lipgloss.NewStyle().Padding(0, 1)

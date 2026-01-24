@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
@@ -41,24 +42,50 @@ const (
 	testExecutionView
 )
 
+// tableRow holds the data for a single row
+type tableRow struct {
+	number  string
+	traceID string
+	rowType string
+	name    string
+}
+
+// detailsUpdateInterval is the minimum time between details panel updates.
+// Because details is usually a lot of content it causes some lag when scrolling
+// rapidly, so we have to "debounce" it a little.
+const detailsUpdateInterval = 100 * time.Millisecond
+
+// detailsTickMsg is sent to trigger a pending details update
+type detailsTickMsg struct{}
+
 type listModel struct {
-	table               table.Model
-	tests               []runner.Test
-	executor            *runner.Executor
-	width               int
-	height              int
-	state               viewState
-	testExecutor        *testExecutorModel
-	selectedTest        *runner.Test
-	columns             []table.Column
-	suiteOpts           runner.SuiteSpanOptions
-	err                 error
-	sizeWarning         *components.TerminalSizeWarning
-	expandedTraces      map[string]bool // map of trace id to whether it's expanded
-	rowInfos            []rowInfo
-	detailsScrollOffset int
-	detailsCache        []string
-	detailsCursor       int
+	viewport       viewport.Model
+	tests          []runner.Test
+	executor       *runner.Executor
+	width          int
+	height         int
+	state          viewState
+	testExecutor   *testExecutorModel
+	selectedTest   *runner.Test
+	suiteOpts      runner.SuiteSpanOptions
+	err            error
+	sizeWarning    *components.TerminalSizeWarning
+	expandedTraces map[string]bool // map of trace id to whether it's expanded
+	rowInfos       []rowInfo
+	rows           []tableRow // Pre-built row data
+	cursor         int        // Currently selected row
+	detailsPanel   *components.DetailsPanel
+	lastCursor     int
+	detailsCache   map[string]string
+
+	// Debouncing for details panel updates
+	lastDetailsUpdate    time.Time
+	pendingDetailsUpdate bool
+
+	// Pre-rendered row cache (invalidated when width or rows change)
+	renderedRowsNormal   []string // Each row rendered with normal style
+	renderedRowsSelected []string // Each row rendered with selected style
+	lastRenderedWidth    int      // Width used for last render
 }
 
 func ShowTestList(tests []runner.Test) error {
@@ -66,44 +93,26 @@ func ShowTestList(tests []runner.Test) error {
 }
 
 func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, suiteOpts runner.SuiteSpanOptions) error {
-	columns := []table.Column{
-		{Title: "#", Width: 4},
-		{Title: "Trace ID", Width: 32},
-		{Title: "Type", Width: 10},
-		{Title: "Name", Width: 30},
-	}
+	vp := viewport.New(50, 20)
+	vp.Style = lipgloss.NewStyle()
 
 	m := &listModel{
-		tests:               tests,
-		executor:            executor,
-		state:               listView,
-		columns:             columns,
-		suiteOpts:           suiteOpts,
-		sizeWarning:         components.NewListViewSizeWarning(),
-		expandedTraces:      make(map[string]bool),
-		detailsScrollOffset: 0,
-		detailsCursor:       -1, // Force initial cache generation
+		viewport:       vp,
+		tests:          tests,
+		executor:       executor,
+		state:          listView,
+		suiteOpts:      suiteOpts,
+		sizeWarning:    components.NewListViewSizeWarning(),
+		expandedTraces: make(map[string]bool),
+		detailsPanel:   components.NewDetailsPanel(),
+		cursor:         0,
+		lastCursor:     -1,
+		detailsCache:   make(map[string]string),
 	}
 
-	rows, rowMapping := m.buildRows()
-	m.rowInfos = rowMapping
+	m.rebuildRows()
 
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(20),
-	)
-
-	s := table.DefaultStyles()
-	s.Header = styles.TableHeaderStyle
-	s.Cell = styles.TableCellStyle
-	s.Selected = styles.TableRowSelectedStyle
-	t.SetStyles(s)
-
-	m.table = t
-
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		return err
 	}
 
@@ -115,10 +124,18 @@ func (m *listModel) Init() tea.Cmd {
 }
 
 func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case detailsTickMsg:
+		if m.pendingDetailsUpdate && m.cursor != m.lastCursor {
+			m.lastCursor = m.cursor
+			m.lastDetailsUpdate = time.Now()
+			m.pendingDetailsUpdate = false
+			m.updateDetailsContent()
+		}
+		return m, nil
+
 	case testsLoadFailedMsg:
 		m.err = msg.err
 		return m, tea.Quit
@@ -141,11 +158,10 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "ctrl+c", "esc":
 				return m, tea.Quit
 			case "enter":
-				selectedIdx := m.table.Cursor()
-				if selectedIdx >= 0 &&
-					selectedIdx < len(m.rowInfos) &&
+				if m.cursor >= 0 &&
+					m.cursor < len(m.rowInfos) &&
 					m.executor != nil {
-					info := m.rowInfos[selectedIdx]
+					info := m.rowInfos[m.cursor]
 					test := m.tests[info.testIndex]
 					opts := &InteractiveOpts{
 						IsCloudMode:              m.suiteOpts.IsCloudMode,
@@ -164,46 +180,82 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.testExecutor = executor
 					m.selectedTest = &test
 					m.state = testExecutionView
-					// Initialize the test executor
 					return m, m.testExecutor.Init()
 				}
+			case "j", "down":
+				if m.cursor < len(m.rows)-1 {
+					m.cursor++
+					m.ensureCursorVisible()
+					m.updateViewportContent()
+				}
+				return m, m.scheduleDetailsUpdate()
+			case "k", "up":
+				if m.cursor > 0 {
+					m.cursor--
+					m.ensureCursorVisible()
+					m.updateViewportContent()
+				}
+				return m, m.scheduleDetailsUpdate()
+			case "u", "ctrl+u":
+				m.viewport.HalfPageUp()
+				m.clampCursorToViewport()
+				m.updateViewportContent()
+				return m, m.scheduleDetailsUpdate()
+			case "d", "ctrl+d":
+				m.viewport.HalfPageDown()
+				m.clampCursorToViewport()
+				m.updateViewportContent()
+				return m, m.scheduleDetailsUpdate()
+			case "J":
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
+				return m, nil
+			case "K":
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+				return m, nil
+			case "U":
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
+				return m, nil
+			case "D":
+				m.detailsPanel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+				return m, nil
+			case "g":
+				m.cursor = 0
+				m.viewport.GotoTop()
+				m.updateViewportContent()
+				return m, m.scheduleDetailsUpdate()
+			case "G":
+				if len(m.rows) > 0 {
+					m.cursor = len(m.rows) - 1
+					m.viewport.GotoBottom()
+					m.updateViewportContent()
+				}
+				return m, m.scheduleDetailsUpdate()
 			case "left", "h":
-				selectedIdx := m.table.Cursor()
-				if selectedIdx >= 0 && selectedIdx < len(m.rowInfos) {
-					info := m.rowInfos[selectedIdx]
+				if m.cursor >= 0 && m.cursor < len(m.rowInfos) {
+					info := m.rowInfos[m.cursor]
 					traceID := m.tests[info.testIndex].TraceID
 					if m.expandedTraces[traceID] {
 						m.expandedTraces[traceID] = false
-						m.rebuildTable()
+						m.rebuildRows()
+						m.lastCursor = -1
+						m.updateDetailsContent()
 					}
 				}
+				return m, nil
 			case "right", "l":
-				selectedIdx := m.table.Cursor()
-				if selectedIdx >= 0 && selectedIdx < len(m.rowInfos) {
-					info := m.rowInfos[selectedIdx]
+				if m.cursor >= 0 && m.cursor < len(m.rowInfos) {
+					info := m.rowInfos[m.cursor]
 					test := m.tests[info.testIndex]
 					if len(test.Spans) > 0 && !m.expandedTraces[test.TraceID] {
 						m.expandedTraces[test.TraceID] = true
-						m.rebuildTable()
+						m.rebuildRows()
+						m.lastCursor = -1
+						m.updateDetailsContent()
 					}
 				}
-			case "g":
-				m.table.GotoTop()
-				m.detailsScrollOffset = 0
-			case "G":
-				m.table.GotoBottom()
-				m.detailsScrollOffset = 0
-			case "u":
-				if m.detailsScrollOffset > 0 {
-					m.detailsScrollOffset--
-				}
-				return m, nil
-			case "d":
-				m.detailsScrollOffset++
 				return m, nil
 			}
 		case testExecutionView:
-			// Handle return from test execution
 			if m.testExecutor != nil && m.testExecutor.state == stateCompleted {
 				switch msg.String() {
 				case "q", "ctrl+c", "esc", "enter", " ":
@@ -228,6 +280,42 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseMsg:
+		if m.state == listView {
+			tableWidth := m.width / 2
+
+			// Check if mouse is over the table (left side)
+			if msg.X < tableWidth {
+				switch msg.Button {
+				case tea.MouseButtonWheelUp:
+					oldCursor := m.cursor
+					m.viewport.ScrollUp(3)
+					m.clampCursorToViewport()
+					// Only rebuild content if cursor changed (needs new highlighting)
+					if m.cursor != oldCursor {
+						m.updateViewportContent()
+					}
+					return m, m.scheduleDetailsUpdate()
+				case tea.MouseButtonWheelDown:
+					oldCursor := m.cursor
+					m.viewport.ScrollDown(3)
+					m.clampCursorToViewport()
+					// Only rebuild content if cursor changed (needs new highlighting)
+					if m.cursor != oldCursor {
+						m.updateViewportContent()
+					}
+					return m, m.scheduleDetailsUpdate()
+				}
+			} else {
+				// Mouse is over details panel (right side)
+				cmd := m.detailsPanel.Update(msg)
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return m, tea.Batch(cmds...)
+			}
+		}
+
 	case tea.WindowSizeMsg:
 		oldWidth := m.width
 		oldHeight := m.height
@@ -242,8 +330,15 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.state == listView {
-			m.resizeColumns(msg.Width)
-			m.table.SetHeight(msg.Height - 5)
+			tableWidth := msg.Width/2 - 1 // -1 for scrollbar
+			// header (1) + empty line (1) + "Tests" title (1) + table header (2) + margin (1) + footer (1) = 7
+			tableHeight := msg.Height - 7
+			if tableHeight < 1 {
+				tableHeight = 1
+			}
+			m.viewport.Width = tableWidth
+			m.viewport.Height = tableHeight
+			m.updateViewportContent()
 		} else if m.state == testExecutionView && m.testExecutor != nil {
 			// Forward window size to test executor
 			updatedExecutor, cmd := m.testExecutor.Update(msg)
@@ -255,7 +350,13 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	default:
 		// Forward all other messages to the appropriate view
-		if m.state == testExecutionView && m.testExecutor != nil {
+		if m.state == listView {
+			// Forward to details panel (for auto-scroll messages, etc.)
+			cmd := m.detailsPanel.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		} else if m.state == testExecutionView && m.testExecutor != nil {
 			updatedExecutor, cmd := m.testExecutor.Update(msg)
 			if exec, ok := updatedExecutor.(*testExecutorModel); ok {
 				m.testExecutor = exec
@@ -264,47 +365,102 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update the table only in list view
-	if m.state == listView {
-		prevCursor := m.table.Cursor()
-		m.table, cmd = m.table.Update(msg)
-		cmds = append(cmds, cmd)
-		if m.table.Cursor() != prevCursor {
-			m.detailsScrollOffset = 0
-		}
-	}
-
 	if len(cmds) > 0 {
 		return m, tea.Batch(cmds...)
 	}
-	return m, cmd
+	return m, nil
 }
 
-func (m *listModel) resizeColumns(totalWidth int) {
-	if totalWidth <= 0 || len(m.columns) == 0 {
-		return
+// ensureCursorVisible scrolls the viewport to keep the cursor visible
+func (m *listModel) ensureCursorVisible() {
+	if m.cursor < m.viewport.YOffset {
+		m.viewport.SetYOffset(m.cursor)
+	} else if m.cursor >= m.viewport.YOffset+m.viewport.Height {
+		m.viewport.SetYOffset(m.cursor - m.viewport.Height + 1)
+	}
+}
+
+// clampCursorToViewport keeps the cursor within the visible viewport bounds
+func (m *listModel) clampCursorToViewport() {
+	firstVisible := m.viewport.YOffset
+	lastVisible := m.viewport.YOffset + m.viewport.Height - 1
+	if lastVisible >= len(m.rows) {
+		lastVisible = len(m.rows) - 1
 	}
 
-	tableWidth := totalWidth / 2
+	if m.cursor < firstVisible {
+		m.cursor = firstVisible
+	} else if m.cursor > lastVisible {
+		m.cursor = lastVisible
+	}
+}
 
-	// Match padding
-	padPerCol := styles.TableCellStyle.GetPaddingLeft() + styles.TableCellStyle.GetPaddingRight()
-	contentWidth := max(tableWidth-padPerCol*len(m.columns), 0)
+// renderRowCache pre-renders all rows in both normal and selected styles.
+// This is called when width changes or rows are rebuilt.
+func (m *listModel) renderRowCache() {
+	tableWidth := m.viewport.Width
+	numWidth := 4
+	traceWidth := 32
+	typeWidth := 10
+	nameWidth := max(tableWidth-numWidth-traceWidth-typeWidth-6, 10)
 
-	sum := 0
-	for _, c := range m.columns {
-		sum += c.Width
+	m.renderedRowsNormal = make([]string, len(m.rows))
+	m.renderedRowsSelected = make([]string, len(m.rows))
+	m.lastRenderedWidth = tableWidth
+
+	for i, row := range m.rows {
+		line := fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+			numWidth, utils.TruncateWithEllipsis(row.number, numWidth),
+			traceWidth, utils.TruncateWithEllipsis(row.traceID, traceWidth),
+			typeWidth, utils.TruncateWithEllipsis(row.rowType, typeWidth),
+			nameWidth, utils.TruncateWithEllipsis(row.name, nameWidth),
+		)
+		m.renderedRowsNormal[i] = styles.TableCellStyle.Render(line)
+		m.renderedRowsSelected[i] = styles.TableRowSelectedStyle.Render(line)
+	}
+}
+
+// updateViewportContent assembles the viewport content from pre-rendered rows.
+// Only re-renders rows if width changed.
+func (m *listModel) updateViewportContent() {
+	tableWidth := m.viewport.Width
+
+	// Re-render cache if width changed or cache is empty
+	if tableWidth != m.lastRenderedWidth || len(m.renderedRowsNormal) != len(m.rows) {
+		m.renderRowCache()
 	}
 
-	cols := make([]table.Column, len(m.columns))
-	copy(cols, m.columns)
-
-	if contentWidth > sum {
-		cols[3].Width += contentWidth - sum // grow Name column
+	// Fast path: just assemble from pre-rendered strings
+	var sb strings.Builder
+	for i := range m.rows {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		if i == m.cursor {
+			sb.WriteString(m.renderedRowsSelected[i])
+		} else {
+			sb.WriteString(m.renderedRowsNormal[i])
+		}
 	}
 
-	m.table.SetColumns(cols)
-	m.table.SetWidth(tableWidth)
+	m.viewport.SetContent(sb.String())
+}
+
+// scheduleDetailsUpdate schedules a debounced update to the details panel.
+// Updates are ALWAYS deferred via tea.Tick to avoid blocking the main update loop.
+func (m *listModel) scheduleDetailsUpdate() tea.Cmd {
+	if m.cursor == m.lastCursor {
+		return nil
+	}
+
+	// Always schedule via tick with full debounce interval
+	if !m.pendingDetailsUpdate {
+		m.pendingDetailsUpdate = true
+		return tea.Tick(detailsUpdateInterval, func(t time.Time) tea.Msg {
+			return detailsTickMsg{}
+		})
+	}
+	return nil
 }
 
 func (m *listModel) View() string {
@@ -315,36 +471,66 @@ func (m *listModel) View() string {
 		}
 
 		header := components.Title(m.width, "AVAILABLE TESTS")
-		testCount := fmt.Sprintf("%d TESTS", len(m.tests))
-		separator := " • "
+		testCount := fmt.Sprintf("%d TESTS ", len(m.tests))
 
-		usedWidth := lipgloss.Width(testCount) + lipgloss.Width(separator)
+		usedWidth := lipgloss.Width(testCount)
 		availableWidthForHelp := m.width - usedWidth
 		availableWidthForHelp = max(availableWidthForHelp, 20)
 
-		helpText := utils.TruncateWithEllipsis("↑/↓: navigate • ←/→: collapse/expand • u/d: scroll details • enter: run • q: quit", availableWidthForHelp)
+		footer := utils.TruncateWithEllipsis(
+			testCount+"• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll details • ←/→: expand • enter: run • q: quit",
+			availableWidthForHelp,
+		)
 
-		footer := fmt.Sprintf("%s%s%s", testCount, separator, helpText)
 		help := components.Footer(m.width, footer)
 
 		tableWidth := m.width / 2
-		detailsWidth := m.width - tableWidth - 1 // -1 for border
+		detailsWidth := m.width - tableWidth
 
-		detailsContent := m.renderDetails(detailsWidth, m.height-7)
+		m.detailsPanel.SetSize(detailsWidth, m.height-3)
+		m.detailsPanel.SetXOffset(tableWidth + 2) // panel position + border (1) + padding (1)
+		m.detailsPanel.SetYOffset(3)              // header (1) + empty line (1) + title (1)
 
-		detailsStyle := lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(lipgloss.Color("240")).
-			Width(detailsWidth).
-			Height(m.height - 7)
+		testsSectionTitle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color(styles.PrimaryColor)).
+			MarginBottom(1).
+			Render("Tests")
+
+		// Render table header - use same widths as updateViewportContent
+		numWidth := 4
+		traceWidth := 32
+		typeWidth := 10
+		nameWidth := tableWidth - numWidth - traceWidth - typeWidth - 6 // 6 for spacing
+		if nameWidth < 10 {
+			nameWidth = 10
+		}
+		headerLine := fmt.Sprintf(" %-*s %-*s %-*s %-*s", numWidth, "#", traceWidth, "Trace ID", typeWidth, "Type", nameWidth, "Name")
+		tableHeader := styles.TableHeaderStyle.Render(headerLine)
+
+		// Render table with scrollbar
+		tableWithScrollbar := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			m.viewport.View(),
+			m.renderTableScrollbar(),
+		)
+
+		leftStyle := lipgloss.NewStyle().MaxWidth(tableWidth)
+		rightStyle := lipgloss.NewStyle().MaxWidth(detailsWidth)
+
+		leftSide := leftStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
+			testsSectionTitle,
+			tableHeader,
+			tableWithScrollbar,
+		))
 
 		mainContent := lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			m.table.View(),
-			detailsStyle.Render(detailsContent),
+			leftSide,
+			rightStyle.Render(m.detailsPanel.View()),
 		)
 
-		return fmt.Sprintf("%s\n\n%s\n%s", header, mainContent, help)
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", mainContent, help)
 
 	case testExecutionView:
 		if m.testExecutor != nil {
@@ -356,51 +542,36 @@ func (m *listModel) View() string {
 	}
 }
 
-// renderDetails renders the details panel for the currently selected item
-func (m *listModel) renderDetails(width, height int) string {
-	selectedIdx := m.table.Cursor()
-	if selectedIdx < 0 || selectedIdx >= len(m.rowInfos) {
-		return "No selection"
+// updateDetailsContent updates the details panel content based on current selection
+func (m *listModel) updateDetailsContent() {
+	if m.cursor < 0 || m.cursor >= len(m.rowInfos) {
+		m.detailsPanel.SetContent("No selection")
+		m.detailsPanel.SetTitle("Details")
+		return
 	}
 
-	// The cache is primarily there to prevent contents from changing from
-	// redraws. The primary culprit is `map`, because iteration order is
-	// random, so redrawing will cause contents to shift
+	info := m.rowInfos[m.cursor]
 
-	if selectedIdx != m.detailsCursor {
-		m.detailsCursor = selectedIdx
-		m.detailsCache = m.generateDetailsContent()
-	}
-
-	lines := m.detailsCache
-
-	totalLines := len(lines)
-	if totalLines <= height {
-		m.detailsScrollOffset = 0
+	// Set title based on selection type
+	if info.isTrace {
+		m.detailsPanel.SetTitle("Trace Details")
 	} else {
-		maxScroll := totalLines - height
-		if m.detailsScrollOffset > maxScroll {
-			m.detailsScrollOffset = maxScroll
-		}
+		m.detailsPanel.SetTitle("Span Details")
 	}
 
-	visibleLines := make([]string, len(lines))
-	copy(visibleLines, lines)
+	cacheKey := fmt.Sprintf("%d:%s", info.testIndex, info.spanID)
 
-	if m.detailsScrollOffset > 0 && m.detailsScrollOffset < len(visibleLines) {
-		visibleLines = visibleLines[m.detailsScrollOffset:]
-	}
-	if len(visibleLines) > height {
-		visibleLines = visibleLines[:height]
+	if cached, ok := m.detailsCache[cacheKey]; ok {
+		m.detailsPanel.SetContent(cached)
+		m.detailsPanel.GotoTop()
+		return
 	}
 
-	for i, line := range visibleLines {
-		if lipgloss.Width(line) > width-2 {
-			visibleLines[i] = utils.TruncateWithEllipsis(line, width-2)
-		}
-	}
-
-	return strings.Join(visibleLines, "\n")
+	lines := m.generateDetailsContent()
+	content := utils.RenderMarkdown(strings.Join(lines, "\n"))
+	m.detailsCache[cacheKey] = content
+	m.detailsPanel.SetContent(content)
+	m.detailsPanel.GotoTop()
 }
 
 // lineBuilder helps build lines for the details panel efficiently
@@ -412,46 +583,46 @@ func newLineBuilder(capacity int) *lineBuilder {
 	return &lineBuilder{lines: make([]string, 0, capacity)}
 }
 
-func (b *lineBuilder) add(line string) {
-	b.lines = append(b.lines, line)
-}
-
 func (b *lineBuilder) blank() {
 	b.lines = append(b.lines, "")
 }
 
 func (b *lineBuilder) header(title string) {
-	b.lines = append(b.lines, styles.HeadingStyle.Render(title))
+	b.lines = append(b.lines, fmt.Sprintf("# %s", title))
 }
 
 func (b *lineBuilder) field(key string, value any) {
-	b.lines = append(b.lines, fmt.Sprintf("%s: %v", key, value))
+	b.lines = append(b.lines, fmt.Sprintf("- %s: %v", key, value))
 }
 
 func (b *lineBuilder) addSortedMap(header string, m map[string]string) {
 	if len(m) == 0 {
 		return
 	}
-	b.add(header)
+	b.lines = append(b.lines, fmt.Sprintf("- %s:", header))
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		b.add(fmt.Sprintf("  %s: %s", k, m[k]))
+		b.lines = append(b.lines, fmt.Sprintf("  - %s: %s", k, m[k]))
 	}
 }
 
-func (b *lineBuilder) addJSON(label string, data any) {
+func (b *lineBuilder) addJSON(label string, indent string, data any) {
 	if data == nil {
 		return
 	}
-	b.add(label)
-	jsonBytes, _ := json.MarshalIndent(data, "  ", "  ")
-	for _, line := range strings.Split(string(jsonBytes), "\n") {
-		b.add("  " + line)
+	if label != "" {
+		b.lines = append(b.lines, fmt.Sprintf("- %s:", label))
 	}
+	b.lines = append(b.lines, "```json")
+	jsonBytes, _ := json.MarshalIndent(data, "", "  ")
+	for line := range strings.SplitSeq(string(jsonBytes), "\n") {
+		b.lines = append(b.lines, indent+line)
+	}
+	b.lines = append(b.lines, "```")
 }
 
 func (b *lineBuilder) build() []string {
@@ -460,12 +631,11 @@ func (b *lineBuilder) build() []string {
 
 // generateDetailsContent generates the details content for the currently selected item
 func (m *listModel) generateDetailsContent() []string {
-	selectedIdx := m.table.Cursor()
-	if selectedIdx < 0 || selectedIdx >= len(m.rowInfos) {
+	if m.cursor < 0 || m.cursor >= len(m.rowInfos) {
 		return []string{"No selection"}
 	}
 
-	info := m.rowInfos[selectedIdx]
+	info := m.rowInfos[m.cursor]
 	test := m.tests[info.testIndex]
 
 	b := newLineBuilder(64) // Pre-allocate reasonable capacity
@@ -484,18 +654,47 @@ func (m *listModel) generateDetailsContent() []string {
 		b.field("File", test.FileName)
 		b.field("Spans", len(test.Spans))
 
+		var rootSpan *core.Span
+		for _, span := range test.Spans {
+			if span.IsRootSpan {
+				rootSpan = span
+				break
+			}
+		}
+
 		b.blank()
 		b.header("REQUEST")
+		b.blank()
 		b.field("Method", test.Request.Method)
 		b.field("Path", test.Request.Path)
-		b.addSortedMap("Headers:", test.Request.Headers)
-		b.addJSON("Body:", test.Request.Body)
+		b.addSortedMap("Headers", test.Request.Headers)
+
+		reqBody := test.Request.Body
+		if reqBody != nil && rootSpan != nil && rootSpan.InputSchema != nil {
+			if bodySchema := rootSpan.InputSchema.Properties["body"]; bodySchema != nil {
+				if _, decoded, err := runner.DecodeValueBySchema(reqBody, bodySchema); err == nil {
+					reqBody = decoded
+				}
+			}
+		}
+		b.addJSON("Body", "  ", reqBody)
 
 		b.blank()
 		b.header("RESPONSE")
+		b.blank()
 		b.field("Status", test.Response.Status)
-		b.addSortedMap("Headers:", test.Response.Headers)
-		b.addJSON("Body:", test.Response.Body)
+		b.addSortedMap("Headers", test.Response.Headers)
+
+		// Decode response body using schema
+		respBody := test.Response.Body
+		if respBody != nil && rootSpan != nil && rootSpan.OutputSchema != nil {
+			if bodySchema := rootSpan.OutputSchema.Properties["body"]; bodySchema != nil {
+				if _, decoded, err := runner.DecodeValueBySchema(respBody, bodySchema); err == nil {
+					respBody = decoded
+				}
+			}
+		}
+		b.addJSON("Body", "  ", respBody)
 	} else {
 		span := m.findSpan(test.Spans, info.spanID)
 		if span == nil {
@@ -529,23 +728,56 @@ func (m *listModel) generateDetailsContent() []string {
 		if span.InputValue != nil {
 			b.blank()
 			b.header("INPUT")
-			b.addJSON("", span.InputValue.AsMap())
+			decodedInput := decodeStructValue(span.InputValue, span.InputSchema)
+			b.addJSON("", "", decodedInput)
 		}
 
 		if span.OutputValue != nil {
 			b.blank()
 			b.header("OUTPUT")
-			b.addJSON("", span.OutputValue.AsMap())
+			decodedOutput := decodeStructValue(span.OutputValue, span.OutputSchema)
+			b.addJSON("", "", decodedOutput)
 		}
 
 		if span.Metadata != nil {
 			b.blank()
 			b.header("METADATA")
-			b.addJSON("", span.Metadata.AsMap())
+			b.addJSON("", "", span.Metadata.AsMap())
 		}
 	}
 
 	return b.build()
+}
+
+// decodeStructValue decodes a protobuf struct value using its schema.
+// For each field in the struct, it attempts to decode using the corresponding schema property.
+// This handles base64-encoded values that need decoding.
+func decodeStructValue(value *structpb.Struct, schema *core.JsonSchema) map[string]any {
+	if value == nil {
+		return nil
+	}
+
+	result := make(map[string]any)
+	for key, field := range value.Fields {
+		fieldValue := field.AsInterface()
+
+		var fieldSchema *core.JsonSchema
+		if schema != nil && schema.Properties != nil {
+			fieldSchema = schema.Properties[key]
+		}
+
+		if fieldValue != nil {
+			_, decoded, err := runner.DecodeValueBySchema(fieldValue, fieldSchema)
+			if err == nil && decoded != nil {
+				result[key] = decoded
+			} else {
+				result[key] = fieldValue
+			}
+		} else {
+			result[key] = fieldValue
+		}
+	}
+	return result
 }
 
 // findSpan finds a span by ID in the test's spans
@@ -571,8 +803,8 @@ func (m *listModel) createSuiteSpanPreparation() func(*runner.Executor, []runner
 }
 
 // buildRows generates table rows and row mapping based on current expand state
-func (m *listModel) buildRows() ([]table.Row, []rowInfo) {
-	rows := []table.Row{}
+func (m *listModel) buildRows() ([]tableRow, []rowInfo) {
+	rows := []tableRow{}
 	rowMapping := []rowInfo{}
 
 	for i, test := range m.tests {
@@ -595,11 +827,11 @@ func (m *listModel) buildRows() ([]table.Row, []rowInfo) {
 			}
 		}
 
-		rows = append(rows, table.Row{
-			fmt.Sprintf("%d", i+1),
-			expandIndicator + test.TraceID,
-			displayType,
-			displayPath,
+		rows = append(rows, tableRow{
+			number:  fmt.Sprintf("%d", i+1),
+			traceID: expandIndicator + test.TraceID,
+			rowType: displayType,
+			name:    displayPath,
 		})
 		rowMapping = append(rowMapping, rowInfo{testIndex: i, isTrace: true})
 
@@ -643,7 +875,7 @@ func buildSpanTree(spans []*core.Span) []*spanTreeNode {
 }
 
 // addSpanRows recursively adds span rows to the table with tree visualization
-func (m *listModel) addSpanRows(rows *[]table.Row, rowMapping *[]rowInfo, nodes []*spanTreeNode, testIndex int, prefix string, isRoot bool) {
+func (m *listModel) addSpanRows(rows *[]tableRow, rowMapping *[]rowInfo, nodes []*spanTreeNode, testIndex int, prefix string, isRoot bool) {
 	for i, node := range nodes {
 		isLast := i == len(nodes)-1
 
@@ -681,11 +913,11 @@ func (m *listModel) addSpanRows(rows *[]table.Row, rowMapping *[]rowInfo, nodes 
 			spanType = "span"
 		}
 
-		*rows = append(*rows, table.Row{
-			"", // No row number for child spans
-			prefix + branchChar + node.span.SpanId[:min(8, len(node.span.SpanId))], // Truncated span ID with tree
-			spanType,
-			spanName,
+		*rows = append(*rows, tableRow{
+			number:  "", // No row number for child spans
+			traceID: prefix + branchChar + node.span.SpanId[:min(8, len(node.span.SpanId))],
+			rowType: spanType,
+			name:    spanName,
 		})
 		*rowMapping = append(*rowMapping, rowInfo{testIndex: testIndex, spanID: node.span.SpanId, isTrace: false})
 
@@ -696,19 +928,30 @@ func (m *listModel) addSpanRows(rows *[]table.Row, rowMapping *[]rowInfo, nodes 
 	}
 }
 
-// rebuildTable rebuilds the table rows while preserving cursor position
-func (m *listModel) rebuildTable() {
-	cursor := m.table.Cursor()
+// rebuildRows rebuilds the rows and updates the viewport content
+func (m *listModel) rebuildRows() {
 	rows, rowMapping := m.buildRows()
+	m.rows = rows
 	m.rowInfos = rowMapping
-	m.table.SetRows(rows)
 
-	// Try to keep cursor at a valid position
-	if cursor >= len(rows) {
-		cursor = len(rows) - 1
+	// Keep cursor at a valid position
+	if m.cursor >= len(rows) {
+		m.cursor = len(rows) - 1
 	}
-	if cursor < 0 {
-		cursor = 0
+	if m.cursor < 0 {
+		m.cursor = 0
 	}
-	m.table.SetCursor(cursor)
+
+	m.updateViewportContent()
+}
+
+// renderTableScrollbar renders a vertical scrollbar for the table
+func (m *listModel) renderTableScrollbar() string {
+	visibleRows := m.viewport.Height
+	totalRows := len(m.rows)
+	scrollOffset := m.viewport.YOffset
+
+	scrollbarHeight := visibleRows
+
+	return components.RenderScrollbar(scrollbarHeight, totalRows, scrollOffset)
 }

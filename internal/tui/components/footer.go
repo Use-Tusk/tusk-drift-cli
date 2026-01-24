@@ -6,6 +6,9 @@ import (
 )
 
 func Footer(width int, helpText string) string {
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(styles.PrimaryColor))
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(styles.PrimaryColor)).
+		Background(lipgloss.Color(styles.SubtleBgColor)).
+		Width(width)
 	return helpStyle.Render(helpText)
 }
