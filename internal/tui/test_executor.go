@@ -364,7 +364,8 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.X < leftWidth {
 			switch msg.Button {
 			case tea.MouseButtonWheelUp:
-				m.testTable.MoveUp(3)
+				// Scroll viewport only, clamp cursor to visible bounds
+				m.testTable.ScrollUp(3)
 				// Update log panel based on selection
 				if m.testTable.IsServiceLogsSelected() {
 					m.logPanel.SetCurrentTest("")
@@ -373,7 +374,8 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case tea.MouseButtonWheelDown:
-				m.testTable.MoveDown(3)
+				// Scroll viewport only, clamp cursor to visible bounds
+				m.testTable.ScrollDown(3)
 				// Update log panel based on selection
 				if m.testTable.IsServiceLogsSelected() {
 					m.logPanel.SetCurrentTest("")
@@ -633,42 +635,28 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "down", "j", "k":
-		cmd := m.testTable.Update(msg)
+	case "up", "k":
+		// Move selection up (updates log panel)
+		m.testTable.SelectUp(1)
+		m.updateLogPanelFromSelection()
+		return m, nil
 
-		// Update log panel based on selection
-		if m.testTable.IsServiceLogsSelected() {
-			m.logPanel.SetCurrentTest("") // Show service logs
-		} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
-			m.logPanel.SetCurrentTest(selectedTest.TraceID)
-		}
-
-		return m, cmd
+	case "down", "j":
+		// Move selection down (updates log panel)
+		m.testTable.SelectDown(1)
+		m.updateLogPanelFromSelection()
+		return m, nil
 
 	case "u":
-		// Half-page up on left side (table)
-		halfPage := max(m.testTable.Height()/2, 1)
-		m.testTable.MoveUp(halfPage)
-
-		// Update log panel based on selection
-		if m.testTable.IsServiceLogsSelected() {
-			m.logPanel.SetCurrentTest("")
-		} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
-			m.logPanel.SetCurrentTest(selectedTest.TraceID)
-		}
+		// Scroll viewport up (no selection change, clamp cursor to visible)
+		m.testTable.HalfPageUp()
+		m.updateLogPanelFromSelection()
 		return m, nil
 
 	case "d":
-		// Half-page down on left side (table)
-		halfPage := max(m.testTable.Height()/2, 1)
-		m.testTable.MoveDown(halfPage)
-
-		// Update log panel based on selection
-		if m.testTable.IsServiceLogsSelected() {
-			m.logPanel.SetCurrentTest("")
-		} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
-			m.logPanel.SetCurrentTest(selectedTest.TraceID)
-		}
+		// Scroll viewport down (no selection change, clamp cursor to visible)
+		m.testTable.HalfPageDown()
+		m.updateLogPanelFromSelection()
 		return m, nil
 
 	case "J":
@@ -693,24 +681,12 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 
 	case "g":
 		m.testTable.GotoTop()
-
-		// Update log panel based on selection
-		if m.testTable.IsServiceLogsSelected() {
-			m.logPanel.SetCurrentTest("")
-		} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
-			m.logPanel.SetCurrentTest(selectedTest.TraceID)
-		}
+		m.updateLogPanelFromSelection()
 		return m, nil
 
 	case "G":
 		m.testTable.GotoBottom()
-
-		// Update log panel based on selection
-		if m.testTable.IsServiceLogsSelected() {
-			m.logPanel.SetCurrentTest("")
-		} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
-			m.logPanel.SetCurrentTest(selectedTest.TraceID)
-		}
+		m.updateLogPanelFromSelection()
 		return m, nil
 
 	case "q", "ctrl+c", "esc":
@@ -721,9 +697,18 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 	return m, nil
 }
 
+// updateLogPanelFromSelection updates the log panel based on current table selection
+func (m *testExecutorModel) updateLogPanelFromSelection() {
+	if m.testTable.IsServiceLogsSelected() {
+		m.logPanel.SetCurrentTest("")
+	} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
+		m.logPanel.SetCurrentTest(selectedTest.TraceID)
+	}
+}
+
 func (m *testExecutorModel) getFooterText() string {
 	testCount := fmt.Sprintf("%d TESTS ", len(m.tests))
-	return testCount + "• j/k: navigate • u/d: page • J/K: scroll logs • U/D: page logs • q: quit"
+	return testCount + "• j/k: select • u/d: scroll • J/K/U/D: scroll logs • q: quit"
 }
 
 func (m *testExecutorModel) View() string {
@@ -770,21 +755,10 @@ func (m *testExecutorModel) horizontalLayout() string {
 
 // renderTableScrollbar renders a vertical scrollbar for the test table
 func (m *testExecutorModel) renderTableScrollbar(contentHeight int) string {
-	visibleRows := m.testTable.Height()
 	totalRows := m.testTable.TotalRows()
-	cursor := m.testTable.Cursor()
+	scrollOffset := m.testTable.ViewportYOffset()
 
-	// Calculate scroll offset (the table keeps cursor visible)
-	scrollOffset := 0
-	if cursor > visibleRows-1 {
-		scrollOffset = cursor - visibleRows + 1
-	}
-
-	// Table renders: title (1) + margin (1) + header (1) + header border (1) + visible rows
-	// But we want scrollbar to match content height
-	scrollbarHeight := contentHeight
-
-	return components.RenderScrollbar(scrollbarHeight, totalRows, scrollOffset)
+	return components.RenderScrollbar(contentHeight, totalRows, scrollOffset)
 }
 
 func (m *testExecutorModel) verticalLayout() string {

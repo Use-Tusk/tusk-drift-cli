@@ -2,57 +2,55 @@ package components
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
-	"github.com/charmbracelet/bubbles/table"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 type TestTableComponent struct {
-	table   table.Model
-	tests   []runner.Test
-	results []runner.TestResult
-	errors  []error
-	// Fixed baseline (original titles and widths) defined at construction
-	baseColumns []table.Column
-	// Mutable, resized copy applied to the table for current terminal width.
-	// Recalculated from baseColumns on each View/resize.
-	columns []table.Column
+	viewport viewport.Model
+	tests    []runner.Test
+	results  []runner.TestResult
+	errors   []error
+
+	// Column widths
+	numWidth      int
+	testWidth     int
+	statusWidth   int
+	durationWidth int
 
 	completed []bool
+
+	cursor     int
+	lastCursor int // Track for change detection
 }
 
 func NewTestTableComponent(tests []runner.Test) *TestTableComponent {
-	columns := []table.Column{
-		{Title: "#", Width: 4},
-		{Title: "Test", Width: 35},
-		{Title: "Status", Width: 17},
-		{Title: "Duration", Width: 8},
-	}
-
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithFocused(true), // Sets initial focus
-		table.WithHeight(10),
-	)
+	vp := viewport.New(50, 10)
+	vp.Style = lipgloss.NewStyle()
 
 	return &TestTableComponent{
-		table:       t,
-		tests:       tests,
-		results:     make([]runner.TestResult, len(tests)),
-		errors:      make([]error, len(tests)),
-		baseColumns: columns,
-		columns:     columns,
-		completed:   make([]bool, len(tests)),
+		viewport:      vp,
+		tests:         tests,
+		results:       make([]runner.TestResult, len(tests)),
+		errors:        make([]error, len(tests)),
+		completed:     make([]bool, len(tests)),
+		cursor:        0,
+		lastCursor:    -1,
+		numWidth:      4,
+		testWidth:     35,
+		statusWidth:   17,
+		durationWidth: 8,
 	}
 }
 
 func (tt *TestTableComponent) Update(msg tea.Msg) tea.Cmd {
-	var cmd tea.Cmd
-	tt.table, cmd = tt.table.Update(msg)
-	return cmd
+	return nil
 }
 
 func (tt *TestTableComponent) View(width, height int) string {
@@ -64,150 +62,119 @@ func (tt *TestTableComponent) View(width, height int) string {
 		height = 10
 	}
 
-	tableWidth := max(width, 0)
+	// title (1) + margin (1) + header (1) = 3
+	viewportHeight := max(height-3, 3)
+	tt.viewport.Width = width
+	tt.viewport.Height = viewportHeight
 
-	// Resize columns to fill available width; grow "Test" column
-	if len(tt.baseColumns) > 0 {
-		padPerCol := styles.TableCellStyle.GetPaddingLeft() + styles.TableCellStyle.GetPaddingRight()
-		contentWidth := max(tableWidth-padPerCol*len(tt.baseColumns), 0)
-		sum := 0
-		for _, c := range tt.baseColumns {
-			sum += c.Width
-		}
-		cols := make([]table.Column, len(tt.baseColumns))
-		copy(cols, tt.baseColumns)
-		if contentWidth > sum {
-			cols[1].Width += contentWidth - sum // expand "Test"
-		}
-		tt.columns = cols
-		tt.table.SetColumns(cols)
-	}
+	fixedWidth := tt.numWidth + tt.statusWidth + tt.durationWidth + 6 // 6 for spacing
+	tt.testWidth = max(width-fixedWidth, 10)
 
-	tt.table.SetWidth(tableWidth)
-	tableHeight := max(height-3, 3)
-	tt.table.SetHeight(tableHeight)
-
-	// Update styles
-	style := table.DefaultStyles()
-	style.Header = styles.TableHeaderStyle
-	style.Cell = styles.TableCellStyle
-	style.Selected = styles.TableRowSelectedStyle
-
-	tt.table.SetStyles(style)
-
-	// Build rows
-	tt.buildRows()
+	// Build and set content
+	tt.updateViewportContent()
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		MarginBottom(1)
 
+	headerLine := fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+		tt.numWidth, "#",
+		tt.testWidth, "Test",
+		tt.statusWidth, "Status",
+		tt.durationWidth, "Duration",
+	)
+	header := styles.TableHeaderStyle.Render(headerLine)
+
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render("Tests"),
-		tt.table.View(),
+		header,
+		tt.viewport.View(),
 	)
 }
 
-func (tt *TestTableComponent) buildRows() {
-	rows := []table.Row{}
+func (tt *TestTableComponent) updateViewportContent() {
+	var sb strings.Builder
 
-	// Know which row is selected so we can add a pointer in no-color mode
-	cursor := tt.table.Cursor()
+	totalRows := len(tt.tests) + 1 // +1 for service logs row
 
-	// Add service logs row as first row
-	serviceLabel := "(service logs)"
-	if styles.NoColor() && cursor == 0 {
-		serviceLabel = "▶ " + serviceLabel
-	}
-	serviceRow := table.Row{
-		"",           // No index number
-		serviceLabel, // Test field
-		"",           // No status
-		"",           // No duration
-	}
-	rows = append(rows, serviceRow)
+	for i := 0; i < totalRows; i++ {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
 
-	// Add actual test rows
-	for i, test := range tt.tests {
-		status := "⏳ Pending"
-		duration := "-"
-
-		if tt.completed[i] {
-			result := tt.results[i]
-			err := tt.errors[i]
-			switch {
-			case result.CrashedServer:
-				status = "❌ Server crashed"
-			case err != nil:
-				status = "❌ Error"
-			case result.Passed:
-				status = "✅ No deviation"
-			default:
-				status = "🟠 Deviation"
+		var line string
+		if i == 0 {
+			serviceLabel := "(service logs)"
+			if styles.NoColor() && tt.cursor == 0 {
+				serviceLabel = "▶ " + serviceLabel
 			}
-			duration = fmt.Sprintf("%dms", result.Duration)
-		}
+			line = fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+				tt.numWidth, "",
+				tt.testWidth, serviceLabel,
+				tt.statusWidth, "",
+				tt.durationWidth, "",
+			)
+		} else {
+			testIdx := i - 1
+			test := tt.tests[testIdx]
 
-		testDescription := fmt.Sprintf("%s %s", test.DisplayType, test.DisplayName)
-		if styles.NoColor() && cursor == i+1 {
-			testDescription = "▶ " + testDescription
-		}
+			status := "⏳ Pending"
+			duration := "-"
 
-		maxTestLen := 33
-		if len(tt.columns) > 1 {
-			if w := tt.columns[1].Width - 2; w > 3 {
-				maxTestLen = w
-			} else {
-				maxTestLen = 3
+			if tt.completed[testIdx] {
+				result := tt.results[testIdx]
+				err := tt.errors[testIdx]
+				switch {
+				case result.CrashedServer:
+					status = "❌ Server crashed"
+				case err != nil:
+					status = "❌ Error"
+				case result.Passed:
+					status = "✅ No deviation"
+				default:
+					status = "🟠 Deviation"
+				}
+				duration = fmt.Sprintf("%dms", result.Duration)
 			}
+
+			testDescription := fmt.Sprintf("%s %s", test.DisplayType, test.DisplayName)
+			if styles.NoColor() && tt.cursor == i {
+				testDescription = "▶ " + testDescription
+			}
+
+			line = fmt.Sprintf(" %-*s %-*s %-*s %-*s",
+				tt.numWidth, fmt.Sprintf("%d", testIdx+1),
+				tt.testWidth, utils.TruncateWithEllipsis(testDescription, tt.testWidth),
+				tt.statusWidth, status,
+				tt.durationWidth, duration,
+			)
 		}
 
-		row := table.Row{
-			fmt.Sprintf("%d", i+1),
-			tt.truncate(testDescription, maxTestLen),
-			status,
-			duration,
+		if i == tt.cursor {
+			sb.WriteString(styles.TableRowSelectedStyle.Render(line))
+		} else {
+			sb.WriteString(styles.TableCellStyle.Render(line))
 		}
-		rows = append(rows, row)
 	}
 
-	tt.table.SetRows(rows)
-}
-
-func (tt *TestTableComponent) truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
+	tt.viewport.SetContent(sb.String())
 }
 
 func (tt *TestTableComponent) GetSelectedTest() *runner.Test {
-	selectedRow := tt.table.SelectedRow()
-	if len(selectedRow) == 0 {
+	// cursor 0 is service logs, tests start at cursor 1
+	if tt.cursor == 0 {
 		return nil
 	}
-
-	if selectedRow[0] == "" {
-		// Empty index, service logs selected
-		return nil
-	}
-
-	// Find test by matching the row data (adjust for service logs row offset)
-	for i, test := range tt.tests {
-		if fmt.Sprintf("%d", i+1) == selectedRow[0] {
-			return &test
-		}
+	testIdx := tt.cursor - 1
+	if testIdx >= 0 && testIdx < len(tt.tests) {
+		return &tt.tests[testIdx]
 	}
 	return nil
 }
 
 func (tt *TestTableComponent) IsServiceLogsSelected() bool {
-	selectedRow := tt.table.SelectedRow()
-	if len(selectedRow) == 0 {
-		return true
-	}
-	return selectedRow[0] == "" // Service logs row has empty index
+	return tt.cursor == 0
 }
 
 func (tt *TestTableComponent) UpdateTestResult(index int, result runner.TestResult, err error) {
@@ -219,33 +186,108 @@ func (tt *TestTableComponent) UpdateTestResult(index int, result runner.TestResu
 }
 
 func (tt *TestTableComponent) GotoTop() {
-	tt.table.GotoTop()
+	tt.cursor = 0
+	tt.viewport.GotoTop()
+	tt.updateViewportContent()
 }
 
 func (tt *TestTableComponent) GotoBottom() {
-	tt.table.GotoBottom()
+	tt.cursor = len(tt.tests) // last row (tests + service logs - 1)
+	tt.viewport.GotoBottom()
+	tt.updateViewportContent()
 }
 
 func (tt *TestTableComponent) Height() int {
-	return tt.table.Height()
+	return tt.viewport.Height
 }
 
 func (tt *TestTableComponent) TotalRows() int {
-	return len(tt.table.Rows())
+	return len(tt.tests) + 1 // +1 for service logs
 }
 
 func (tt *TestTableComponent) Cursor() int {
-	return tt.table.Cursor()
+	return tt.cursor
 }
 
+// SelectUp moves the selection up by n rows (updates details panel)
+func (tt *TestTableComponent) SelectUp(n int) {
+	tt.cursor = max(tt.cursor-n, 0)
+	tt.ensureCursorVisible()
+	tt.updateViewportContent()
+}
+
+// SelectDown moves the selection down by n rows (updates details panel)
+func (tt *TestTableComponent) SelectDown(n int) {
+	maxCursor := len(tt.tests) // last valid cursor position
+	tt.cursor = min(tt.cursor+n, maxCursor)
+	tt.ensureCursorVisible()
+	tt.updateViewportContent()
+}
+
+// ScrollUp scrolls the viewport up by n rows, clamping cursor to visible bounds
+func (tt *TestTableComponent) ScrollUp(n int) {
+	tt.viewport.ScrollUp(n)
+	tt.clampCursorToViewport()
+	tt.updateViewportContent()
+}
+
+// ScrollDown scrolls the viewport down by n rows, clamping cursor to visible bounds
+func (tt *TestTableComponent) ScrollDown(n int) {
+	tt.viewport.ScrollDown(n)
+	tt.clampCursorToViewport()
+	tt.updateViewportContent()
+}
+
+// MoveUp is an alias for SelectUp (for backwards compatibility)
 func (tt *TestTableComponent) MoveUp(n int) {
-	for range n {
-		tt.table.MoveUp(1)
+	tt.SelectUp(n)
+}
+
+// MoveDown is an alias for SelectDown (for backwards compatibility)
+func (tt *TestTableComponent) MoveDown(n int) {
+	tt.SelectDown(n)
+}
+
+// HalfPageUp scrolls the viewport up by half a page, clamping cursor
+func (tt *TestTableComponent) HalfPageUp() {
+	tt.viewport.HalfPageUp()
+	tt.clampCursorToViewport()
+	tt.updateViewportContent()
+}
+
+// HalfPageDown scrolls the viewport down by half a page, clamping cursor
+func (tt *TestTableComponent) HalfPageDown() {
+	tt.viewport.HalfPageDown()
+	tt.clampCursorToViewport()
+	tt.updateViewportContent()
+}
+
+// ensureCursorVisible scrolls the viewport to keep the cursor visible
+func (tt *TestTableComponent) ensureCursorVisible() {
+	if tt.cursor < tt.viewport.YOffset {
+		tt.viewport.SetYOffset(tt.cursor)
+	} else if tt.cursor >= tt.viewport.YOffset+tt.viewport.Height {
+		tt.viewport.SetYOffset(tt.cursor - tt.viewport.Height + 1)
 	}
 }
 
-func (tt *TestTableComponent) MoveDown(n int) {
-	for range n {
-		tt.table.MoveDown(1)
+// clampCursorToViewport keeps the cursor within the visible viewport bounds
+func (tt *TestTableComponent) clampCursorToViewport() {
+	firstVisible := tt.viewport.YOffset
+	lastVisible := tt.viewport.YOffset + tt.viewport.Height - 1
+	maxCursor := len(tt.tests) // last valid cursor position
+	if lastVisible > maxCursor {
+		lastVisible = maxCursor
 	}
+
+	if tt.cursor < firstVisible {
+		tt.cursor = firstVisible
+	} else if tt.cursor > lastVisible {
+		tt.cursor = lastVisible
+	}
+}
+
+// ViewportYOffset returns the current viewport scroll offset
+func (tt *TestTableComponent) ViewportYOffset() int {
+	return tt.viewport.YOffset
 }
