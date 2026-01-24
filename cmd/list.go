@@ -15,7 +15,6 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
-	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
 //go:embed short_docs/list.md
@@ -73,46 +72,10 @@ func listTests(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		tracker := utils.NewProgressTracker("Fetching traces from Tusk Drift Cloud", false, false)
-
-		var (
-			all      []*backend.TraceTest
-			cur      string
-			totalSet bool
-		)
-
-		for {
-			req := &backend.GetAllTraceTestsRequest{
-				ObservableServiceId: cfg.Service.ID,
-				PageSize:            25,
-			}
-			if cur != "" {
-				req.PaginationCursor = &cur
-			}
-
-			resp, err := client.GetAllTraceTests(context.Background(), req, authOptions)
-			if err != nil {
-				tracker.Stop()
-				return fmt.Errorf("failed to fetch trace tests from backend: %w", err)
-			}
-
-			all = append(all, resp.TraceTests...)
-
-			if !totalSet && resp.TotalCount > 0 {
-				tracker.SetTotal(int(resp.TotalCount))
-				totalSet = true
-			}
-
-			tracker.Update(len(all))
-
-			if next := resp.GetNextCursor(); next != "" {
-				cur = next
-				continue
-			}
-			break
+		all, err := api.FetchAllTraceTests(context.Background(), client, authOptions, cfg.Service.ID, nil)
+		if err != nil {
+			return err
 		}
-
-		tracker.Finish("")
 		tests = runner.ConvertTraceTestsToRunnerTests(all)
 	} else {
 		_ = config.Load("")
