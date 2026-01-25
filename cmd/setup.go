@@ -12,6 +12,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 //go:embed short_docs/setup.md
@@ -70,6 +71,14 @@ func getAnthropicAPIConfig() (*APIConfig, error) {
 	}
 
 	if envKey := os.Getenv("ANTHROPIC_API_KEY"); envKey != "" {
+		// In non-interactive mode (CI/scripts), default to BYOK to avoid hanging
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return &APIConfig{
+				Mode:   agent.APIModeDirect,
+				APIKey: envKey,
+			}, nil
+		}
+
 		choice := utils.PromptUserChoice(
 			"Found ANTHROPIC_API_KEY in environment. How would you like to proceed?",
 			[]string{

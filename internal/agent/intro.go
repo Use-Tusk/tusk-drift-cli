@@ -150,9 +150,10 @@ func (m *IntroModel) View() string {
 	logoHeight := m.logoHeight
 	spacingAfterLogo := 2
 	descBoxHeight := 17 // Approx height of description box with borders/padding
+	spacingAfterDesc := 2
 	footerHeight := 1
 
-	totalContentHeight := logoHeight + spacingAfterLogo + descBoxHeight + footerHeight
+	totalContentHeight := logoHeight + spacingAfterLogo + descBoxHeight + spacingAfterDesc + footerHeight
 
 	topPadding := (m.height - totalContentHeight) / 2
 	topPadding = max(topPadding, 1)
@@ -211,7 +212,6 @@ func (m *IntroModel) View() string {
 
 	sb.WriteString(centeredDesc)
 
-	spacingAfterDesc := 2
 	for range spacingAfterDesc {
 		sb.WriteRune('\n')
 	}

@@ -83,6 +83,8 @@ func NewClaudeClientWithConfig(cfg ClaudeClientConfig) (*ClaudeClient, error) {
 		if cfg.BaseURL == "" {
 			return nil, fmt.Errorf("base URL is required for proxy mode")
 		}
+	default:
+		return nil, fmt.Errorf("unsupported API mode: %s", cfg.Mode)
 	}
 
 	if cfg.Model == "" {
