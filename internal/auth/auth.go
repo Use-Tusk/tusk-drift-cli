@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
@@ -47,20 +48,25 @@ func NewAuthenticator() (*Authenticator, error) {
 	cfgDir, _ := os.UserConfigDir()
 	authPath := filepath.Join(cfgDir, "tusk", "auth.json")
 
+	cfg, err := config.Get()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
 	a := &Authenticator{
 		authFilePath:   authPath,
 		httpClient:     &http.Client{Timeout: 15 * time.Second},
-		domain:         utils.EnvDefault("TUSK_AUTH0_DOMAIN", "tusk.us.auth0.com"),
+		domain:         cfg.TuskAPI.Auth0Domain,
 		scope:          utils.EnvDefault("TUSK_AUTH0_SCOPE", "openid email offline_access"),
-		clientID:       utils.EnvDefault("TUSK_AUTH0_CLIENT_ID", "gXktT8e38sBmmXGWCGeXMLpwlpeECJS5"),
+		clientID:       cfg.TuskAPI.Auth0ClientID,
 		audience:       utils.EnvDefault("TUSK_AUTH0_AUDIENCE", "drift-cli"),
 		ignoreSaveFile: os.Getenv("TUSK_AUTH_IGNORE_SAVED") != "",
 	}
 	if a.clientID == "" {
-		return a, errors.New("TUSK_AUTH0_CLIENT_ID is required for login")
+		return nil, errors.New("TUSK_AUTH0_CLIENT_ID is required for login")
 	}
 	if a.audience == "" {
-		return a, errors.New("TUSK_AUTH0_AUDIENCE is required for login")
+		return nil, errors.New("TUSK_AUTH0_AUDIENCE is required for login")
 	}
 	return a, nil
 }
