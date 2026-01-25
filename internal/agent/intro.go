@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -147,14 +146,13 @@ func (m *IntroModel) View() string {
 		return "Initializing..."
 	}
 
-	// Cntent heights
+	// Content heights
 	logoHeight := m.logoHeight
 	spacingAfterLogo := 2
 	descBoxHeight := 17 // Approx height of description box with borders/padding
-	spacingAfterDesc := 2
 	footerHeight := 1
 
-	totalContentHeight := logoHeight + spacingAfterLogo + descBoxHeight + spacingAfterDesc + footerHeight
+	totalContentHeight := logoHeight + spacingAfterLogo + descBoxHeight + footerHeight
 
 	topPadding := (m.height - totalContentHeight) / 2
 	topPadding = max(topPadding, 1)
@@ -213,19 +211,19 @@ func (m *IntroModel) View() string {
 
 	sb.WriteString(centeredDesc)
 
+	spacingAfterDesc := 2
 	for range spacingAfterDesc {
 		sb.WriteRune('\n')
 	}
 
-	// Footer
+	// Footer - simple centered text without background
 	footerText := "Press any key to start • q/Esc/Ctrl+C to quit"
-	footer := components.Footer(m.width, footerText)
-	centeredFooter := lipgloss.NewStyle().
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		Width(m.width).
-		Align(lipgloss.Center).
-		Render(footer)
+		Align(lipgloss.Center)
 
-	sb.WriteString(centeredFooter)
+	sb.WriteString(footerStyle.Render(footerText))
 
 	return sb.String()
 }

@@ -83,9 +83,25 @@ type Agent struct {
 	sessionID string
 }
 
-// New creates a new Agent
+// New creates a new Agent, with Claude client based on API mode
 func New(cfg Config) (*Agent, error) {
-	client, err := NewClaudeClient(cfg.APIKey, cfg.Model)
+	var client *ClaudeClient
+	var err error
+
+	if cfg.APIMode == APIModeProxy {
+		client, err = NewClaudeClientWithConfig(ClaudeClientConfig{
+			Mode:        APIModeProxy,
+			BearerToken: cfg.BearerToken,
+			Model:       cfg.Model,
+			BaseURL:     cfg.ProxyURL,
+		})
+	} else {
+		client, err = NewClaudeClientWithConfig(ClaudeClientConfig{
+			Mode:   APIModeDirect,
+			APIKey: cfg.APIKey,
+			Model:  cfg.Model,
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
