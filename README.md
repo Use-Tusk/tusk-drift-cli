@@ -124,7 +124,6 @@ Use our AI agent to automatically set up Tusk Drift for your service:
 
 ```bash
 cd path/to/your/service
-export ANTHROPIC_API_KEY=your-api-key
 tusk setup
 ```
 
