@@ -83,9 +83,25 @@ type Agent struct {
 	sessionID string
 }
 
-// New creates a new Agent
+// New creates a new Agent, with Claude client based on API mode
 func New(cfg Config) (*Agent, error) {
-	client, err := NewClaudeClient(cfg.APIKey, cfg.Model)
+	var client *ClaudeClient
+	var err error
+
+	if cfg.APIMode == APIModeProxy {
+		client, err = NewClaudeClientWithConfig(ClaudeClientConfig{
+			Mode:        APIModeProxy,
+			BearerToken: cfg.BearerToken,
+			Model:       cfg.Model,
+			BaseURL:     cfg.ProxyURL,
+		})
+	} else {
+		client, err = NewClaudeClientWithConfig(ClaudeClientConfig{
+			Mode:   APIModeDirect,
+			APIKey: cfg.APIKey,
+			Model:  cfg.Model,
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +194,8 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	a.ui = NewAgentUI(a.ctx, a.cancel, a.printMode, a.phaseManager.GetPhaseNames(), a.eligibilityOnly)
 
 	// Show intro screen and wait for user to continue
-	shouldContinue, err := a.ui.ShowIntro()
+	isProxyMode := a.client.mode == APIModeProxy
+	shouldContinue, err := a.ui.ShowIntro(isProxyMode)
 	if err != nil {
 		return fmt.Errorf("failed to show intro: %w", err)
 	}
@@ -242,6 +259,7 @@ func (a *Agent) runAgent() error {
 	defer a.cleanup()
 	a.startTime = time.Now()
 	a.sessionID = generateSessionID()
+	a.client.SetSessionID(a.sessionID) // Pass session ID to client for request correlation
 	a.trackEvent("drift_cli:setup_agent:started", nil)
 
 	// Track completed phases for progress file

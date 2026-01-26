@@ -83,3 +83,5 @@ jobs:
 
       - name: Test
         run: make test-ci
+        env:
+          TUSK_PROXY_TEST_API_KEY: ${{ secrets.TUSK_PROXY_TEST_API_KEY }}

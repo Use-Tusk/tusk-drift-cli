@@ -10,17 +10,46 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
 )
+
+// APIMode represents how the client connects to the LLM
+type APIMode string
+
+const (
+	// APIModeDirect connects directly to Anthropic API (BYOK)
+	APIModeDirect APIMode = "direct"
+	// APIModeProxy connects through Tusk backend proxy
+	APIModeProxy APIMode = "proxy"
+)
+
+// ClaudeClientConfig holds configuration for creating a ClaudeClient
+type ClaudeClientConfig struct {
+	Mode        APIMode
+	APIKey      string // For direct mode
+	BearerToken string // For proxy mode
+	Model       string
+	BaseURL     string // Custom base URL (for proxy mode)
+}
 
 // ClaudeClient handles communication with the Claude API
 type ClaudeClient struct {
-	apiKey     string
-	model      string
-	httpClient *http.Client
-	baseURL    string
+	mode        APIMode
+	apiKey      string // For direct mode
+	bearerToken string // For proxy mode
+	model       string
+	httpClient  *http.Client
+	baseURL     string
+	sessionID   string
 }
 
-// NewClaudeClient creates a new Claude API client
+// SetSessionID sets the session ID for request correlation
+func (c *ClaudeClient) SetSessionID(sessionID string) {
+	c.sessionID = sessionID
+}
+
+// NewClaudeClient creates a new Claude API client (legacy constructor for BYOK)
 func NewClaudeClient(apiKey, model string) (*ClaudeClient, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("API key is required")
@@ -29,6 +58,7 @@ func NewClaudeClient(apiKey, model string) (*ClaudeClient, error) {
 		model = "claude-sonnet-4-5-20250929"
 	}
 	return &ClaudeClient{
+		mode:   APIModeDirect,
 		apiKey: apiKey,
 		model:  model,
 		httpClient: &http.Client{
@@ -36,6 +66,69 @@ func NewClaudeClient(apiKey, model string) (*ClaudeClient, error) {
 		},
 		baseURL: "https://api.anthropic.com/v1",
 	}, nil
+}
+
+// NewClaudeClientWithConfig creates a new Claude API client with the given configuration
+func NewClaudeClientWithConfig(cfg ClaudeClientConfig) (*ClaudeClient, error) {
+	if cfg.Mode == "" {
+		cfg.Mode = APIModeDirect
+	}
+
+	switch cfg.Mode {
+	case APIModeDirect:
+		if cfg.APIKey == "" {
+			return nil, fmt.Errorf("API key is required for direct mode")
+		}
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.anthropic.com/v1"
+		}
+	case APIModeProxy:
+		if cfg.BearerToken == "" {
+			return nil, fmt.Errorf("bearer token is required for proxy mode")
+		}
+		if cfg.BaseURL == "" {
+			return nil, fmt.Errorf("base URL is required for proxy mode")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported API mode: %s", cfg.Mode)
+	}
+
+	if cfg.Model == "" {
+		cfg.Model = "claude-sonnet-4-5-20250929"
+	}
+
+	return &ClaudeClient{
+		mode:        cfg.Mode,
+		apiKey:      cfg.APIKey,
+		bearerToken: cfg.BearerToken,
+		model:       cfg.Model,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Minute,
+		},
+		baseURL: cfg.BaseURL,
+	}, nil
+}
+
+// getEndpoint returns the appropriate API endpoint URL based on the client mode
+func (c *ClaudeClient) getEndpoint() string {
+	if c.mode == APIModeProxy {
+		return c.baseURL
+	}
+	return c.baseURL + "/messages"
+}
+
+// setAuthHeaders sets the appropriate authentication headers based on the client mode
+func (c *ClaudeClient) setAuthHeaders(req *http.Request) {
+	if c.mode == APIModeProxy {
+		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
+		req.Header.Set("x-tusk-cli-version", version.Version)
+		if c.sessionID != "" {
+			req.Header.Set("x-tusk-session-id", c.sessionID)
+		}
+	} else {
+		req.Header.Set("x-api-key", c.apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}
 }
 
 type createMessageRequest struct {
@@ -85,7 +178,7 @@ func (c *ClaudeClient) CreateMessageStreaming(
 	req, err := http.NewRequestWithContext(
 		ctx,
 		"POST",
-		c.baseURL+"/messages",
+		c.getEndpoint(),
 		bytes.NewReader(bodyBytes),
 	)
 	if err != nil {
@@ -93,8 +186,7 @@ func (c *ClaudeClient) CreateMessageStreaming(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -285,7 +377,7 @@ func (c *ClaudeClient) CreateMessage(
 	req, err := http.NewRequestWithContext(
 		ctx,
 		"POST",
-		c.baseURL+"/messages",
+		c.getEndpoint(),
 		bytes.NewReader(bodyBytes),
 	)
 	if err != nil {
@@ -293,8 +385,7 @@ func (c *ClaudeClient) CreateMessage(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

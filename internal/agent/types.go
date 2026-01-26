@@ -114,7 +114,12 @@ type PhaseError struct {
 
 // Config holds agent configuration
 type Config struct {
-	APIKey          string
+	// API configuration
+	APIMode     APIMode // Direct (BYOK) or Proxy
+	APIKey      string  // For direct mode
+	BearerToken string  // For proxy mode
+	ProxyURL    string  // For proxy mode
+
 	Model           string
 	SystemPrompt    string
 	MaxTokens       int

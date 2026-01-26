@@ -14,8 +14,16 @@ Full docs: <https://docs.usetusk.ai/api-tests/setup-agent>
 
 ## Requirements
 
-- Anthropic API key: Set via `ANTHROPIC_API_KEY` environment variable or `--api-key` flag
 - Supported languages: Python (FastAPI, Flask, Django, Starlette) and Node.js (Express, Fastify, Koa, Hapi)
+
+## API Key Options
+
+For convenience, by default the setup agent uses Tusk's servers as a proxy to the Anthropic API (no API key needed). Your data is never used for training, see privacy policy: usetusk.ai/privacy.
+
+To use your own Anthropic API key instead:
+
+- Set via `ANTHROPIC_API_KEY` environment variable, or
+- Pass `--api-key` flag (requests go directly to Anthropic)
 
 ## Modes
 
