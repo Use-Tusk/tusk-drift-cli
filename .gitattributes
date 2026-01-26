@@ -1,0 +1,5 @@
+# Force LF line endings for embedded prompt files to ensure consistent
+# behavior across all platforms.
+# Without this, Windows CI runners convert to CRLF which breaks the
+# backend's system prompt validation.
+internal/agent/prompts/*.md text eol=lf
