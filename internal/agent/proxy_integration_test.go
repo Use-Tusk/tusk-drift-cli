@@ -35,9 +35,8 @@ func TestSystemPromptAcceptedByBackend(t *testing.T) {
 		t.Skip("Skipping integration test: TUSK_PROXY_TEST_API_KEY must be set")
 	}
 
-	baseURL := api.GetBaseURL() // Defaults to https://api.usetusk.ai
+	baseURL := api.GetBaseURL()
 
-	// Build request body using the same struct as production code
 	requestBody := createMessageRequest{
 		Model:     "claude-sonnet-4-5-20250929",
 		MaxTokens: 1,
@@ -51,20 +50,17 @@ func TestSystemPromptAcceptedByBackend(t *testing.T) {
 		t.Fatalf("Failed to marshal request body: %v", err)
 	}
 
-	// Create request
 	endpoint := baseURL + "/api/drift/setup-agent"
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
 
-	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey) // API key auth (no expiration)
+	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("x-tusk-cli-version", version.Version)
-	req.Header.Set("x-tusk-validate-only", "true") // Skip Anthropic proxy, just validate
+	req.Header.Set("x-tusk-validate-only", "true")
 
-	// Send request
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -72,7 +68,6 @@ func TestSystemPromptAcceptedByBackend(t *testing.T) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Read response body for error details
 	respBody, _ := io.ReadAll(resp.Body)
 
 	// Check for prompt mismatch error (403)
@@ -104,12 +99,17 @@ CLI Version: %s
 		t.Fatalf("Request returned 403 Forbidden: %s", string(respBody))
 	}
 
-	// Check for other client errors (400-499) that might indicate issues
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 		t.Fatalf("Request returned client error %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	// 200 or streaming response means the prompt was accepted
-	// (We don't need to consume the full response - just knowing it started is enough)
+	if resp.StatusCode >= 500 {
+		t.Fatalf("Request returned server error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected status code %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	t.Logf("System prompt accepted by backend (status: %d, version: %s)", resp.StatusCode, version.Version)
 }
