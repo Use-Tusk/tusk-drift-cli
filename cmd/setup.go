@@ -39,7 +39,7 @@ var setupCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(setupCmd)
 
-	setupCmd.Flags().StringVar(&setupAPIKey, "api-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY env var) - uses Tusk backend if not provided")
+	setupCmd.Flags().StringVar(&setupAPIKey, "api-key", "", "Your Anthropic API key (requests go directly to Anthropic). If not provided, uses Tusk's secure proxy")
 	setupCmd.Flags().StringVar(&setupModel, "model", "claude-sonnet-4-5-20250929", "Claude model to use")
 	setupCmd.Flags().BoolVar(&setupSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
 	setupCmd.Flags().BoolVar(&setupDisableProgress, "disable-progress-state", false, "Disable progress state (saving to a PROGRESS.md file) or resuming from it")

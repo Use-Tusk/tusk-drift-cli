@@ -59,8 +59,8 @@ func (u *HeadlessUI) Start() error {
 }
 
 // ShowIntro displays the intro screen for headless mode (no confirmation for scripts)
-func (u *HeadlessUI) ShowIntro() (bool, error) {
-	PrintIntroHeadless()
+func (u *HeadlessUI) ShowIntro(isProxyMode bool) (bool, error) {
+	PrintIntroHeadless(isProxyMode)
 	return true, nil
 }
 

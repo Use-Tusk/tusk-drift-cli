@@ -41,6 +41,12 @@ type ClaudeClient struct {
 	model       string
 	httpClient  *http.Client
 	baseURL     string
+	sessionID   string
+}
+
+// SetSessionID sets the session ID for request correlation
+func (c *ClaudeClient) SetSessionID(sessionID string) {
+	c.sessionID = sessionID
 }
 
 // NewClaudeClient creates a new Claude API client (legacy constructor for BYOK)
@@ -115,7 +121,10 @@ func (c *ClaudeClient) getEndpoint() string {
 func (c *ClaudeClient) setAuthHeaders(req *http.Request) {
 	if c.mode == APIModeProxy {
 		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
-		req.Header.Set("X-Tusk-CLI-Version", version.Version)
+		req.Header.Set("x-tusk-cli-version", version.Version)
+		if c.sessionID != "" {
+			req.Header.Set("x-tusk-session-id", c.sessionID)
+		}
 	} else {
 		req.Header.Set("x-api-key", c.apiKey)
 		req.Header.Set("anthropic-version", "2023-06-01")

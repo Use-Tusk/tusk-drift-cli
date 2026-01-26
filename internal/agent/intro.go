@@ -25,7 +25,7 @@ const tuskLogo = `████████╗██╗   ██╗████�
 ██████╔╝██║  ██║██║██║        ██║   
 ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝        ╚═╝   `
 
-const introDescription = `Welcome to Tusk Drift Setup!
+const introDescriptionBase = `Welcome to Tusk Drift Setup!
 
 This AI-powered agent will automatically configure your project 
 for API testing by analyzing your codebase, installing the Drift
@@ -39,6 +39,18 @@ The agent will guide you through the following phases:
   • Test         - Run sample tests to verify the setup works
 
 You may be prompted for input during the setup process.`
+
+const introProxyNote = `
+
+Note: For convenience, this setup agent will use Tusk's servers as a proxy to the Anthropic API. Your data is never used for training. See usetusk.ai/privacy for details.`
+
+// getIntroDescription returns the appropriate description based on API mode
+func getIntroDescription(isProxyMode bool) string {
+	if isProxyMode {
+		return introDescriptionBase + introProxyNote
+	}
+	return introDescriptionBase
+}
 
 // Color gradient for the wave effect
 var waveColors = []string{
@@ -75,12 +87,15 @@ type IntroModel struct {
 	logoLines  []string
 	logoWidth  int
 	logoHeight int
+
+	// API mode (affects description text)
+	isProxyMode bool
 }
 
 type introTickMsg time.Time
 
 // NewIntroModel creates a new intro screen model
-func NewIntroModel() *IntroModel {
+func NewIntroModel(isProxyMode bool) *IntroModel {
 	lines := strings.Split(tuskLogo, "\n")
 
 	maxWidth := 0
@@ -92,12 +107,13 @@ func NewIntroModel() *IntroModel {
 	}
 
 	return &IntroModel{
-		tick:       0,
-		logoLines:  lines,
-		logoWidth:  maxWidth,
-		logoHeight: len(lines),
-		mouseX:     -1,
-		mouseY:     -1,
+		tick:        0,
+		logoLines:   lines,
+		logoWidth:   maxWidth,
+		isProxyMode: isProxyMode,
+		logoHeight:  len(lines),
+		mouseX:      -1,
+		mouseY:      -1,
 	}
 }
 
@@ -149,7 +165,7 @@ func (m *IntroModel) View() string {
 	// Content heights
 	logoHeight := m.logoHeight
 	spacingAfterLogo := 2
-	descBoxHeight := 17 // Approx height of description box with borders/padding
+	descBoxHeight := 20 // Approx height of description box with borders/padding
 	spacingAfterDesc := 2
 	footerHeight := 1
 
@@ -203,7 +219,7 @@ func (m *IntroModel) View() string {
 		BorderForeground(lipgloss.Color(boxBorderColor)).
 		Padding(1, 2)
 
-	descBox := boxStyle.Render(descStyle.Render(introDescription))
+	descBox := boxStyle.Render(descStyle.Render(getIntroDescription(m.isProxyMode)))
 
 	centeredDesc := lipgloss.NewStyle().
 		Width(m.width).
@@ -292,8 +308,8 @@ func (m *IntroModel) ShouldContinue() bool {
 }
 
 // RunIntroScreen runs the intro screen and returns true if user wants to continue
-func RunIntroScreen() (bool, error) {
-	model := NewIntroModel()
+func RunIntroScreen(isProxyMode bool) (bool, error) {
+	model := NewIntroModel(isProxyMode)
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 
 	finalModel, err := p.Run()
@@ -316,7 +332,7 @@ func RunIntroScreen() (bool, error) {
 }
 
 // PrintIntroHeadless prints a simple intro for headless mode (no confirmation needed for scripts)
-func PrintIntroHeadless() {
+func PrintIntroHeadless(isProxyMode bool) {
 	primaryStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		Bold(true)
@@ -327,7 +343,7 @@ func PrintIntroHeadless() {
 	fmt.Println()
 	fmt.Println(primaryStyle.Render(tuskLogo))
 	fmt.Println()
-	fmt.Println(introDescription)
+	fmt.Println(getIntroDescription(isProxyMode))
 	fmt.Println()
 	fmt.Println(dimStyle.Render("────────────────────────────────────────────────────────"))
 	fmt.Println()

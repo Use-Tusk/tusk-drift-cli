@@ -194,7 +194,8 @@ func (a *Agent) Run(parentCtx context.Context) error {
 	a.ui = NewAgentUI(a.ctx, a.cancel, a.printMode, a.phaseManager.GetPhaseNames(), a.eligibilityOnly)
 
 	// Show intro screen and wait for user to continue
-	shouldContinue, err := a.ui.ShowIntro()
+	isProxyMode := a.client.mode == APIModeProxy
+	shouldContinue, err := a.ui.ShowIntro(isProxyMode)
 	if err != nil {
 		return fmt.Errorf("failed to show intro: %w", err)
 	}
@@ -258,6 +259,7 @@ func (a *Agent) runAgent() error {
 	defer a.cleanup()
 	a.startTime = time.Now()
 	a.sessionID = generateSessionID()
+	a.client.SetSessionID(a.sessionID) // Pass session ID to client for request correlation
 	a.trackEvent("drift_cli:setup_agent:started", nil)
 
 	// Track completed phases for progress file
