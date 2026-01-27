@@ -103,6 +103,16 @@ type State struct {
 	SamplingRate          float64 `json:"sampling_rate"`
 	ExportSpans           bool    `json:"export_spans"`
 	EnableEnvVarRecording bool    `json:"enable_env_var_recording"`
+
+	// Trace upload state
+	TracesUploaded       int  `json:"traces_uploaded"`
+	TraceUploadSuccess   bool `json:"trace_upload_success"`
+	TraceUploadAttempted bool `json:"trace_upload_attempted"`
+
+	// Suite validation state
+	SuiteValidationSuccess   bool `json:"suite_validation_success"`
+	TestsInSuite             int  `json:"tests_in_suite"`
+	SuiteValidationAttempted bool `json:"suite_validation_attempted"`
 }
 
 // PhaseError represents an error that occurred during a phase

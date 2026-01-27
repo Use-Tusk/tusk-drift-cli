@@ -45,6 +45,8 @@ const (
 	ToolCloudCreateApiKey      ToolName = "cloud_create_api_key"
 	ToolCloudCheckApiKeyExists ToolName = "cloud_check_api_key_exists"
 	ToolCloudSaveConfig        ToolName = "cloud_save_config"
+	ToolCloudUploadTraces      ToolName = "cloud_upload_traces"
+	ToolCloudRunValidation     ToolName = "cloud_run_validation"
 )
 
 // ToolDefinition is the single source of truth for a tool's metadata and implementation
@@ -647,6 +649,28 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				"required": ["service_id", "sampling_rate", "export_spans", "enable_env_var_recording"]
 			}`),
 		},
+		ToolCloudUploadTraces: {
+			Name:        ToolCloudUploadTraces,
+			Description: "Upload local traces from .tusk/traces/ to Tusk Cloud. Returns the number of traces uploaded.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"service_id": {
+						"type": "string",
+						"description": "The observable service ID"
+					}
+				},
+				"required": ["service_id"]
+			}`),
+		},
+		ToolCloudRunValidation: {
+			Name:        ToolCloudRunValidation,
+			Description: "Run trace validation using 'tusk run --cloud --validate-suite --print'. Returns validation results including how many tests became part of the suite.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
 	}
 }
 
@@ -695,6 +719,8 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolCloudCreateApiKey:      cloud.CreateApiKey,
 		ToolCloudCheckApiKeyExists: cloud.CheckApiKeyExists,
 		ToolCloudSaveConfig:        cloud.SaveCloudConfig,
+		ToolCloudUploadTraces:      cloud.UploadTraces,
+		ToolCloudRunValidation:     tusk.RunValidation,
 	}
 
 	// Build registry with definitions + executors
