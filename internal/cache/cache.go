@@ -1,0 +1,155 @@
+package cache
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+	"google.golang.org/protobuf/proto"
+)
+
+// TraceCache manages local caching of cloud trace tests.
+// Cache files are stored as protobuf-serialized .bin files named by trace test ID.
+type TraceCache struct {
+	cacheDir string
+}
+
+// NewTraceCache creates a new TraceCache for the given service ID.
+// The cache directory is: <os.UserCacheDir()>/tusk/<serviceID>/
+func NewTraceCache(serviceID string) (*TraceCache, error) {
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user cache directory: %w", err)
+	}
+
+	cacheDir := filepath.Join(userCacheDir, "tusk", serviceID)
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	return &TraceCache{cacheDir: cacheDir}, nil
+}
+
+// GetCachedIds returns the IDs of all cached trace tests by listing .bin files.
+func (c *TraceCache) GetCachedIds() ([]string, error) {
+	entries, err := os.ReadDir(c.cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read cache directory: %w", err)
+	}
+
+	var ids []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".bin") {
+			ids = append(ids, strings.TrimSuffix(name, ".bin"))
+		}
+	}
+	return ids, nil
+}
+
+// LoadTrace loads a single trace test from cache by ID.
+func (c *TraceCache) LoadTrace(id string) (*backend.TraceTest, error) {
+	filePath := filepath.Join(c.cacheDir, id+".bin")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cache file %s: %w", filePath, err)
+	}
+
+	var trace backend.TraceTest
+	if err := proto.Unmarshal(data, &trace); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal trace %s: %w", id, err)
+	}
+	return &trace, nil
+}
+
+// LoadAllTraces loads all cached trace tests.
+func (c *TraceCache) LoadAllTraces() ([]*backend.TraceTest, error) {
+	ids, err := c.GetCachedIds()
+	if err != nil {
+		return nil, err
+	}
+
+	traces := make([]*backend.TraceTest, 0, len(ids))
+	for _, id := range ids {
+		trace, err := c.LoadTrace(id)
+		if err != nil {
+			// Skip corrupted cache files
+			continue
+		}
+		traces = append(traces, trace)
+	}
+	return traces, nil
+}
+
+// SaveTraces saves multiple trace tests to cache.
+func (c *TraceCache) SaveTraces(traces []*backend.TraceTest) error {
+	for _, trace := range traces {
+		if err := c.saveTrace(trace); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// saveTrace saves a single trace test to cache.
+func (c *TraceCache) saveTrace(trace *backend.TraceTest) error {
+	data, err := proto.Marshal(trace)
+	if err != nil {
+		return fmt.Errorf("failed to marshal trace %s: %w", trace.Id, err)
+	}
+
+	filePath := filepath.Join(c.cacheDir, trace.Id+".bin")
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write cache file %s: %w", filePath, err)
+	}
+	return nil
+}
+
+// DeleteTraces removes the specified trace test IDs from cache.
+func (c *TraceCache) DeleteTraces(ids []string) error {
+	for _, id := range ids {
+		filePath := filepath.Join(c.cacheDir, id+".bin")
+		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete cache file %s: %w", filePath, err)
+		}
+	}
+	return nil
+}
+
+// DiffIds computes which IDs need to be fetched and which need to be deleted.
+// Returns (toFetch, toDelete).
+func DiffIds(remoteIds, cachedIds []string) (toFetch, toDelete []string) {
+	remoteSet := make(map[string]struct{}, len(remoteIds))
+	for _, id := range remoteIds {
+		remoteSet[id] = struct{}{}
+	}
+
+	cachedSet := make(map[string]struct{}, len(cachedIds))
+	for _, id := range cachedIds {
+		cachedSet[id] = struct{}{}
+	}
+
+	// toFetch = remoteIds - cachedIds
+	for _, id := range remoteIds {
+		if _, exists := cachedSet[id]; !exists {
+			toFetch = append(toFetch, id)
+		}
+	}
+
+	// toDelete = cachedIds - remoteIds
+	for _, id := range cachedIds {
+		if _, exists := remoteSet[id]; !exists {
+			toDelete = append(toDelete, id)
+		}
+	}
+
+	return toFetch, toDelete
+}

@@ -4,6 +4,8 @@ github.com/Use-Tusk/fence v0.1.16 h1:iTHn7ttCbvUANZ9Bo/3HyZYAw7ZrNAjoZjaX7kDbE0I
 github.com/Use-Tusk/fence v0.1.16/go.mod h1:topOkP7EULI+78u+Ax775d36GqWfx2BhqkVEQ/QXXAU=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.24 h1:q5rdVm46qk+6s7THk1QeSYDJc+/nL63ChyEYF/VxaTM=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.24/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
+github.com/Use-Tusk/tusk-drift-schemas v0.1.25-0.20260127032119-ba5c9c37743f h1:fgrFZDrRqSPfVtBg0FPT5W4KUmXDTL9eO3cG0OnGC0s=
+github.com/Use-Tusk/tusk-drift-schemas v0.1.25-0.20260127032119-ba5c9c37743f/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
 github.com/agnivade/levenshtein v1.0.3 h1:M5ZnqLOoZR8ygVq0FfkXsNOKzMCk0xRiow0R5+5VkQ0=
 github.com/agnivade/levenshtein v1.0.3/go.mod h1:4SFRZbbXWLF4MU1T9Qg0pGgH3Pjs+t6ie5efyrwRJXs=
 github.com/alecthomas/assert/v2 v2.7.0 h1:QtqSACNS3tF7oasA8CU6A6sXZSBDqnm7RfpLl9bZqbE=
