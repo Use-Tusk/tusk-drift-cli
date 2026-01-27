@@ -623,12 +623,22 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.cleanup()
 
+		// Auto-exit in CI/forced TUI mode (no user to press 'q')
+		if utils.TUICIMode() {
+			return m, tea.Quit
+		}
+
 	case executionFailedMsg:
 		m.state = stateCompleted
 		m.header.SetCompleted()
 		m.addServiceLog("\n" + strings.Repeat("=", 60))
 		m.addServiceLog("❌ Execution failed - no tests were run")
 		m.cleanup()
+
+		// Auto-exit in CI/forced TUI mode (no user to press 'q')
+		if utils.TUICIMode() {
+			return m, tea.Quit
+		}
 	}
 
 	// Update components

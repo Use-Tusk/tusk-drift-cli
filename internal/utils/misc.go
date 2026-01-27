@@ -16,6 +16,13 @@ func IsTerminal() bool {
 	return isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
 }
 
+// TUICIMode returns true if TUSK_TUI_CI_MODE=1 is set.
+// This enables CI-friendly TUI mode: forces TUI without a TTY,
+// skips terminal size warnings, and auto-exits on completion.
+func TUICIMode() bool {
+	return os.Getenv("TUSK_TUI_CI_MODE") == "1"
+}
+
 // CopyToClipboard copies text to the system clipboard.
 // It tries OSC52 first (for remote terminals), then falls back to OS clipboard.
 func CopyToClipboard(text string) error {

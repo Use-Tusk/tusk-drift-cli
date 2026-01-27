@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -77,8 +78,12 @@ func (w *TerminalSizeWarning) Reset() {
 	w.dismissed = false
 }
 
-// ShouldShow returns true if the warning should be displayed
+// ShouldShow returns true if the warning should be displayed.
+// Always returns false if TUSK_TUI_CI_MODE=1 to support CI testing.
 func (w *TerminalSizeWarning) ShouldShow(width, height int) bool {
+	if utils.TUICIMode() {
+		return false
+	}
 	return w.IsTooSmall(width, height) && !w.dismissed
 }
 
