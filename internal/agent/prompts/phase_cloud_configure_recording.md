@@ -50,6 +50,15 @@ Configure the recording parameters for Tusk Drift Cloud.
    - `export_spans`: the chosen value
    - `enable_env_var_recording`: the chosen value
 
+### Update .gitignore for Cloud
+
+After saving the cloud configuration, update `.gitignore` to also exclude `.tusk/traces`:
+
+1. Read `.gitignore` to check if `.tusk/traces` is already present
+2. If not present, append `.tusk/traces` to the Tusk section
+
+Since cloud users fetch traces from Tusk Cloud rather than storing them locally, the traces directory should be gitignored.
+
 ### Important Notes
 
 - Lower sampling rates reduce performance overhead
