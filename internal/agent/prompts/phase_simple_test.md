@@ -46,6 +46,7 @@ If it fails:
 
 - Run with `debug: true` (keep running it in debug mode until it passes)
 - Check for errors in the output or in the logs (in .tusk/logs/). Logs only appear if `debug: true` is set.
+- If you see config-related errors (e.g., "no start command"), run `tusk_validate_config` to check for config issues
 - Try to fix issues and retry (max 3 attempts)
 - If still failing, ask the user for help
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -254,6 +256,188 @@ func (cfg *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// ValidationResult contains detailed validation results for config files.
+type ValidationResult struct {
+	Valid       bool     `json:"valid"`
+	Errors      []string `json:"errors,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
+	UnknownKeys []string `json:"unknown_keys,omitempty"`
+	MissingKeys []string `json:"missing_keys,omitempty"`
+	SchemaHint  string   `json:"schema_hint,omitempty"`
+}
+
+// ValidateConfigFile performs comprehensive validation on a config file.
+// It checks for unknown keys, required fields, and value constraints.
+func ValidateConfigFile(configPath string) *ValidationResult {
+	result := &ValidationResult{Valid: true}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		result.Valid = false
+		result.Errors = append(result.Errors, fmt.Sprintf("Config file not found: %s", configPath))
+		return result
+	}
+
+	// Load config fresh
+	Invalidate()
+	if err := Load(configPath); err != nil {
+		result.Valid = false
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to parse config: %s", err))
+		return result
+	}
+
+	unknownKeys := CheckUnknownKeys()
+	if len(unknownKeys) > 0 {
+		result.UnknownKeys = unknownKeys
+		for _, key := range unknownKeys {
+			suggestion := suggestCorrectKey(key)
+			if suggestion != "" {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Unknown key '%s' - did you mean '%s'?", key, suggestion))
+			} else {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Unknown key '%s' will be ignored", key))
+			}
+		}
+	}
+
+	cfg, err := Get()
+	if err != nil {
+		result.Valid = false
+		result.Errors = append(result.Errors, err.Error())
+		return result
+	}
+
+	missingRequired := cfg.CheckRequiredForReplay()
+	if len(missingRequired) > 0 {
+		result.Valid = false
+		result.MissingKeys = missingRequired
+		for _, key := range missingRequired {
+			result.Errors = append(result.Errors, fmt.Sprintf("Missing required field: %s", key))
+		}
+	}
+
+	if !result.Valid || len(result.Warnings) > 0 {
+		result.SchemaHint = getMinimalSchemaHint()
+	}
+
+	return result
+}
+
+// CheckRequiredForReplay returns a list of missing required fields for replay mode.
+func (cfg *Config) CheckRequiredForReplay() []string {
+	var missing []string
+
+	if cfg.Service.Start.Command == "" {
+		missing = append(missing, "service.start.command")
+	}
+
+	// Port has a default, but if explicitly set to 0, that's an error
+	// (already caught by Validate, but we note it here for completeness)
+
+	return missing
+}
+
+// CheckUnknownKeys compares loaded config keys against the valid schema.
+// Returns a list of keys that don't match any known config field.
+func CheckUnknownKeys() []string {
+	validKeys := getValidKeys(reflect.TypeOf(Config{}), "")
+	loadedKeys := k.Keys()
+
+	validSet := make(map[string]bool)
+	for _, key := range validKeys {
+		validSet[key] = true
+		// Also add parent paths as valid (e.g., "service" is valid if "service.port" is valid)
+		parts := strings.Split(key, ".")
+		for i := 1; i < len(parts); i++ {
+			validSet[strings.Join(parts[:i], ".")] = true
+		}
+	}
+
+	var unknown []string
+	for _, key := range loadedKeys {
+		if !validSet[key] {
+			unknown = append(unknown, key)
+		}
+	}
+
+	return unknown
+}
+
+// getValidKeys extracts all valid config key paths from struct tags recursively.
+func getValidKeys(t reflect.Type, prefix string) []string {
+	var keys []string
+
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	if t.Kind() != reflect.Struct {
+		return keys
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tag := field.Tag.Get("koanf")
+		if tag == "" || tag == "-" {
+			continue
+		}
+
+		fullKey := tag
+		if prefix != "" {
+			fullKey = prefix + "." + tag
+		}
+
+		keys = append(keys, fullKey)
+
+		// Recurse into nested structs
+		fieldType := field.Type
+		if fieldType.Kind() == reflect.Ptr {
+			fieldType = fieldType.Elem()
+		}
+		if fieldType.Kind() == reflect.Struct {
+			keys = append(keys, getValidKeys(fieldType, fullKey)...)
+		}
+	}
+
+	return keys
+}
+
+// suggestCorrectKey suggests a correct key name for common mistakes.
+func suggestCorrectKey(unknownKey string) string {
+	suggestions := map[string]string{
+		"start_command":         "service.start.command",
+		"stop_command":          "service.stop.command",
+		"readiness_command":     "service.readiness_check.command",
+		"port":                  "service.port",
+		"name":                  "service.name",
+		"timeout":               "test_execution.timeout (or service.readiness_check.timeout)",
+		"concurrency":           "test_execution.concurrency",
+		"start":                 "service.start",
+		"stop":                  "service.stop",
+		"readiness":             "service.readiness_check",
+		"readiness_check":       "service.readiness_check",
+		"service.readiness":     "service.readiness_check",
+		"service.start_command": "service.start.command",
+	}
+
+	if suggestion, ok := suggestions[unknownKey]; ok {
+		return suggestion
+	}
+
+	return ""
+}
+
+// getMinimalSchemaHint returns a minimal example of the correct config structure.
+func getMinimalSchemaHint() string {
+	return `service:
+  name: my-service        # optional
+  port: 3000              # required for replay
+  start:
+    command: "npm start"  # required for replay
+  readiness_check:        # optional but recommended
+    command: "curl -fsS http://localhost:3000/health"
+    timeout: 30s
+    interval: 1s`
 }
 
 func findConfigFile() string {

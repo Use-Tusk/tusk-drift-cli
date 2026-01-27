@@ -65,7 +65,17 @@ recording:
 
 Also create docker-compose.tusk-override.yml if using Docker Compose.
 
-IMPORTANT: Always ensure config files end with a trailing newline.
+IMPORTANT:
+
+- Always ensure config files end with a trailing newline.
+- After creating the config file, ALWAYS call `tusk_validate_config` to verify the config is valid.
+- If validation fails, check the error messages for unknown keys or missing required fields and fix them.
+
+Common config mistakes to avoid:
+
+- `start_command: "..."` should be `start: { command: "..." }` (nested structure)
+- `readiness_command: "..."` should be `readiness_check: { command: "..." }` (nested structure)
+- `port: 3000` at root level should be `service: { port: 3000 }` (under service section)
 
 When done, call transition_phase with:
 {
