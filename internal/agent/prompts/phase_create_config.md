@@ -77,6 +77,24 @@ Common config mistakes to avoid:
 - `readiness_command: "..."` should be `readiness_check: { command: "..." }` (nested structure)
 - `port: 3000` at root level should be `service: { port: 3000 }` (under service section)
 
+### Update .gitignore
+
+After creating the config file, update the project's `.gitignore` to exclude Tusk artifacts that shouldn't be committed:
+
+1. Use `read_file` to check if `.gitignore` exists and read its contents
+2. Check if Tusk entries (`.tusk/results`, `.tusk/logs`) are already present
+3. If missing, append the following block to `.gitignore`:
+
+```text
+# Tusk Drift
+.tusk/results
+.tusk/logs
+```
+
+- If `.gitignore` doesn't exist, create it with just the Tusk entries
+- If it exists but is missing entries, append to the end (ensure there's a blank line before the new section)
+- Do NOT add entries that already exist
+
 When done, call transition_phase with:
 {
   "results": {

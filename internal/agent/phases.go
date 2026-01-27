@@ -749,6 +749,8 @@ func cloudConfigureRecordingPhase() *Phase {
 		Instructions: PhaseCloudConfigureRecordingPrompt,
 		Tools: Tools(
 			ToolCloudSaveConfig,
+			ToolReadFile,
+			ToolWriteFile,
 			ToolAskUser,
 			ToolTransitionPhase,
 		),
