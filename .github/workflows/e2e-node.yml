@@ -51,8 +51,15 @@ jobs:
         working-directory: ../drift-node-demo
         run: npm ci
 
-      - name: Run Node.js E2E tests
+      - name: Run Node.js E2E tests Non-Interactive
         working-directory: ../drift-node-demo
         run: |
           $GITHUB_WORKSPACE/tusk run --print
+          # Exits non-zero if any test has deviations
+
+      - name: Run Node.js E2E tests Interactive
+        timeout-minutes: 2
+        working-directory: ../drift-node-demo
+        run: |
+          script -q -e -c "$GITHUB_WORKSPACE/tusk run" /dev/null
           # Exits non-zero if any test has deviations

@@ -54,9 +54,15 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
 
-      - name: Run Python E2E tests
+      - name: Run Python E2E tests Non-Interactive
         working-directory: ../drift-python-demo
         run: |
           source venv/bin/activate
-          $GITHUB_WORKSPACE/tusk run --print --enable-service-logs
+          $GITHUB_WORKSPACE/tusk run --print
           # Exits non-zero if any test has deviations
+
+      - name: Run E2E tests Interactive
+        timeout-minutes: 2
+        working-directory: ../drift-python-demo
+        run: |
+          script -q -e -c "$GITHUB_WORKSPACE/tusk run" /dev/null
