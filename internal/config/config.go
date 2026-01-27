@@ -67,7 +67,9 @@ type ReadinessConfig struct {
 }
 
 type TuskAPIConfig struct {
-	URL string `koanf:"url"`
+	URL           string `koanf:"url"`
+	Auth0Domain   string `koanf:"auth0_domain"`
+	Auth0ClientID string `koanf:"auth0_client_id"`
 }
 
 type TestExecutionConfig struct {
@@ -130,6 +132,8 @@ func Load(configFile string) error {
 	envOverrides := map[string]string{
 		"TUSK_TRACES_DIR":              "traces.dir",
 		"TUSK_API_URL":                 "tusk_api.url",
+		"TUSK_AUTH0_DOMAIN":            "tusk_api.auth0_domain",
+		"TUSK_AUTH0_CLIENT_ID":         "tusk_api.auth0_client_id",
 		"TUSK_RESULTS_DIR":             "results.dir",
 		"TUSK_RECORDING_SAMPLING_RATE": "recording.sampling_rate",
 	}
@@ -204,6 +208,15 @@ func parseAndValidate() (*Config, error) {
 	}
 	if cfg.Service.Communication.TCPPort == 0 {
 		cfg.Service.Communication.TCPPort = 9001
+	}
+	if cfg.TuskAPI.URL == "" {
+		cfg.TuskAPI.URL = "https://api.usetusk.ai"
+	}
+	if cfg.TuskAPI.Auth0Domain == "" {
+		cfg.TuskAPI.Auth0Domain = "tusk.us.auth0.com"
+	}
+	if cfg.TuskAPI.Auth0ClientID == "" {
+		cfg.TuskAPI.Auth0ClientID = "gXktT8e38sBmmXGWCGeXMLpwlpeECJS5"
 	}
 
 	// Resolve directory paths relative to tusk root
