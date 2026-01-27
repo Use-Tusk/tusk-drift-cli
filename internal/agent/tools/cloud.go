@@ -762,12 +762,6 @@ func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 		"enable_env_var_recording": params.EnableEnvVarRecording,
 	}
 
-	if _, hasTuskAPI := config["tusk_api"]; !hasTuskAPI {
-		config["tusk_api"] = map[string]any{
-			"url": api.DefaultBaseURL,
-		}
-	}
-
 	output, err := yaml.Marshal(config)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal config: %w", err)
