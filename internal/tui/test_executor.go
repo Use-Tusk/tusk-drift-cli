@@ -223,7 +223,13 @@ func RunTestsInteractive(tests []runner.Test, executor *runner.Executor) ([]runn
 	// Register this model as the global test logger
 	log.SetTUILogger(m)
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// In CI mode, don't use alt screen or mouse (they require a real TTY)
+	var p *tea.Program
+	if utils.TUICIMode() {
+		p = tea.NewProgram(m)
+	} else {
+		p = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	}
 	m.program = p
 	if _, err := p.Run(); err != nil {
 		log.SetTUILogger(nil)
@@ -247,7 +253,13 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 		}
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// In CI mode, don't use alt screen or mouse (they require a real TTY)
+	var p *tea.Program
+	if utils.TUICIMode() {
+		p = tea.NewProgram(m)
+	} else {
+		p = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	}
 	m.program = p
 	if _, err := p.Run(); err != nil {
 		log.SetTUILogger(nil)
