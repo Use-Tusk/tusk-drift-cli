@@ -31,6 +31,21 @@ func NewTuskTools(workDir string) *TuskTools {
 	return &TuskTools{workDir: workDir}
 }
 
+// ValidateConfig validates the .tusk/config.yaml file and returns detailed results.
+// This should be called after creating or modifying the config to catch errors early.
+func (tt *TuskTools) ValidateConfig(input json.RawMessage) (string, error) {
+	configPath := filepath.Join(tt.workDir, ".tusk", "config.yaml")
+
+	result := config.ValidateConfigFile(configPath)
+
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal validation result: %w", err)
+	}
+
+	return string(jsonBytes), nil
+}
+
 // List loads and lists traces from the .tusk/traces directory
 func (tt *TuskTools) List(input json.RawMessage) (string, error) {
 	_ = config.Load(filepath.Join(tt.workDir, ".tusk", "config.yaml"))

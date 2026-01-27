@@ -35,6 +35,7 @@ var toolDisplayNames = map[string]string{
 	"wait_for_ready":           "Wait for ready",
 	"http_request":             "HTTP request",
 	"ask_user":                 "Ask user",
+	"tusk_validate_config":     "Validate config",
 	"tusk_list":                "List traces",
 	"tusk_run":                 "Run tests",
 	"transition_phase":         "Complete phase",

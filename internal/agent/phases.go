@@ -541,6 +541,7 @@ func createConfigPhase() *Phase {
 		Tools: Tools(
 			ToolWriteFile,
 			ToolReadFile,
+			ToolTuskValidateConfig,
 			ToolAskUser,
 			ToolTransitionPhase,
 		),
@@ -560,6 +561,7 @@ func simpleTestPhase() *Phase {
 			ToolWaitForReady,
 			ToolGetProcessLogs,
 			ToolHTTPRequest,
+			ToolTuskValidateConfig,
 			ToolTuskList,
 			ToolTuskRun,
 			ToolReadFile,

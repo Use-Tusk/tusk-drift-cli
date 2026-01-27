@@ -25,6 +25,7 @@ const (
 	ToolHTTPRequest            ToolName = "http_request"
 	ToolAskUser                ToolName = "ask_user"
 	ToolAskUserSelect          ToolName = "ask_user_select"
+	ToolTuskValidateConfig     ToolName = "tusk_validate_config"
 	ToolTuskList               ToolName = "tusk_list"
 	ToolTuskRun                ToolName = "tusk_run"
 	ToolTransitionPhase        ToolName = "transition_phase"
@@ -377,6 +378,14 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				"required": ["question", "options"]
 			}`),
 		},
+		ToolTuskValidateConfig: {
+			Name:        ToolTuskValidateConfig,
+			Description: "Validate the .tusk/config.yaml file. ALWAYS call this after creating or modifying the config file to catch errors early. Returns validation results including any unknown keys, missing required fields, and schema hints.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
 		ToolTuskList: {
 			Name:        ToolTuskList,
 			Description: "Run 'tusk list' to show available recorded traces. Use after recording to verify traces were captured.",
@@ -666,6 +675,7 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolHTTPRequest:            http.Request,
 		ToolAskUser:                user.Ask,
 		ToolAskUserSelect:          nil, // Handled specially in agent.go like ask_user
+		ToolTuskValidateConfig:     tusk.ValidateConfig,
 		ToolTuskList:               tusk.List,
 		ToolTuskRun:                tusk.Run,
 		ToolTransitionPhase:        phaseMgr.PhaseTransitionTool(),
