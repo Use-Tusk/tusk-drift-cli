@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -223,7 +224,14 @@ func RunTestsInteractive(tests []runner.Test, executor *runner.Executor) ([]runn
 	// Register this model as the global test logger
 	log.SetTUILogger(m)
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// In CI mode, don't use alt screen or mouse, and provide an empty reader
+	// to avoid Bubble Tea trying to open /dev/tty (no keyboard input needed in CI)
+	var p *tea.Program
+	if utils.TUICIMode() {
+		p = tea.NewProgram(m, tea.WithInput(strings.NewReader("")), tea.WithOutput(os.Stdout))
+	} else {
+		p = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	}
 	m.program = p
 	if _, err := p.Run(); err != nil {
 		log.SetTUILogger(nil)
@@ -247,7 +255,14 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 		}
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// In CI mode, don't use alt screen or mouse, and provide an empty reader
+	// to avoid Bubble Tea trying to open /dev/tty (no keyboard input needed in CI)
+	var p *tea.Program
+	if utils.TUICIMode() {
+		p = tea.NewProgram(m, tea.WithInput(strings.NewReader("")), tea.WithOutput(os.Stdout))
+	} else {
+		p = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	}
 	m.program = p
 	if _, err := p.Run(); err != nil {
 		log.SetTUILogger(nil)
@@ -623,12 +638,22 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.cleanup()
 
+		// Auto-exit in CI/forced TUI mode (no user to press 'q')
+		if utils.TUICIMode() {
+			return m, tea.Quit
+		}
+
 	case executionFailedMsg:
 		m.state = stateCompleted
 		m.header.SetCompleted()
 		m.addServiceLog("\n" + strings.Repeat("=", 60))
 		m.addServiceLog("❌ Execution failed - no tests were run")
 		m.cleanup()
+
+		// Auto-exit in CI/forced TUI mode (no user to press 'q')
+		if utils.TUICIMode() {
+			return m, tea.Quit
+		}
 	}
 
 	// Update components
@@ -804,16 +829,10 @@ func (m *testExecutorModel) verticalLayout() string {
 
 func (m *testExecutorModel) addServiceLog(line string) {
 	m.logPanel.AddServiceLog(line)
-	if m.program != nil {
-		m.program.Send(refreshTickMsg{})
-	}
 }
 
 func (m *testExecutorModel) addTestLog(testID, line string) {
 	m.logPanel.AddTestLog(testID, line)
-	if m.program != nil {
-		m.program.Send(refreshTickMsg{})
-	}
 }
 
 func (m *testExecutorModel) updateStats() tea.Cmd {

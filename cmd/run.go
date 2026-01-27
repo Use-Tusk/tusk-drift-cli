@@ -145,7 +145,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		utils.SetTracesDirOverride(cfg.Traces.Dir)
 	}
 
-	interactive := !print && utils.IsTerminal()
+	interactive := !print && (utils.IsTerminal() || utils.TUICIMode())
 
 	var driftRunID string
 	var client *api.TuskClient
