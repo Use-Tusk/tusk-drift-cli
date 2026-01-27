@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -223,10 +224,11 @@ func RunTestsInteractive(tests []runner.Test, executor *runner.Executor) ([]runn
 	// Register this model as the global test logger
 	log.SetTUILogger(m)
 
-	// In CI mode, don't use alt screen or mouse (they require a real TTY)
+	// In CI mode, don't use alt screen or mouse, and provide an empty reader
+	// to avoid Bubble Tea trying to open /dev/tty (no keyboard input needed in CI)
 	var p *tea.Program
 	if utils.TUICIMode() {
-		p = tea.NewProgram(m)
+		p = tea.NewProgram(m, tea.WithInput(strings.NewReader("")), tea.WithOutput(os.Stdout))
 	} else {
 		p = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	}
@@ -253,10 +255,11 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 		}
 	}
 
-	// In CI mode, don't use alt screen or mouse (they require a real TTY)
+	// In CI mode, don't use alt screen or mouse, and provide an empty reader
+	// to avoid Bubble Tea trying to open /dev/tty (no keyboard input needed in CI)
 	var p *tea.Program
 	if utils.TUICIMode() {
-		p = tea.NewProgram(m)
+		p = tea.NewProgram(m, tea.WithInput(strings.NewReader("")), tea.WithOutput(os.Stdout))
 	} else {
 		p = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	}
