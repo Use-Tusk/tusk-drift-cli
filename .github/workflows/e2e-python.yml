@@ -61,8 +61,16 @@ jobs:
           $GITHUB_WORKSPACE/tusk run --print
           # Exits non-zero if any test has deviations
 
+      # CI environments don't have a TTY, so the CLI falls back to headless mode by default.
+      # We use `script` to create a pseudo-TTY, forcing the CLI to use the TUI code path.
+      # Linux and macOS have different `script` syntax, so we detect the OS.
       - name: Run E2E tests Interactive
         timeout-minutes: 2
         working-directory: ../drift-python-demo
         run: |
-          script -q -e -c "$GITHUB_WORKSPACE/tusk run" /dev/null
+          source venv/bin/activate
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            script -q /dev/null $GITHUB_WORKSPACE/tusk run
+          else
+            script -q -e -c "$GITHUB_WORKSPACE/tusk run" /dev/null
+          fi
