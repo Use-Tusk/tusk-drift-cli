@@ -70,10 +70,10 @@ func TestUpdateField_CreatesNestedStructure(t *testing.T) {
 	input := `service:
   name: my-service`
 
-	result := updateYAMLString(t, input, []string{"tusk_api", "url"}, "https://api.example.com")
+	result := updateYAMLString(t, input, []string{"custom_section", "custom_key"}, "custom_value")
 
-	assert.Contains(t, result, "tusk_api:")
-	assert.Contains(t, result, "url: https://api.example.com")
+	assert.Contains(t, result, "custom_section:")
+	assert.Contains(t, result, "custom_key: custom_value")
 }
 
 func TestUpdateField_PreservesComments(t *testing.T) {
@@ -176,45 +176,6 @@ recording:
 	assert.Contains(t, result, "enable_env_var_recording: true")
 	assert.NotContains(t, result, "!!float")
 	assert.NotContains(t, result, "!!bool")
-}
-
-func TestSaveTuskAPIURLToConfig_Integration(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "tusk-test-*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = os.RemoveAll(tmpDir)
-		config.Invalidate()
-	})
-
-	originalWd, err := os.Getwd()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.Chdir(originalWd) })
-
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
-
-	// Create .tusk directory and config file without tusk_api section
-	tuskDir := filepath.Join(tmpDir, ".tusk")
-	err = os.MkdirAll(tuskDir, 0o750)
-	require.NoError(t, err)
-
-	initialConfig := `service:
-  name: test-service
-`
-	err = os.WriteFile(filepath.Join(tuskDir, "config.yaml"), []byte(initialConfig), 0o600)
-	require.NoError(t, err)
-
-	// Save tusk_api.url
-	err = saveTuskAPIURLToConfig("https://api.usetusk.ai")
-	require.NoError(t, err)
-
-	// Read the file back
-	data, err := os.ReadFile(filepath.Join(tuskDir, "config.yaml")) // #nosec G304
-	require.NoError(t, err)
-
-	result := string(data)
-	assert.Contains(t, result, "tusk_api:")
-	assert.Contains(t, result, "url: https://api.usetusk.ai")
 }
 
 // Helper function to test updateField without file I/O

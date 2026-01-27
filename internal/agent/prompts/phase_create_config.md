@@ -18,9 +18,6 @@ service:
 traces:
   dir: .tusk/traces
 
-tusk_api:
-  url: https://api.usetusk.ai
-
 test_execution:
   timeout: 30s
 
@@ -50,9 +47,6 @@ service:
 
 traces:
   dir: .tusk/traces
-
-tusk_api:
-  url: https://api.usetusk.ai
 
 test_execution:
   timeout: 30s

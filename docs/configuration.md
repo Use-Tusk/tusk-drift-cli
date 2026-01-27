@@ -203,7 +203,7 @@ See: [Docker Compose example](#starting-your-service-with-docker-compose).
       <td></td>
       <td>Cloud: yes</td>
       <td><code>TUSK_API_URL</code></td>
-      <td>Base URL of Tusk Drift Cloud (e.g., <code>https://api.usetusk.ai</code>). The CLI targets <code>/api/drift/test_run_service</code> under this host.</td>
+      <td>Base URL of Tusk Drift Cloud. The CLI targets <code>/api/drift/test_run_service</code> under this host. This defaults to <code>https://api.usetusk.ai</code>. You generally don't need to override this.</td>
     </tr>
   </tbody>
 </table>
@@ -470,9 +470,6 @@ service:
     command: curl -sf http://localhost:3000/health
     timeout: 30s
     interval: 2s
-
-tusk_api:
-  url: https://app.usetusk.ai
 ```
 
 To run against traces to Tusk Drift Cloud, your config file must contain `service.id` and `tusk_api.url`.

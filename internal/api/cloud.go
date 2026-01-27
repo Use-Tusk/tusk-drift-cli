@@ -14,9 +14,6 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 	if cfgErr != nil {
 		return nil, AuthOptions{}, nil, fmt.Errorf("failed to load config: %w", cfgErr)
 	}
-	if cfg.TuskAPI.URL == "" {
-		return nil, AuthOptions{}, nil, fmt.Errorf("Tusk API URL is required. Set tusk_api.url in '.tusk/config.yaml' or run 'tusk init-cloud'")
-	}
 	if requireServiceID && cfg.Service.ID == "" {
 		return nil, AuthOptions{}, nil, fmt.Errorf("Service ID is required. Set config.service.id in '.tusk/config.yaml'")
 	}

@@ -219,11 +219,3 @@ func saveRecordingConfig(samplingRate float64, exportSpans, enableEnvVarRecordin
 		return nil
 	})
 }
-
-func saveTuskAPIURLToConfig(url string) error {
-	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
-		cfg.TuskAPI.URL = url
-		u.Set([]string{"tusk_api", "url"}, url)
-		return nil
-	})
-}
