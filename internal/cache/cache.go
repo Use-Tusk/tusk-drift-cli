@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,24 @@ import (
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"google.golang.org/protobuf/proto"
 )
+
+// ErrInvalidID is returned when an ID contains path traversal characters.
+var ErrInvalidID = errors.New("invalid ID: contains path traversal characters")
+
+// isValidPathComponent checks that an ID is safe to use as a single path component.
+// It rejects IDs containing path separators or parent directory references.
+func isValidPathComponent(id string) bool {
+	if id == "" || id == "." || id == ".." {
+		return false
+	}
+	if strings.ContainsAny(id, `/\`) {
+		return false
+	}
+	if strings.Contains(id, "..") {
+		return false
+	}
+	return true
+}
 
 // TraceCache manages local caching of cloud trace tests.
 // Cache files are stored as protobuf-serialized .bin files named by trace test ID.
@@ -19,13 +38,17 @@ type TraceCache struct {
 // NewTraceCache creates a new TraceCache for the given service ID.
 // The cache directory is: <os.UserCacheDir()>/tusk/<serviceID>/
 func NewTraceCache(serviceID string) (*TraceCache, error) {
+	if !isValidPathComponent(serviceID) {
+		return nil, fmt.Errorf("invalid service ID %q: %w", serviceID, ErrInvalidID)
+	}
+
 	userCacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user cache directory: %w", err)
 	}
 
 	cacheDir := filepath.Join(userCacheDir, "tusk", serviceID)
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -57,8 +80,12 @@ func (c *TraceCache) GetCachedIds() ([]string, error) {
 
 // LoadTrace loads a single trace test from cache by ID.
 func (c *TraceCache) LoadTrace(id string) (*backend.TraceTest, error) {
+	if !isValidPathComponent(id) {
+		return nil, fmt.Errorf("invalid trace ID %q: %w", id, ErrInvalidID)
+	}
+
 	filePath := filepath.Join(c.cacheDir, id+".bin")
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) //nolint:gosec // G304: id is validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read cache file %s: %w", filePath, err)
 	}
@@ -101,13 +128,17 @@ func (c *TraceCache) SaveTraces(traces []*backend.TraceTest) error {
 
 // saveTrace saves a single trace test to cache.
 func (c *TraceCache) saveTrace(trace *backend.TraceTest) error {
+	if !isValidPathComponent(trace.Id) {
+		return fmt.Errorf("invalid trace ID %q: %w", trace.Id, ErrInvalidID)
+	}
+
 	data, err := proto.Marshal(trace)
 	if err != nil {
 		return fmt.Errorf("failed to marshal trace %s: %w", trace.Id, err)
 	}
 
 	filePath := filepath.Join(c.cacheDir, trace.Id+".bin")
-	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write cache file %s: %w", filePath, err)
 	}
 	return nil
@@ -116,6 +147,10 @@ func (c *TraceCache) saveTrace(trace *backend.TraceTest) error {
 // DeleteTraces removes the specified trace test IDs from cache.
 func (c *TraceCache) DeleteTraces(ids []string) error {
 	for _, id := range ids {
+		if !isValidPathComponent(id) {
+			return fmt.Errorf("invalid trace ID %q: %w", id, ErrInvalidID)
+		}
+
 		filePath := filepath.Join(c.cacheDir, id+".bin")
 		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to delete cache file %s: %w", filePath, err)

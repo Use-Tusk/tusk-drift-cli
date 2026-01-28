@@ -96,7 +96,7 @@ func TestTraceCache(t *testing.T) {
 	// Create a temporary directory for the test
 	tmpDir := t.TempDir()
 	cacheDir := filepath.Join(tmpDir, "test-service")
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
 		t.Fatalf("failed to create cache dir: %v", err)
 	}
 
