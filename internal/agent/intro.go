@@ -40,16 +40,36 @@ The agent will guide you through the following phases:
 
 You may be prompted for input during the setup process.`
 
+const introDescriptionCloudOnly = `Welcome to Tusk Drift Cloud Setup!
+
+This AI-powered agent will help you connect your service to Tusk
+Drift Cloud, enabling CI/CD integration and cloud features.
+
+The agent will guide you through the following phases:
+  • Auth          - Authenticate with Tusk Cloud
+  • Repository    - Detect and verify repository access
+  • Service       - Register your service in Tusk Cloud
+  • API Key       - Generate an API key for CI/CD
+  • Recording     - Configure recording parameters
+  • Upload        - Upload traces to Tusk Cloud
+  • Validation    - Validate traces and test suite
+
+You may be prompted for input during the setup process.`
+
 const introProxyNote = `
 
 Note: For convenience, this setup agent will use Tusk's servers as a proxy to the Anthropic API. Your data is never used for training. See usetusk.ai/privacy for details.`
 
-// getIntroDescription returns the appropriate description based on API mode
-func getIntroDescription(isProxyMode bool) string {
-	if isProxyMode {
-		return introDescriptionBase + introProxyNote
+// getIntroDescription returns the appropriate description based on API mode and skipToCloud
+func getIntroDescription(isProxyMode, skipToCloud bool) string {
+	base := introDescriptionBase
+	if skipToCloud {
+		base = introDescriptionCloudOnly
 	}
-	return introDescriptionBase
+	if isProxyMode {
+		return base + introProxyNote
+	}
+	return base
 }
 
 // Color gradient for the wave effect
@@ -88,14 +108,15 @@ type IntroModel struct {
 	logoWidth  int
 	logoHeight int
 
-	// API mode (affects description text)
-	isProxyMode bool
+	// Modes that affect description text
+	isProxyMode bool // Direct/proxy
+	skipToCloud bool // Skip local setup
 }
 
 type introTickMsg time.Time
 
 // NewIntroModel creates a new intro screen model
-func NewIntroModel(isProxyMode bool) *IntroModel {
+func NewIntroModel(isProxyMode, skipToCloud bool) *IntroModel {
 	lines := strings.Split(tuskLogo, "\n")
 
 	maxWidth := 0
@@ -111,6 +132,7 @@ func NewIntroModel(isProxyMode bool) *IntroModel {
 		logoLines:   lines,
 		logoWidth:   maxWidth,
 		isProxyMode: isProxyMode,
+		skipToCloud: skipToCloud,
 		logoHeight:  len(lines),
 		mouseX:      -1,
 		mouseY:      -1,
@@ -219,7 +241,7 @@ func (m *IntroModel) View() string {
 		BorderForeground(lipgloss.Color(boxBorderColor)).
 		Padding(1, 2)
 
-	descBox := boxStyle.Render(descStyle.Render(getIntroDescription(m.isProxyMode)))
+	descBox := boxStyle.Render(descStyle.Render(getIntroDescription(m.isProxyMode, m.skipToCloud)))
 
 	centeredDesc := lipgloss.NewStyle().
 		Width(m.width).
@@ -308,8 +330,8 @@ func (m *IntroModel) ShouldContinue() bool {
 }
 
 // RunIntroScreen runs the intro screen and returns true if user wants to continue
-func RunIntroScreen(isProxyMode bool) (bool, error) {
-	model := NewIntroModel(isProxyMode)
+func RunIntroScreen(isProxyMode, skipToCloud bool) (bool, error) {
+	model := NewIntroModel(isProxyMode, skipToCloud)
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 
 	finalModel, err := p.Run()
@@ -332,7 +354,7 @@ func RunIntroScreen(isProxyMode bool) (bool, error) {
 }
 
 // PrintIntroHeadless prints a simple intro for headless mode (no confirmation needed for scripts)
-func PrintIntroHeadless(isProxyMode bool) {
+func PrintIntroHeadless(isProxyMode, skipToCloud bool) {
 	primaryStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		Bold(true)
@@ -343,7 +365,7 @@ func PrintIntroHeadless(isProxyMode bool) {
 	fmt.Println()
 	fmt.Println(primaryStyle.Render(tuskLogo))
 	fmt.Println()
-	fmt.Println(getIntroDescription(isProxyMode))
+	fmt.Println(getIntroDescription(isProxyMode, skipToCloud))
 	fmt.Println()
 	fmt.Println(dimStyle.Render("────────────────────────────────────────────────────────"))
 	fmt.Println()
