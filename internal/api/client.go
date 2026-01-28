@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -199,6 +200,21 @@ func (c *TuskClient) makeClientServiceRequest(ctx context.Context, endpoint stri
 	return c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, endpoint, req, resp, auth, DefaultRetryConfig(0))
 }
 
+// NoSeatError is returned when the PR creator doesn't have a Tusk Cloud seat
+type NoSeatError struct {
+	Message string
+}
+
+func (e *NoSeatError) Error() string {
+	return e.Message
+}
+
+// IsNoSeatError checks if an error is a NoSeatError
+func IsNoSeatError(err error) bool {
+	var noSeatErr *NoSeatError
+	return errors.As(err, &noSeatErr)
+}
+
 func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDriftRunRequest, auth AuthOptions) (string, error) {
 	var out backend.CreateDriftRunResponse
 	if err := c.makeTestRunServiceRequest(ctx, "create_drift_run", in, &out, auth, DefaultRetryConfig(3)); err != nil {
@@ -209,6 +225,9 @@ func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDrift
 		return s.DriftRunId, nil
 	}
 	if e := out.GetError(); e != nil {
+		if e.Code == "NO_SEAT" {
+			return "", &NoSeatError{Message: e.Message}
+		}
 		return "", fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
 	return "", fmt.Errorf("invalid response")

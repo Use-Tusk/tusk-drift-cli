@@ -231,6 +231,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			id, err := client.CreateDriftRun(context.Background(), req, authOptions)
 			if err != nil {
+				// Handle NO_SEAT error as a no-op in CI mode
+				if api.IsNoSeatError(err) && ci {
+					log.Stderrln("Skipping: " + err.Error())
+					return nil
+				}
 				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
 				return fmt.Errorf("failed to create drift run: %w", err)
 			}
