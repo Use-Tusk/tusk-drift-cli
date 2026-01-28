@@ -230,7 +230,7 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 // RunValidation runs 'tusk run --cloud --validate-suite --print' and returns the results
 func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
 	// Execute tusk run --cloud --validate-suite --print
-	cmd := exec.Command("tusk", "run", "--cloud", "--validate-suite-if-default-branch", "--print")
+	cmd := exec.Command("tusk", "run", "--cloud", "--validate-suite", "--print")
 	cmd.Dir = tt.workDir
 
 	output, err := cmd.CombinedOutput()
