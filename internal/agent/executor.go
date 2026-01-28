@@ -606,6 +606,10 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 					"app_dir": {
 						"type": "string",
 						"description": "Optional relative path from repo root to the app directory"
+					},
+					"service_name": {
+						"type": "string",
+						"description": "Display name for the observable service (default: 'Backend service')"
 					}
 				},
 				"required": ["owner", "repo", "project_type"]
