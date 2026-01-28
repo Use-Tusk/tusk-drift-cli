@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 	"gopkg.in/yaml.v3"
 )
 
@@ -819,4 +821,115 @@ func (ct *CloudTools) WaitForAuth(input json.RawMessage) (string, error) {
 			}
 		}
 	}
+}
+
+// UploadTraces uploads local traces to Tusk Cloud
+func (ct *CloudTools) UploadTraces(input json.RawMessage) (string, error) {
+	var params struct {
+		ServiceID string `json:"service_id"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("invalid input: %w", err)
+	}
+
+	if params.ServiceID == "" {
+		return "", fmt.Errorf("service_id is required")
+	}
+
+	// Find all trace files in .tusk/traces/
+	tracesDir := utils.GetTracesDir()
+	if _, err := os.Stat(tracesDir); os.IsNotExist(err) {
+		result := map[string]interface{}{
+			"success":         false,
+			"message":         "No traces directory found",
+			"traces_uploaded": 0,
+		}
+		data, _ := json.Marshal(result)
+		return string(data), nil
+	}
+
+	// Collect all .jsonl files
+	var traceFiles []string
+	err := filepath.Walk(tracesDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".jsonl") {
+			traceFiles = append(traceFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to scan traces directory: %w", err)
+	}
+
+	if len(traceFiles) == 0 {
+		result := map[string]interface{}{
+			"success":         false,
+			"message":         "No trace files found",
+			"traces_uploaded": 0,
+		}
+		data, _ := json.Marshal(result)
+		return string(data), nil
+	}
+
+	// Parse and collect all spans from all trace files
+	var allSpans []*core.Span
+	for _, traceFile := range traceFiles {
+		spans, err := utils.ParseSpansFromFile(traceFile, nil)
+		if err != nil {
+			// Log warning but continue with other files
+			continue
+		}
+		allSpans = append(allSpans, spans...)
+	}
+
+	if len(allSpans) == 0 {
+		result := map[string]interface{}{
+			"success":         false,
+			"message":         "No spans found in trace files",
+			"traces_uploaded": 0,
+		}
+		data, _ := json.Marshal(result)
+		return string(data), nil
+	}
+
+	// Upload spans to cloud
+	ctx := context.Background()
+	client, authOptions, _, err := api.SetupCloud(ctx, false)
+	if err != nil {
+		return "", fmt.Errorf("failed to setup cloud connection: %w", err)
+	}
+
+	req := &backend.ExportSpansRequest{
+		ObservableServiceId: params.ServiceID,
+		Environment:         "setup-agent",
+		SdkVersion:          "cli-setup",
+		SdkInstanceId:       fmt.Sprintf("setup-%d", time.Now().Unix()),
+		Spans:               allSpans,
+	}
+
+	resp, err := client.ExportSpans(ctx, req, authOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload traces: %w", err)
+	}
+
+	if !resp.Success {
+		result := map[string]interface{}{
+			"success":         false,
+			"message":         resp.Message,
+			"traces_uploaded": 0,
+		}
+		data, _ := json.Marshal(result)
+		return string(data), nil
+	}
+
+	result := map[string]interface{}{
+		"success":         true,
+		"message":         "Traces uploaded successfully",
+		"traces_uploaded": len(traceFiles),
+		"spans_uploaded":  len(allSpans),
+	}
+	data, _ := json.Marshal(result)
+	return string(data), nil
 }

@@ -71,6 +71,12 @@ var PhaseCloudCreateApiKeyPrompt string
 //go:embed prompts/phase_cloud_configure_recording.md
 var PhaseCloudConfigureRecordingPrompt string
 
+//go:embed prompts/phase_cloud_upload_traces.md
+var PhaseCloudUploadTracesPrompt string
+
+//go:embed prompts/phase_cloud_validate_suite.md
+var PhaseCloudValidateSuitePrompt string
+
 //go:embed prompts/phase_cloud_summary.md
 var PhaseCloudSummaryPrompt string
 

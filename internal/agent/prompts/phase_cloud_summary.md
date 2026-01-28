@@ -14,17 +14,29 @@ Generate a final report documenting the cloud setup.
    - Export Spans: {enabled/disabled}
    - Env Var Recording: {enabled/disabled}
 
-3. **API Key Status**:
+3. **Trace Upload Status**:
+   - Attempted: Yes/No
+   - Success: Yes/No
+   - Traces Uploaded: {count}
+   - If failed, explain why and how to upload manually later
+
+4. **Suite Validation Status**:
+   - Attempted: Yes/No
+   - Success: Yes/No
+   - Tests in Suite: {count}
+   - If no tests in suite, explain how to validate manually with `tusk run --cloud --validate-suite`
+
+5. **API Key Status**:
    - Created: Yes/No/Already existed
    - If created, remind to save it securely
 
-4. **Next Steps For User**:
+6. **Next Steps For User**:
    - Push changes to deploy with Tusk Drift
    - Run `tusk list --cloud` to see cloud traces
    - Run `tusk run --cloud` to execute cloud tests
    - Set up CI/CD workflow (if not done)
 
-5. **Useful Links**:
+7. **Useful Links**:
    - Dashboard: <https://app.usetusk.ai>
    - Documentation: <https://docs.usetusk.ai/api-tests/tusk-drift-cloud>
    - Support: <support@usetusk.ai>

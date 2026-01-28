@@ -177,6 +177,28 @@ func (pm *PhaseManager) UpdateState(results map[string]interface{}) {
 	if v, ok := results["enable_env_var_recording"].(bool); ok {
 		pm.state.EnableEnvVarRecording = v
 	}
+
+	// Trace upload state
+	if v, ok := results["traces_uploaded"].(float64); ok {
+		pm.state.TracesUploaded = int(v)
+	}
+	if v, ok := results["trace_upload_success"].(bool); ok {
+		pm.state.TraceUploadSuccess = v
+	}
+	if v, ok := results["trace_upload_attempted"].(bool); ok {
+		pm.state.TraceUploadAttempted = v
+	}
+
+	// Suite validation state
+	if v, ok := results["suite_validation_success"].(bool); ok {
+		pm.state.SuiteValidationSuccess = v
+	}
+	if v, ok := results["tests_in_suite"].(float64); ok {
+		pm.state.TestsInSuite = int(v)
+	}
+	if v, ok := results["suite_validation_attempted"].(bool); ok {
+		pm.state.SuiteValidationAttempted = v
+	}
 }
 
 // StateAsContext returns the current state as a string for the prompt
@@ -297,6 +319,8 @@ func (pm *PhaseManager) AddCloudPhases() {
 		cloudCreateServicePhase(),
 		cloudCreateApiKeyPhase(),
 		cloudConfigureRecordingPhase(),
+		cloudUploadTracesPhase(),
+		cloudValidateSuitePhase(),
 		cloudSummaryPhase(),
 	}
 	pm.phases = append(pm.phases, cloudPhases...)
@@ -311,6 +335,8 @@ func (pm *PhaseManager) SetCloudOnlyMode() {
 		cloudCreateServicePhase(),
 		cloudCreateApiKeyPhase(),
 		cloudConfigureRecordingPhase(),
+		cloudUploadTracesPhase(),
+		cloudValidateSuitePhase(),
 		cloudSummaryPhase(),
 	}
 	pm.currentIdx = 0
@@ -755,6 +781,49 @@ func cloudConfigureRecordingPhase() *Phase {
 			ToolTransitionPhase,
 		),
 		Required:      true,
+		MaxIterations: 15,
+	}
+}
+
+func cloudUploadTracesPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_upload_traces",
+		Name:         "Upload Traces",
+		Description:  "Upload local traces to Tusk Cloud",
+		Instructions: PhaseCloudUploadTracesPrompt,
+		Tools: Tools(
+			ToolTuskList,
+			ToolStartBackgroundProcess,
+			ToolStopBackgroundProcess,
+			ToolWaitForReady,
+			ToolGetProcessLogs,
+			ToolHTTPRequest,
+			ToolCloudUploadTraces,
+			ToolCloudSaveConfig,
+			ToolReadFile,
+			ToolAskUser,
+			ToolTransitionPhase,
+			ToolAbortSetup,
+			ToolResetCloudProgress,
+			ToolTuskValidateConfig,
+		),
+		Required:      false,
+		MaxIterations: 30,
+	}
+}
+
+func cloudValidateSuitePhase() *Phase {
+	return &Phase{
+		ID:           "cloud_validate_suite",
+		Name:         "Validate Suite",
+		Description:  "Validate traces and add to test suite",
+		Instructions: PhaseCloudValidateSuitePrompt,
+		Tools: Tools(
+			ToolCloudRunValidation,
+			ToolAskUser,
+			ToolTransitionPhase,
+		),
+		Required:      false,
 		MaxIterations: 15,
 	}
 }
