@@ -56,6 +56,7 @@ If no traces are found:
    a. First, call `cloud_save_config` to set recording config for local mode:
    ```json
    {
+     "service_id": "<from state.cloud_service_id>",
      "sampling_rate": 1.0,
      "export_spans": false,
      "enable_env_var_recording": false
