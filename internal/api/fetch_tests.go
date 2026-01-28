@@ -151,11 +151,9 @@ func FetchAllTraceTestsWithCache(
 ) ([]*backend.TraceTest, error) {
 	traceCache, err := cache.NewTraceCache(serviceID)
 	if err != nil {
-		// Cache init failed, fall back to full fetch
 		return FetchAllTraceTests(ctx, client, auth, serviceID, nil)
 	}
 
-	// 1. Fetch all IDs from API
 	tracker := utils.NewProgressTracker("Syncing traces from Tusk Drift Cloud", false, false)
 	idsResp, err := client.GetAllTraceTestIds(ctx, &backend.GetAllTraceTestIdsRequest{
 		ObservableServiceId: serviceID,
@@ -172,18 +170,14 @@ func FetchAllTraceTestsWithCache(
 	}
 	remoteIds := idsResp.TraceTestIds
 
-	// 2. Get cached IDs
 	cachedIds, err := traceCache.GetCachedIds()
 	if err != nil {
 		tracker.Stop()
-		// Cache read failed, fall back to full fetch
 		return FetchAllTraceTests(ctx, client, auth, serviceID, nil)
 	}
 
-	// 3. Compute diff
 	toFetch, toDelete := cache.DiffIds(remoteIds, cachedIds)
 
-	// 4. Delete removed traces
 	if len(toDelete) > 0 {
 		if err := traceCache.DeleteTraces(toDelete); err != nil {
 			// Non-fatal, continue
@@ -191,7 +185,6 @@ func FetchAllTraceTestsWithCache(
 		}
 	}
 
-	// 5. Batch fetch new traces and save
 	if len(toFetch) > 0 {
 		tracker.SetTotal(len(toFetch))
 		tracker.Update(0)
@@ -214,6 +207,5 @@ func FetchAllTraceTestsWithCache(
 
 	tracker.Finish("")
 
-	// 6. Load all from cache for display
 	return traceCache.LoadAllTraces()
 }
