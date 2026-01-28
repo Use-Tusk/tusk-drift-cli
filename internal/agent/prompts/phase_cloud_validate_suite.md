@@ -26,6 +26,9 @@ If traces were uploaded, run the validation:
    - It validates all uploaded traces against the live service
    - Passing tests are automatically added to the test suite
 
+> **Tip:** If validation fails because the server is already running on the required port, prompt the user to stop the existing server process before retrying. The validation tool needs to start its own instance of the service.
+
+
 2. Parse the result:
    - `success`: whether validation ran successfully
    - `tests_passed`: number of tests that passed validation

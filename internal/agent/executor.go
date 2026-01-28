@@ -30,6 +30,7 @@ const (
 	ToolTuskRun                ToolName = "tusk_run"
 	ToolTransitionPhase        ToolName = "transition_phase"
 	ToolAbortSetup             ToolName = "abort_setup"
+	ToolResetCloudProgress     ToolName = "reset_cloud_progress"
 
 	// Cloud setup tools
 	ToolCloudCheckAuth         ToolName = "cloud_check_auth"
@@ -449,6 +450,19 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 			"required": ["reason"]
 		}`),
 		},
+		ToolResetCloudProgress: {
+			Name:        ToolResetCloudProgress,
+			Description: "Remove a specific phase from progress so it will run again on next setup. If no phase_name is provided, removes all cloud phases. Use this before aborting if you want certain phases to re-run.",
+			InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"phase_name": {
+					"type": "string",
+					"description": "The name of the phase to remove from progress (e.g., 'Configure Recording'). If not provided, all cloud phases are removed."
+				}
+			}
+		}`),
+		},
 
 		// Cloud setup tools
 		ToolCloudCheckAuth: {
@@ -704,6 +718,7 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolTuskRun:                tusk.Run,
 		ToolTransitionPhase:        phaseMgr.PhaseTransitionTool(),
 		ToolAbortSetup:             tools.AbortSetup,
+		ToolResetCloudProgress:     tools.ResetPhaseProgress(workDir),
 
 		// Cloud tools
 		ToolCloudCheckAuth:         cloud.CheckAuth,
