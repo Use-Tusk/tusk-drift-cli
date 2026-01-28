@@ -111,6 +111,7 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, su
 	}
 
 	m.rebuildRows()
+	m.updateDetailsContent()
 
 	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		return err

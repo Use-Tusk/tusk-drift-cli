@@ -391,3 +391,35 @@ func (c *TuskClient) GetValidationTraceTests(ctx context.Context, in *backend.Ge
 	}
 	return nil, fmt.Errorf("invalid response")
 }
+
+// GetAllTraceTestIds fetches all trace test IDs for a service (lightweight, no pagination).
+func (c *TuskClient) GetAllTraceTestIds(ctx context.Context, in *backend.GetAllTraceTestIdsRequest, auth AuthOptions) (*backend.GetAllTraceTestIdsResponseSuccess, error) {
+	var out backend.GetAllTraceTestIdsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_all_trace_test_ids", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}
+
+// GetTraceTestsByIds fetches trace tests by their IDs (batch fetch).
+func (c *TuskClient) GetTraceTestsByIds(ctx context.Context, in *backend.GetTraceTestsByIdsRequest, auth AuthOptions) (*backend.GetTraceTestsByIdsResponseSuccess, error) {
+	var out backend.GetTraceTestsByIdsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_trace_tests_by_ids", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}

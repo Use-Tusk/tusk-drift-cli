@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cache"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
@@ -137,4 +138,74 @@ func FetchDriftRunTraceTests(
 
 	tracker.Finish("")
 	return all, nil
+}
+
+// FetchAllTraceTestsWithCache fetches trace tests using ID-based cache diffing.
+// It only fetches new traces and removes deleted ones from cache.
+// On network error, it falls back to cached data if available.
+func FetchAllTraceTestsWithCache(
+	ctx context.Context,
+	client *TuskClient,
+	auth AuthOptions,
+	serviceID string,
+) ([]*backend.TraceTest, error) {
+	traceCache, err := cache.NewTraceCache(serviceID)
+	if err != nil {
+		return FetchAllTraceTests(ctx, client, auth, serviceID, nil)
+	}
+
+	tracker := utils.NewProgressTracker("Syncing traces from Tusk Drift Cloud", false, false)
+	idsResp, err := client.GetAllTraceTestIds(ctx, &backend.GetAllTraceTestIdsRequest{
+		ObservableServiceId: serviceID,
+	}, auth)
+	if err != nil {
+		tracker.Stop()
+		// Network error: try loading from cache
+		cached, cacheErr := traceCache.LoadAllTraces()
+		if cacheErr != nil || len(cached) == 0 {
+			return nil, fmt.Errorf("failed to fetch trace test IDs and no cache available: %w", err)
+		}
+		fmt.Printf("Warning: Using cached data due to network error: %v\n", err)
+		return cached, nil
+	}
+	remoteIds := idsResp.TraceTestIds
+
+	cachedIds, err := traceCache.GetCachedIds()
+	if err != nil {
+		tracker.Stop()
+		return FetchAllTraceTests(ctx, client, auth, serviceID, nil)
+	}
+
+	toFetch, toDelete := cache.DiffIds(remoteIds, cachedIds)
+
+	if len(toDelete) > 0 {
+		if err := traceCache.DeleteTraces(toDelete); err != nil {
+			// Non-fatal, continue
+			fmt.Printf("Warning: failed to delete some cached traces: %v\n", err)
+		}
+	}
+
+	if len(toFetch) > 0 {
+		tracker.SetTotal(len(toFetch))
+		tracker.Update(0)
+
+		newTraces, err := client.GetTraceTestsByIds(ctx, &backend.GetTraceTestsByIdsRequest{
+			ObservableServiceId: serviceID,
+			TraceTestIds:        toFetch,
+		}, auth)
+		if err != nil {
+			tracker.Stop()
+			return nil, fmt.Errorf("failed to fetch new trace tests: %w", err)
+		}
+
+		if err := traceCache.SaveTraces(newTraces.TraceTests); err != nil {
+			// Non-fatal, traces are still usable
+			fmt.Printf("Warning: failed to save some traces to cache: %v\n", err)
+		}
+		tracker.Update(len(toFetch))
+	}
+
+	tracker.Finish("")
+
+	return traceCache.LoadAllTraces()
 }

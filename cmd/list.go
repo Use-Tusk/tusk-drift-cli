@@ -72,7 +72,7 @@ func listTests(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		all, err := api.FetchAllTraceTests(context.Background(), client, authOptions, cfg.Service.ID, nil)
+		all, err := api.FetchAllTraceTestsWithCache(context.Background(), client, authOptions, cfg.Service.ID)
 		if err != nil {
 			return err
 		}
