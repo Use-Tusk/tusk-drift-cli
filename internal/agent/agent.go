@@ -195,7 +195,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 
 	// Show intro screen and wait for user to continue
 	isProxyMode := a.client.mode == APIModeProxy
-	shouldContinue, err := a.ui.ShowIntro(isProxyMode)
+	shouldContinue, err := a.ui.ShowIntro(isProxyMode, a.skipToCloud)
 	if err != nil {
 		return fmt.Errorf("failed to show intro: %w", err)
 	}

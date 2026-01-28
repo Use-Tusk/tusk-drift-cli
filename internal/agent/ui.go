@@ -12,7 +12,8 @@ type AgentUI interface {
 	// ShowIntro displays the intro screen with animation and description.
 	// Returns true if user wants to continue, false if they quit.
 	// isProxyMode determines whether to show the proxy mode note.
-	ShowIntro(isProxyMode bool) (bool, error)
+	// skipToCloud determines whether to show the cloud-only phases description.
+	ShowIntro(isProxyMode, skipToCloud bool) (bool, error)
 
 	// Phase updates
 	PhaseChange(name, desc string, phaseNum, totalPhases int)
