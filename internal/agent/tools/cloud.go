@@ -592,8 +592,9 @@ func (ct *CloudTools) CreateObservableService(input json.RawMessage) (string, er
 		Owner       string `json:"owner"`
 		Repo        string `json:"repo"`
 		ClientID    string `json:"client_id"`
-		ProjectType string `json:"project_type"` // "nodejs" or "python"
-		AppDir      string `json:"app_dir"`      // Optional: relative path from repo root
+		ProjectType string `json:"project_type"`  // "nodejs" or "python"
+		AppDir      string `json:"app_dir"`       // Optional: relative path from repo root
+		ServiceName string `json:"service_name"`  // Optional: display name for the service
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("invalid input: %w", err)
@@ -619,11 +620,17 @@ func (ct *CloudTools) CreateObservableService(input json.RawMessage) (string, er
 		appDirPtr = &params.AppDir
 	}
 
+	var namePtr *string
+	if params.ServiceName != "" {
+		namePtr = &params.ServiceName
+	}
+
 	req := &backend.CreateObservableServiceRequest{
 		RepoOwnerName: params.Owner,
 		RepoName:      params.Repo,
 		ServiceType:   serviceType,
 		AppDir:        appDirPtr,
+		Name:          namePtr,
 	}
 
 	resp, err := client.CreateObservableService(ctx, req, authOptions)

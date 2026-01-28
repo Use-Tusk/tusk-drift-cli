@@ -744,6 +744,7 @@ func cloudCreateServicePhase() *Phase {
 		Tools: Tools(
 			ToolCloudCreateService,
 			ToolTransitionPhase,
+			ToolAskUser,
 		),
 		Required:      true,
 		MaxIterations: 10,
