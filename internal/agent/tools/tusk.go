@@ -230,7 +230,7 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 // RunValidation runs 'tusk run --cloud --validate-suite --print' and returns the results
 func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
 	// Execute tusk run --cloud --validate-suite --print
-	cmd := exec.Command("tusk", "run", "--cloud", "--validate-suite", "--print")
+	cmd := exec.Command("tusk", "run", "--cloud", "--validate-suite-if-default-branch", "--print")
 	cmd.Dir = tt.workDir
 
 	output, err := cmd.CombinedOutput()
@@ -248,9 +248,11 @@ func (tt *TuskTools) parseValidationOutput(output string, runErr error) (string,
 	failed := 0
 
 	for _, line := range lines {
-		if strings.Contains(line, "✓ PASS") || strings.Contains(line, "PASS") {
+		// tusk run --print outputs "NO DEVIATION" for passed tests and "DEVIATION" for failed
+		// Must check "NO DEVIATION" first since "DEVIATION" is a substring of it
+		if strings.Contains(line, "NO DEVIATION") {
 			passed++
-		} else if strings.Contains(line, "✗ FAIL") || strings.Contains(line, "FAIL") {
+		} else if strings.Contains(line, "DEVIATION") {
 			failed++
 		}
 	}

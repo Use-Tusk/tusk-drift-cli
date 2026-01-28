@@ -804,16 +804,10 @@ func (m *testExecutorModel) verticalLayout() string {
 
 func (m *testExecutorModel) addServiceLog(line string) {
 	m.logPanel.AddServiceLog(line)
-	if m.program != nil {
-		m.program.Send(refreshTickMsg{})
-	}
 }
 
 func (m *testExecutorModel) addTestLog(testID, line string) {
 	m.logPanel.AddTestLog(testID, line)
-	if m.program != nil {
-		m.program.Send(refreshTickMsg{})
-	}
 }
 
 func (m *testExecutorModel) updateStats() tea.Cmd {

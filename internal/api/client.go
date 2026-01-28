@@ -66,7 +66,7 @@ const (
 
 	TestRunServiceAPIPath    = "/api/drift/test_run_service"
 	ClientServiceAPIPath     = "/api/drift/client_service"
-	SpanExportServiceAPIPath = "/api/drift/span_export_service"
+	SpanExportServiceAPIPath = "/api/drift/tusk.drift.backend.v1.SpanExportService"
 )
 
 // GetBaseURL returns the API base URL with the following priority:

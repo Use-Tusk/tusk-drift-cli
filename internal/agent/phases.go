@@ -801,6 +801,7 @@ func cloudUploadTracesPhase() *Phase {
 			ToolReadFile,
 			ToolAskUser,
 			ToolTransitionPhase,
+			ToolAbortSetup,
 		),
 		Required:      false,
 		MaxIterations: 30,

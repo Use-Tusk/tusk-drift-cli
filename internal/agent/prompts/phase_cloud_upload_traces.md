@@ -41,7 +41,7 @@ If no traces are found:
 5. **If user says no**: Use `abort_setup` with:
    ```json
    {
-     "reason": "User chose to stop and record traces first. Run `tusk setup` to record traces."
+     "reason": "User chose to stop and record traces first. User should run `tusk setup` to record traces."
    }
    ```
 
