@@ -229,12 +229,22 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 
 // RunValidation runs 'tusk run --cloud --validate-suite --print' and returns the results
 func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
+	// Use a timeout to prevent hanging indefinitely
+	timeout := 120 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	// Execute tusk run --cloud --validate-suite --print
-	cmd := exec.Command("tusk", "run", "--cloud", "--validate-suite", "--print")
+	cmd := exec.CommandContext(ctx, "tusk", "run", "--cloud", "--validate-suite", "--print")
 	cmd.Dir = tt.workDir
 
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
+
+	// Check for timeout
+	if ctx.Err() == context.DeadlineExceeded {
+		return tt.parseValidationOutput(outputStr, fmt.Errorf("validation timed out after %v", timeout))
+	}
 
 	// Parse output even on error - validation may have failed but we want the results
 	return tt.parseValidationOutput(outputStr, err)
