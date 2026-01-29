@@ -27,6 +27,7 @@ var (
 	setupPrintMode       bool
 	setupOutputLogs      bool
 	setupEligibilityOnly bool
+	setupVerifyMode      bool
 )
 
 var setupCmd = &cobra.Command{
@@ -47,6 +48,7 @@ func init() {
 	setupCmd.Flags().BoolVar(&setupPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout")
 	setupCmd.Flags().BoolVar(&setupOutputLogs, "output-logs", false, "Output all logs (tool calls, messages) to .tusk/logs/setup-<datetime>.log")
 	setupCmd.Flags().BoolVar(&setupEligibilityOnly, "eligibility-only", false, "Only check eligibility for SDK setup across all services in the directory tree, output JSON report and exit")
+	setupCmd.Flags().BoolVar(&setupVerifyMode, "verify", false, "Verify that an existing Tusk Drift setup is working correctly by re-recording and replaying traces")
 }
 
 // APIConfig holds the configuration for connecting to the LLM API
@@ -119,6 +121,21 @@ func getAnthropicAPIConfig() (*APIConfig, error) {
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
+	// Validate mutually exclusive flags
+	modeFlags := 0
+	if setupSkipToCloud {
+		modeFlags++
+	}
+	if setupEligibilityOnly {
+		modeFlags++
+	}
+	if setupVerifyMode {
+		modeFlags++
+	}
+	if modeFlags > 1 {
+		return fmt.Errorf("--verify, --skip-to-cloud, and --eligibility-only are mutually exclusive")
+	}
+
 	apiConfig, err := getAnthropicAPIConfig()
 	if err != nil {
 		return err
@@ -127,6 +144,24 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	workDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Verify mode requires existing .tusk/ directory and config
+	if setupVerifyMode {
+		tuskDir := filepath.Join(workDir, ".tusk")
+		if _, err := os.Stat(tuskDir); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("--verify requires a completed setup.\n\nNo .tusk/ directory found. Please run 'tusk setup' first")
+			}
+			return fmt.Errorf("failed to check .tusk/ directory: %w", err)
+		}
+		configPath := filepath.Join(tuskDir, "config.yaml")
+		if _, err := os.Stat(configPath); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("--verify requires a completed setup.\n\nNo .tusk/config.yaml found. Please run 'tusk setup' first")
+			}
+			return fmt.Errorf("failed to check .tusk/config.yaml: %w", err)
+		}
 	}
 
 	// When skipping to cloud, verify that local setup has been completed
@@ -154,6 +189,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		PrintMode:       setupPrintMode,
 		OutputLogs:      setupOutputLogs,
 		EligibilityOnly: setupEligibilityOnly,
+		VerifyMode:      setupVerifyMode,
 	}
 
 	a, err := agent.New(cfg)

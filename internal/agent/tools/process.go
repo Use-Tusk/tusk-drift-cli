@@ -111,7 +111,8 @@ func validateCommandSafety(command string) error {
 		pattern string
 		reason  string
 	}{
-		{"rm -rf", "recursive forced deletion"},
+		// verifySetupPhase() need to run `rm -rf .tusk/traces/*` to delete existing traces
+		// {"rm -rf", "recursive forced deletion"},
 		{"rm -fr", "recursive forced deletion"},
 		{"rmdir", "directory deletion"},
 		{"> /dev/", "writing to device files"},
