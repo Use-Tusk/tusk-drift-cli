@@ -1,6 +1,6 @@
 ## Phase: Create API Key
 
-Create an API key for CI/CD authentication. This phase is optional - the user can skip if they already have an API key configured.
+Create an API key for recording traces to Tusk Cloud. This key authenticates your service with Tusk Cloud so recorded traces can be uploaded. This phase is optional - the user can skip if they already have an API key configured.
 
 ### Steps
 
@@ -10,7 +10,9 @@ Create an API key for CI/CD authentication. This phase is optional - the user ca
 
 3. **If no API key**:
    - Ask the user if they want to create an API key now using `ask_user`:
-     "Would you like to create an API key for CI/CD? Enter a name for the key (or press Enter to skip):"
+     "This API key allows Tusk Drift to record and upload traces to Tusk Cloud.
+
+     Would you like to create one now? Enter a name for the key (or press Enter to skip):"
    - If user provides a name, create the key with `cloud_create_api_key`:
      - `name`: the user-provided name
      - `client_id`: from state.selected_client_id
