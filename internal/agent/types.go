@@ -116,8 +116,8 @@ type State struct {
 
 	// Verify mode state
 	OriginalSamplingRate          float64 `json:"original_sampling_rate,omitempty"`
-	OriginalExportSpans           bool    `json:"original_export_spans,omitempty"`
-	OriginalEnableEnvVarRecording bool    `json:"original_enable_env_var_recording,omitempty"`
+	OriginalExportSpans           bool    `json:"original_export_spans"`
+	OriginalEnableEnvVarRecording bool    `json:"original_enable_env_var_recording"`
 	VerifySimplePassed            bool    `json:"verify_simple_passed,omitempty"`
 	VerifyComplexPassed           bool    `json:"verify_complex_passed,omitempty"`
 }

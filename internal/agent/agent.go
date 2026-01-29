@@ -483,7 +483,7 @@ func (a *Agent) runAgent() error {
 
 		if !state.VerifySimplePassed {
 			a.ui.AgentText("\n\nVerification failed. Your Tusk Drift setup is not working correctly.\nPlease run 'tusk setup' to reconfigure.\n", false)
-			a.ui.Completed(a.workDir)
+			a.ui.Aborted("verification failed")
 			time.Sleep(500 * time.Millisecond)
 			return a.setFailed(fmt.Errorf("verification failed: simple test did not pass"))
 		}
