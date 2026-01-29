@@ -274,7 +274,7 @@ func (a *Agent) runAgent() error {
 
 	// Check for existing progress and skip to the appropriate phase (unless disabled)
 	existingProgress := ""
-	if !a.disableProgress {
+	if !a.disableProgress && !a.verifyMode && !a.eligibilityOnly {
 		existingProgress = a.readProgress()
 	}
 	if existingProgress != "" {
