@@ -56,14 +56,29 @@ The agent will guide you through the following phases:
 
 You may be prompted for input during the setup process.`
 
+const introDescriptionVerify = `Welcome to Tusk Drift Verify!
+
+This AI-powered agent will verify that your existing Tusk Drift
+setup is working correctly by re-recording and replaying traces.
+
+The agent will guide you through the following phases:
+  • Setup        - Validate config and prepare for verification
+  • Simple Test  - Record and replay a health check endpoint
+  • Complex Test - Record and replay an endpoint with external calls
+  • Restore      - Restore original config and report results
+
+You may be prompted for input during the verification process.`
+
 const introProxyNote = `
 
 Note: For convenience, this setup agent will use Tusk's servers as a proxy to the Anthropic API. Your data is never used for training. See usetusk.ai/privacy for details.`
 
-// getIntroDescription returns the appropriate description based on API mode and skipToCloud
-func getIntroDescription(isProxyMode, skipToCloud bool) string {
+// getIntroDescription returns the appropriate description based on API mode, skipToCloud, and verifyMode
+func getIntroDescription(isProxyMode, skipToCloud, verifyMode bool) string {
 	base := introDescriptionBase
-	if skipToCloud {
+	if verifyMode {
+		base = introDescriptionVerify
+	} else if skipToCloud {
 		base = introDescriptionCloudOnly
 	}
 	if isProxyMode {
@@ -111,12 +126,13 @@ type IntroModel struct {
 	// Modes that affect description text
 	isProxyMode bool // Direct/proxy
 	skipToCloud bool // Skip local setup
+	verifyMode  bool // Verify existing setup
 }
 
 type introTickMsg time.Time
 
 // NewIntroModel creates a new intro screen model
-func NewIntroModel(isProxyMode, skipToCloud bool) *IntroModel {
+func NewIntroModel(isProxyMode, skipToCloud, verifyMode bool) *IntroModel {
 	lines := strings.Split(tuskLogo, "\n")
 
 	maxWidth := 0
@@ -133,6 +149,7 @@ func NewIntroModel(isProxyMode, skipToCloud bool) *IntroModel {
 		logoWidth:   maxWidth,
 		isProxyMode: isProxyMode,
 		skipToCloud: skipToCloud,
+		verifyMode:  verifyMode,
 		logoHeight:  len(lines),
 		mouseX:      -1,
 		mouseY:      -1,
@@ -241,7 +258,7 @@ func (m *IntroModel) View() string {
 		BorderForeground(lipgloss.Color(boxBorderColor)).
 		Padding(1, 2)
 
-	descBox := boxStyle.Render(descStyle.Render(getIntroDescription(m.isProxyMode, m.skipToCloud)))
+	descBox := boxStyle.Render(descStyle.Render(getIntroDescription(m.isProxyMode, m.skipToCloud, m.verifyMode)))
 
 	centeredDesc := lipgloss.NewStyle().
 		Width(m.width).
@@ -330,8 +347,8 @@ func (m *IntroModel) ShouldContinue() bool {
 }
 
 // RunIntroScreen runs the intro screen and returns true if user wants to continue
-func RunIntroScreen(isProxyMode, skipToCloud bool) (bool, error) {
-	model := NewIntroModel(isProxyMode, skipToCloud)
+func RunIntroScreen(isProxyMode, skipToCloud, verifyMode bool) (bool, error) {
+	model := NewIntroModel(isProxyMode, skipToCloud, verifyMode)
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 
 	finalModel, err := p.Run()
@@ -354,7 +371,7 @@ func RunIntroScreen(isProxyMode, skipToCloud bool) (bool, error) {
 }
 
 // PrintIntroHeadless prints a simple intro for headless mode (no confirmation needed for scripts)
-func PrintIntroHeadless(isProxyMode, skipToCloud bool) {
+func PrintIntroHeadless(isProxyMode, skipToCloud, verifyMode bool) {
 	primaryStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(styles.PrimaryColor)).
 		Bold(true)
@@ -365,7 +382,7 @@ func PrintIntroHeadless(isProxyMode, skipToCloud bool) {
 	fmt.Println()
 	fmt.Println(primaryStyle.Render(tuskLogo))
 	fmt.Println()
-	fmt.Println(getIntroDescription(isProxyMode, skipToCloud))
+	fmt.Println(getIntroDescription(isProxyMode, skipToCloud, verifyMode))
 	fmt.Println()
 	fmt.Println(dimStyle.Render("────────────────────────────────────────────────────────"))
 	fmt.Println()
