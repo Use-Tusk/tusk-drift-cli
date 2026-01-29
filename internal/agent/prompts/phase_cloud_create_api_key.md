@@ -1,6 +1,6 @@
 ## Phase: Create API Key
 
-Create an API key for recording traces to Tusk Cloud. This key authenticates your service with Tusk Cloud so recorded traces can be uploaded. This phase is optional - the user can skip if they already have an API key configured.
+Create an API key for recording traces to Tusk Cloud and CI/CD authentication. This key authenticates your service with Tusk Cloud so recorded traces can be uploaded. This phase is optional - the user can skip if they already have an API key configured.
 
 ### Steps
 

@@ -56,8 +56,11 @@ Generate a final report documenting the cloud setup and list of next steps.
    - Or check the Tusk dashboard: https://app.usetusk.ai
 
    **Step 5: Set up a CI workflow**
-   Add Tusk Drift to your CI pipeline to automatically run tests on every PR:
-   - Docs: https://docs.usetusk.ai/api-tests/ci-cd-setup
+   Add Tusk Drift to your CI pipeline to automatically run tests on every PR. Note to the user that they can use same API key as above or create a new one:
+   - Docs:
+     - https://docs.usetusk.ai/api-tests/ci-cd-setup
+     - https://docs.usetusk.ai/api-tests/tusk-drift-cloud#deviation-analysis
+   
 
    **Step 6: Commit, merge & deploy**
    - Commit the SDK instrumentation changes and `.tusk/` config files
