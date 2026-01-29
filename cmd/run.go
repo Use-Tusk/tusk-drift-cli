@@ -236,6 +236,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 					log.Stderrln("Skipping: " + err.Error())
 					return nil
 				}
+				// Handle PAUSED_BY_LABEL error as a no-op in CI mode
+				if api.IsPausedByLabelError(err) && ci {
+					log.Stderrln("Skipping: " + err.Error())
+					return nil
+				}
 				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
 				return fmt.Errorf("failed to create drift run: %w", err)
 			}

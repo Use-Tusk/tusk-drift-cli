@@ -215,6 +215,21 @@ func IsNoSeatError(err error) bool {
 	return errors.As(err, &noSeatErr)
 }
 
+// PausedByLabelError is returned when the PR has the "Tusk - Pause For Current PR" label
+type PausedByLabelError struct {
+	Message string
+}
+
+func (e *PausedByLabelError) Error() string {
+	return e.Message
+}
+
+// IsPausedByLabelError checks if an error is a PausedByLabelError
+func IsPausedByLabelError(err error) bool {
+	var pausedErr *PausedByLabelError
+	return errors.As(err, &pausedErr)
+}
+
 func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDriftRunRequest, auth AuthOptions) (string, error) {
 	var out backend.CreateDriftRunResponse
 	if err := c.makeTestRunServiceRequest(ctx, "create_drift_run", in, &out, auth, DefaultRetryConfig(3)); err != nil {
@@ -227,6 +242,9 @@ func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDrift
 	if e := out.GetError(); e != nil {
 		if e.Code == "NO_SEAT" {
 			return "", &NoSeatError{Message: e.Message}
+		}
+		if e.Code == "PAUSED_BY_LABEL" {
+			return "", &PausedByLabelError{Message: e.Message}
 		}
 		return "", fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
