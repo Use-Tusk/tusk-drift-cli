@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -224,4 +225,73 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 
 	summary := fmt.Sprintf("\n\nSummary: %d passed, %d failed, %d errors out of %d tests", passed, failed, errors, len(testResults))
 	return strings.Join(results, "\n") + summary, nil
+}
+
+// RunValidation runs 'tusk run --cloud --validate-suite --print' and returns the results
+func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
+	// Use a timeout to prevent hanging indefinitely
+	timeout := 120 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// Execute tusk run --cloud --validate-suite --print
+	cmd := exec.CommandContext(ctx, "tusk", "run", "--cloud", "--validate-suite", "--print")
+	cmd.Dir = tt.workDir
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	// Check for timeout
+	if ctx.Err() == context.DeadlineExceeded {
+		return tt.parseValidationOutput(outputStr, fmt.Errorf("validation timed out after %v", timeout))
+	}
+
+	// Parse output even on error - validation may have failed but we want the results
+	return tt.parseValidationOutput(outputStr, err)
+}
+
+// parseValidationOutput parses the output of validation run
+func (tt *TuskTools) parseValidationOutput(output string, runErr error) (string, error) {
+	// Count passed/failed tests
+	lines := strings.Split(output, "\n")
+	passed := 0
+	failed := 0
+
+	for _, line := range lines {
+		// tusk run --print outputs "NO DEVIATION" for passed tests and "DEVIATION" for failed
+		// Must check "NO DEVIATION" first since "DEVIATION" is a substring of it
+		if strings.Contains(line, "NO DEVIATION") {
+			passed++
+		} else if strings.Contains(line, "DEVIATION") {
+			failed++
+		}
+	}
+
+	// Passed tests become part of suite
+	testsInSuite := passed
+
+	success := passed > 0
+	errorMsg := ""
+	if runErr != nil {
+		errorMsg = runErr.Error()
+		// If there was an error and no tests passed, it's not successful
+		if passed == 0 {
+			success = false
+		}
+	}
+
+	result := map[string]interface{}{
+		"success":        success,
+		"tests_passed":   passed,
+		"tests_failed":   failed,
+		"tests_in_suite": testsInSuite,
+		"output":         output,
+	}
+
+	if errorMsg != "" {
+		result["error"] = errorMsg
+	}
+
+	data, _ := json.Marshal(result)
+	return string(data), nil
 }

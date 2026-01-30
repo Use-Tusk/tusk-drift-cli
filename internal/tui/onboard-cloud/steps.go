@@ -414,6 +414,8 @@ Next steps:
 3. For CI/CD, add as a secret environment variable:
    TUSK_API_KEY=%s
 
+Tip: Hold Option/Alt while clicking and dragging to select text in most terminals.
+
 Press [enter] to continue...`,
 			m.ApiKey,
 			m.ApiKey,

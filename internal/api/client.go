@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -64,8 +65,9 @@ const (
 	// DefaultBaseURL is the default Tusk Cloud API URL
 	DefaultBaseURL = "https://api.usetusk.ai"
 
-	TestRunServiceAPIPath = "/api/drift/test_run_service"
-	ClientServiceAPIPath  = "/api/drift/client_service"
+	TestRunServiceAPIPath    = "/api/drift/test_run_service"
+	ClientServiceAPIPath     = "/api/drift/client_service"
+	SpanExportServiceAPIPath = "/api/drift/tusk.drift.backend.v1.SpanExportService"
 )
 
 // GetBaseURL returns the API base URL with the following priority:
@@ -198,6 +200,36 @@ func (c *TuskClient) makeClientServiceRequest(ctx context.Context, endpoint stri
 	return c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, endpoint, req, resp, auth, DefaultRetryConfig(0))
 }
 
+// NoSeatError is returned when the PR creator doesn't have a Tusk Cloud seat
+type NoSeatError struct {
+	Message string
+}
+
+func (e *NoSeatError) Error() string {
+	return e.Message
+}
+
+// IsNoSeatError checks if an error is a NoSeatError
+func IsNoSeatError(err error) bool {
+	var noSeatErr *NoSeatError
+	return errors.As(err, &noSeatErr)
+}
+
+// PausedByLabelError is returned when the PR has the "Tusk - Pause For Current PR" label
+type PausedByLabelError struct {
+	Message string
+}
+
+func (e *PausedByLabelError) Error() string {
+	return e.Message
+}
+
+// IsPausedByLabelError checks if an error is a PausedByLabelError
+func IsPausedByLabelError(err error) bool {
+	var pausedErr *PausedByLabelError
+	return errors.As(err, &pausedErr)
+}
+
 func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDriftRunRequest, auth AuthOptions) (string, error) {
 	var out backend.CreateDriftRunResponse
 	if err := c.makeTestRunServiceRequest(ctx, "create_drift_run", in, &out, auth, DefaultRetryConfig(3)); err != nil {
@@ -208,6 +240,12 @@ func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDrift
 		return s.DriftRunId, nil
 	}
 	if e := out.GetError(); e != nil {
+		if e.Code == "NO_SEAT" {
+			return "", &NoSeatError{Message: e.Message}
+		}
+		if e.Code == "PAUSED_BY_LABEL" {
+			return "", &PausedByLabelError{Message: e.Message}
+		}
 		return "", fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
 	return "", fmt.Errorf("invalid response")
@@ -486,4 +524,12 @@ func (c *TuskClient) GetGlobalSpansByIds(ctx context.Context, in *backend.GetGlo
 		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
 	return nil, fmt.Errorf("invalid response")
+// ExportSpans uploads spans to Tusk Cloud
+func (c *TuskClient) ExportSpans(ctx context.Context, in *backend.ExportSpansRequest, auth AuthOptions) (*backend.ExportSpansResponse, error) {
+	var out backend.ExportSpansResponse
+	fullServiceAPIPath := c.baseURL + SpanExportServiceAPIPath
+	if err := c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, "ExportSpans", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

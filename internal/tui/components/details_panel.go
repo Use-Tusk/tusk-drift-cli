@@ -71,3 +71,9 @@ func (dp *DetailsPanel) SetSize(width, height int) {
 func (dp *DetailsPanel) View() string {
 	return dp.ContentPanel.View(dp.width, dp.height)
 }
+
+// CopyAllContent copies all panel content to the clipboard
+func (dp *DetailsPanel) CopyAllContent() tea.Cmd {
+	text := dp.ContentPanel.GetRawContent()
+	return dp.ContentPanel.CopyText(text)
+}

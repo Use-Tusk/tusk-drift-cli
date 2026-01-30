@@ -31,8 +31,8 @@ func (u *TUIUI) Start() error {
 }
 
 // ShowIntro displays the intro screen with animation
-func (u *TUIUI) ShowIntro(isProxyMode bool) (bool, error) {
-	return RunIntroScreen(isProxyMode)
+func (u *TUIUI) ShowIntro(isProxyMode, skipToCloud bool) (bool, error) {
+	return RunIntroScreen(isProxyMode, skipToCloud)
 }
 
 // Stop is a no-op for TUI - cleanup happens via the program

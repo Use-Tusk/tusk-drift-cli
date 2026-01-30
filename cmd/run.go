@@ -52,6 +52,7 @@ var (
 
 	// Validation mode
 	validateSuiteIfDefaultBranch bool
+	validateSuite                bool
 )
 
 //go:embed short_docs/run.md
@@ -94,6 +95,7 @@ func init() {
 
 	// Validation mode flags
 	runCmd.Flags().BoolVar(&validateSuiteIfDefaultBranch, "validate-suite-if-default-branch", false, "[Cloud] Validate traces on default branch before adding to suite")
+	runCmd.Flags().BoolVar(&validateSuite, "validate-suite", false, "[Cloud] Force validation mode regardless of branch")
 
 	_ = runCmd.Flags().MarkHidden("client-id")
 	runCmd.Flags().SortFlags = false
@@ -160,8 +162,13 @@ func runTests(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Check for validation mode - validation mode fetches default branch from backend
-		if validateSuiteIfDefaultBranch && traceTestID == "" {
+		// Check for validation mode
+		// --validate-suite forces validation regardless of branch
+		// --validate-suite-if-default-branch only validates on default branch
+		if validateSuite && traceTestID == "" {
+			log.Debug("Validation mode forced with --validate-suite flag")
+			isValidation = true
+		} else if validateSuiteIfDefaultBranch && traceTestID == "" {
 			// Get default branch from backend
 			infoReq := &backend.GetObservableServiceInfoRequest{
 				ObservableServiceId: cfg.Service.ID,
@@ -224,6 +231,16 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			id, err := client.CreateDriftRun(context.Background(), req, authOptions)
 			if err != nil {
+				// Handle NO_SEAT error as a no-op in CI mode
+				if api.IsNoSeatError(err) && ci {
+					log.Stderrln("Skipping: " + err.Error())
+					return nil
+				}
+				// Handle PAUSED_BY_LABEL error as a no-op in CI mode
+				if api.IsPausedByLabelError(err) && ci {
+					log.Stderrln("Skipping: " + err.Error())
+					return nil
+				}
 				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
 				return fmt.Errorf("failed to create drift run: %w", err)
 			}

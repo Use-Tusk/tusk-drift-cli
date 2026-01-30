@@ -30,6 +30,7 @@ const (
 	ToolTuskRun                ToolName = "tusk_run"
 	ToolTransitionPhase        ToolName = "transition_phase"
 	ToolAbortSetup             ToolName = "abort_setup"
+	ToolResetCloudProgress     ToolName = "reset_cloud_progress"
 
 	// Cloud setup tools
 	ToolCloudCheckAuth         ToolName = "cloud_check_auth"
@@ -45,6 +46,8 @@ const (
 	ToolCloudCreateApiKey      ToolName = "cloud_create_api_key"
 	ToolCloudCheckApiKeyExists ToolName = "cloud_check_api_key_exists"
 	ToolCloudSaveConfig        ToolName = "cloud_save_config"
+	ToolCloudUploadTraces      ToolName = "cloud_upload_traces"
+	ToolCloudRunValidation     ToolName = "cloud_run_validation"
 )
 
 // ToolDefinition is the single source of truth for a tool's metadata and implementation
@@ -447,6 +450,19 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 			"required": ["reason"]
 		}`),
 		},
+		ToolResetCloudProgress: {
+			Name:        ToolResetCloudProgress,
+			Description: "Remove a specific phase from progress so it will run again on next setup. If no phase_name is provided, removes all cloud phases. Use this before aborting if you want certain phases to re-run.",
+			InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"phase_name": {
+					"type": "string",
+					"description": "The name of the phase to remove from progress (e.g., 'Configure Recording'). If not provided, all cloud phases are removed."
+				}
+			}
+		}`),
+		},
 
 		// Cloud setup tools
 		ToolCloudCheckAuth: {
@@ -590,6 +606,10 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 					"app_dir": {
 						"type": "string",
 						"description": "Optional relative path from repo root to the app directory"
+					},
+					"service_name": {
+						"type": "string",
+						"description": "Display name for the observable service (default: 'Backend service')"
 					}
 				},
 				"required": ["owner", "repo", "project_type"]
@@ -647,6 +667,28 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 				"required": ["service_id", "sampling_rate", "export_spans", "enable_env_var_recording"]
 			}`),
 		},
+		ToolCloudUploadTraces: {
+			Name:        ToolCloudUploadTraces,
+			Description: "Upload local traces from .tusk/traces/ to Tusk Cloud. Returns the number of traces uploaded.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"service_id": {
+						"type": "string",
+						"description": "The observable service ID"
+					}
+				},
+				"required": ["service_id"]
+			}`),
+		},
+		ToolCloudRunValidation: {
+			Name:        ToolCloudRunValidation,
+			Description: "Run trace validation using 'tusk run --cloud --validate-suite --print'. Returns validation results including how many tests became part of the suite.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
 	}
 }
 
@@ -680,6 +722,7 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolTuskRun:                tusk.Run,
 		ToolTransitionPhase:        phaseMgr.PhaseTransitionTool(),
 		ToolAbortSetup:             tools.AbortSetup,
+		ToolResetCloudProgress:     tools.ResetPhaseProgress(workDir),
 
 		// Cloud tools
 		ToolCloudCheckAuth:         cloud.CheckAuth,
@@ -695,6 +738,8 @@ func RegisterTools(workDir string, pm *ProcessManager, phaseMgr *PhaseManager) (
 		ToolCloudCreateApiKey:      cloud.CreateApiKey,
 		ToolCloudCheckApiKeyExists: cloud.CheckApiKeyExists,
 		ToolCloudSaveConfig:        cloud.SaveCloudConfig,
+		ToolCloudUploadTraces:      cloud.UploadTraces,
+		ToolCloudRunValidation:     tusk.RunValidation,
 	}
 
 	// Build registry with definitions + executors
