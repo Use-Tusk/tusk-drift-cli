@@ -37,7 +37,7 @@ type TraceCache struct {
 }
 
 // NewTraceCache creates a new TraceCache for the given service ID.
-// The cache directory is: <os.UserCacheDir()>/tusk/<serviceID>/
+// The cache directory is: <os.UserCacheDir()>/tusk/<serviceID>/traces/
 func NewTraceCache(serviceID string) (*TraceCache, error) {
 	if !isValidPathComponent(serviceID) {
 		return nil, fmt.Errorf("invalid service ID %q: %w", serviceID, ErrInvalidID)
@@ -48,7 +48,7 @@ func NewTraceCache(serviceID string) (*TraceCache, error) {
 		return nil, fmt.Errorf("failed to get user cache directory: %w", err)
 	}
 
-	cacheDir := filepath.Join(userCacheDir, "tusk", serviceID)
+	cacheDir := filepath.Join(userCacheDir, "tusk", serviceID, "traces")
 	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
