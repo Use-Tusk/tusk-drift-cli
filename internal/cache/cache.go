@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -187,4 +188,148 @@ func DiffIds(remoteIds, cachedIds []string) (toFetch, toDelete []string) {
 	}
 
 	return toFetch, toDelete
+}
+
+// SpanType identifies the type of spans being cached.
+type SpanType string
+
+const (
+	// SpanTypePreAppStart is for pre-app-start spans.
+	SpanTypePreAppStart SpanType = "preappstart"
+	// SpanTypeGlobal is for global spans.
+	SpanTypeGlobal SpanType = "global"
+)
+
+// SpanCache manages local caching of spans (pre-app-start or global).
+// Cache files are stored as protobuf-serialized .bin files named by span ID.
+type SpanCache struct {
+	cacheDir string
+}
+
+// NewSpanCache creates a new SpanCache for the given service ID and span type.
+// The cache directory is: <os.UserCacheDir()>/tusk/<serviceID>/spans/<spanType>/
+func NewSpanCache(serviceID string, spanType SpanType) (*SpanCache, error) {
+	if !isValidPathComponent(serviceID) {
+		return nil, fmt.Errorf("invalid service ID %q: %w", serviceID, ErrInvalidID)
+	}
+	if !isValidPathComponent(string(spanType)) {
+		return nil, fmt.Errorf("invalid span type %q: %w", spanType, ErrInvalidID)
+	}
+
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user cache directory: %w", err)
+	}
+
+	cacheDir := filepath.Join(userCacheDir, "tusk", serviceID, "spans", string(spanType))
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
+		return nil, fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	return &SpanCache{cacheDir: cacheDir}, nil
+}
+
+// GetCachedIds returns the IDs of all cached spans by listing .bin files.
+func (c *SpanCache) GetCachedIds() ([]string, error) {
+	entries, err := os.ReadDir(c.cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read cache directory: %w", err)
+	}
+
+	var ids []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".bin") {
+			ids = append(ids, strings.TrimSuffix(name, ".bin"))
+		}
+	}
+	return ids, nil
+}
+
+// LoadSpan loads a single span from cache by ID.
+func (c *SpanCache) LoadSpan(id string) (*core.Span, error) {
+	if !isValidPathComponent(id) {
+		return nil, fmt.Errorf("invalid span ID %q: %w", id, ErrInvalidID)
+	}
+
+	filePath := filepath.Join(c.cacheDir, id+".bin")
+	data, err := os.ReadFile(filePath) //nolint:gosec // G304: id is validated above
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cache file %s: %w", filePath, err)
+	}
+
+	var span core.Span
+	if err := proto.Unmarshal(data, &span); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal span %s: %w", id, err)
+	}
+	return &span, nil
+}
+
+// LoadAllSpans loads all cached spans.
+func (c *SpanCache) LoadAllSpans() ([]*core.Span, error) {
+	ids, err := c.GetCachedIds()
+	if err != nil {
+		return nil, err
+	}
+
+	spans := make([]*core.Span, 0, len(ids))
+	for _, id := range ids {
+		span, err := c.LoadSpan(id)
+		if err != nil {
+			// Skip corrupted cache files
+			continue
+		}
+		spans = append(spans, span)
+	}
+	return spans, nil
+}
+
+// SaveSpans saves multiple spans to cache.
+func (c *SpanCache) SaveSpans(spans []*core.Span) error {
+	for _, span := range spans {
+		if err := c.saveSpan(span); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// saveSpan saves a single span to cache.
+func (c *SpanCache) saveSpan(span *core.Span) error {
+	id := span.GetId()
+	if !isValidPathComponent(id) {
+		return fmt.Errorf("invalid span ID %q: %w", id, ErrInvalidID)
+	}
+
+	data, err := proto.Marshal(span)
+	if err != nil {
+		return fmt.Errorf("failed to marshal span %s: %w", id, err)
+	}
+
+	filePath := filepath.Join(c.cacheDir, id+".bin")
+	if err := os.WriteFile(filePath, data, 0o600); err != nil {
+		return fmt.Errorf("failed to write cache file %s: %w", filePath, err)
+	}
+	return nil
+}
+
+// DeleteSpans removes the specified span IDs from cache.
+func (c *SpanCache) DeleteSpans(ids []string) error {
+	for _, id := range ids {
+		if !isValidPathComponent(id) {
+			return fmt.Errorf("invalid span ID %q: %w", id, ErrInvalidID)
+		}
+
+		filePath := filepath.Join(c.cacheDir, id+".bin")
+		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete cache file %s: %w", filePath, err)
+		}
+	}
+	return nil
 }

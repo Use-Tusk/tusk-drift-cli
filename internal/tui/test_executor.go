@@ -829,10 +829,18 @@ func (m *testExecutorModel) verticalLayout() string {
 
 func (m *testExecutorModel) addServiceLog(line string) {
 	m.logPanel.AddServiceLog(line)
+	// Trigger UI refresh so the details panel updates immediately
+	if m.program != nil {
+		m.program.Send(refreshTickMsg{})
+	}
 }
 
 func (m *testExecutorModel) addTestLog(testID, line string) {
 	m.logPanel.AddTestLog(testID, line)
+	// Trigger UI refresh so the details panel updates immediately
+	if m.program != nil {
+		m.program.Send(refreshTickMsg{})
+	}
 }
 
 func (m *testExecutorModel) updateStats() tea.Cmd {

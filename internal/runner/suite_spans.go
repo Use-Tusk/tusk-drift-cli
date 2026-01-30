@@ -28,6 +28,12 @@ type SuiteSpanOptions struct {
 	// AllowSuiteWideMatching allows matching against all suite spans (for main branch validation or local runs)
 	// When false (normal cloud replay), only global spans are loaded for cross-trace matching
 	AllowSuiteWideMatching bool
+
+	// PreloadedPreAppStartSpans allows passing pre-fetched pre-app-start spans to avoid fetching again
+	PreloadedPreAppStartSpans []*core.Span
+
+	// PreloadedGlobalSpans allows passing pre-fetched global spans to avoid fetching again
+	PreloadedGlobalSpans []*core.Span
 }
 
 // BuildSuiteSpansResult contains the result of building suite spans
@@ -48,16 +54,25 @@ func BuildSuiteSpansForRun(
 	var suiteSpans []*core.Span
 	var globalSpans []*core.Span
 
-	// Fetch global spans
+	// Fetch global spans (use preloaded if available)
 	if opts.IsCloudMode && opts.Client != nil {
-		global, err := FetchGlobalSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
-		switch {
-		case err != nil:
-			log.Warn("Failed to fetch global spans", "error", err)
-		case opts.AllowSuiteWideMatching:
+		var global []*core.Span
+		if len(opts.PreloadedGlobalSpans) > 0 {
+			// Use preloaded spans if available
+			global = opts.PreloadedGlobalSpans
+		} else {
+			// Fetch from cloud with cache
+			var err error
+			global, err = FetchGlobalSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID)
+			if err != nil {
+				log.Warn("Failed to fetch global spans", "error", err)
+			}
+		}
+
+		if opts.AllowSuiteWideMatching {
 			// Validation mode: add global spans directly to suite spans for matching
 			suiteSpans = append(suiteSpans, global...)
-		default:
+		} else {
 			// Normal replay mode: keep global spans separate for dedicated index
 			globalSpans = global
 		}
@@ -71,8 +86,19 @@ func BuildSuiteSpansForRun(
 	// Pre-app-start spans are always included (both modes)
 	// Prepend these spans so they get considered first
 	if opts.IsCloudMode && opts.Client != nil {
-		preAppStartSpans, err := FetchPreAppStartSpansFromCloud(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
-		if err == nil && len(preAppStartSpans) > 0 {
+		var preAppStartSpans []*core.Span
+		if len(opts.PreloadedPreAppStartSpans) > 0 {
+			// Use preloaded spans if available
+			preAppStartSpans = opts.PreloadedPreAppStartSpans
+		} else {
+			// Fetch from cloud with cache
+			var err error
+			preAppStartSpans, err = FetchPreAppStartSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID)
+			if err != nil {
+				log.Warn("Failed to fetch pre-app-start spans", "error", err)
+			}
+		}
+		if len(preAppStartSpans) > 0 {
 			suiteSpans = append(preAppStartSpans, suiteSpans...)
 		}
 	} else {
@@ -194,6 +220,28 @@ func FetchPreAppStartSpansFromCloud(
 	}
 
 	return all, nil
+}
+
+// FetchPreAppStartSpansFromCloudWithCache fetches pre-app-start spans using cache.
+// It only fetches new spans and removes deleted ones from cache.
+func FetchPreAppStartSpansFromCloudWithCache(
+	ctx context.Context,
+	client *api.TuskClient,
+	auth api.AuthOptions,
+	serviceID string,
+) ([]*core.Span, error) {
+	return api.FetchPreAppStartSpansWithCache(ctx, client, auth, serviceID)
+}
+
+// FetchGlobalSpansFromCloudWithCache fetches global spans using cache.
+// It only fetches new spans and removes deleted ones from cache.
+func FetchGlobalSpansFromCloudWithCache(
+	ctx context.Context,
+	client *api.TuskClient,
+	auth api.AuthOptions,
+	serviceID string,
+) ([]*core.Span, error) {
+	return api.FetchGlobalSpansWithCache(ctx, client, auth, serviceID)
 }
 
 // FetchGlobalSpansFromCloud fetches only spans marked as global (is_global=true) from cloud

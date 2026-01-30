@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/Use-Tusk/fence v0.1.16
-	github.com/Use-Tusk/tusk-drift-schemas v0.1.25-0.20260127032119-ba5c9c37743f
+	github.com/Use-Tusk/tusk-drift-schemas v0.1.30
 	github.com/agnivade/levenshtein v1.0.3
 	github.com/atotto/clipboard v0.1.4
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1

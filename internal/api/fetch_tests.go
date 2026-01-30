@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cache"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
+	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
 
 // FetchAllTraceTestsOptions configures the fetch behavior
@@ -154,12 +156,11 @@ func FetchAllTraceTestsWithCache(
 		return FetchAllTraceTests(ctx, client, auth, serviceID, nil)
 	}
 
-	tracker := utils.NewProgressTracker("Syncing traces from Tusk Drift Cloud", false, false)
+	// 1. Fetch all IDs from API
 	idsResp, err := client.GetAllTraceTestIds(ctx, &backend.GetAllTraceTestIdsRequest{
 		ObservableServiceId: serviceID,
 	}, auth)
 	if err != nil {
-		tracker.Stop()
 		// Network error: try loading from cache
 		cached, cacheErr := traceCache.LoadAllTraces()
 		if cacheErr != nil || len(cached) == 0 {
@@ -170,14 +171,16 @@ func FetchAllTraceTestsWithCache(
 	}
 	remoteIds := idsResp.TraceTestIds
 
+	// 2. Get cached IDs
 	cachedIds, err := traceCache.GetCachedIds()
 	if err != nil {
-		tracker.Stop()
 		return FetchAllTraceTests(ctx, client, auth, serviceID, nil)
 	}
 
+	// 3. Compute diff
 	toFetch, toDelete := cache.DiffIds(remoteIds, cachedIds)
 
+	// 4. Delete removed traces
 	if len(toDelete) > 0 {
 		if err := traceCache.DeleteTraces(toDelete); err != nil {
 			// Non-fatal, continue
@@ -185,27 +188,299 @@ func FetchAllTraceTestsWithCache(
 		}
 	}
 
+	// 5. Fetch new traces in chunks and save
+	if len(toFetch) > 0 {
+		const chunkSize = 20
+		tracker := utils.NewProgressTracker("Fetching new traces from Tusk Drift Cloud", false, false)
+		tracker.SetTotal(len(toFetch))
+
+		for i := 0; i < len(toFetch); i += chunkSize {
+			end := i + chunkSize
+			if end > len(toFetch) {
+				end = len(toFetch)
+			}
+			chunk := toFetch[i:end]
+
+			newTraces, err := client.GetTraceTestsByIds(ctx, &backend.GetTraceTestsByIdsRequest{
+				ObservableServiceId: serviceID,
+				TraceTestIds:        chunk,
+			}, auth)
+			if err != nil {
+				tracker.Stop()
+				return nil, fmt.Errorf("failed to fetch new trace tests: %w", err)
+			}
+
+			if err := traceCache.SaveTraces(newTraces.TraceTests); err != nil {
+				// Non-fatal, traces are still usable
+				fmt.Fprintf(os.Stderr, "\nWarning: failed to save some traces to cache: %v\n", err)
+			}
+			tracker.Update(end)
+		}
+		tracker.Finish(fmt.Sprintf("✓ Fetched %d new traces", len(toFetch)))
+	}
+
+	// 6. Load all from cache for display
+	all, err := traceCache.LoadAllTraces()
+	if err != nil {
+		return nil, err
+	}
+
+	// Show cache status
+	if len(toFetch) == 0 && len(all) > 0 {
+		fmt.Fprintf(os.Stderr, "✓ Using %d cached traces\n", len(all))
+	}
+
+	return all, nil
+}
+
+// FetchPreAppStartSpansWithCache fetches pre-app-start spans using ID-based cache diffing.
+// It only fetches new spans and removes deleted ones from cache.
+// On network error, it falls back to cached data if available.
+func FetchPreAppStartSpansWithCache(
+	ctx context.Context,
+	client *TuskClient,
+	auth AuthOptions,
+	serviceID string,
+) ([]*core.Span, error) {
+	spanCache, err := cache.NewSpanCache(serviceID, cache.SpanTypePreAppStart)
+	if err != nil {
+		// Cache init failed, fall back to full fetch
+		return FetchAllPreAppStartSpans(ctx, client, auth, serviceID)
+	}
+
+	// 1. Fetch all IDs from API
+	tracker := utils.NewProgressTracker("Syncing pre-app-start spans", false, false)
+	idsResp, err := client.GetAllPreAppStartSpanIds(ctx, &backend.GetAllPreAppStartSpanIdsRequest{
+		ObservableServiceId: serviceID,
+	}, auth)
+	if err != nil {
+		tracker.Stop()
+		// Network error: try loading from cache
+		cached, cacheErr := spanCache.LoadAllSpans()
+		if cacheErr != nil || len(cached) == 0 {
+			return nil, fmt.Errorf("failed to fetch pre-app-start span IDs and no cache available: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "⚠ Using %d cached pre-app-start spans (network error: %v)\n", len(cached), err)
+		return cached, nil
+	}
+	remoteIds := idsResp.SpanIds
+
+	// 2. Get cached IDs
+	cachedIds, err := spanCache.GetCachedIds()
+	if err != nil {
+		tracker.Stop()
+		// Cache read failed, fall back to full fetch
+		return FetchAllPreAppStartSpans(ctx, client, auth, serviceID)
+	}
+
+	// 3. Compute diff
+	toFetch, toDelete := cache.DiffIds(remoteIds, cachedIds)
+
+	// 4. Delete removed spans
+	if len(toDelete) > 0 {
+		if err := spanCache.DeleteSpans(toDelete); err != nil {
+			// Non-fatal, continue
+			fmt.Fprintf(os.Stderr, "Warning: failed to delete some cached spans: %v\n", err)
+		}
+	}
+
+	// 5. Fetch new spans in chunks and save
 	if len(toFetch) > 0 {
 		tracker.SetTotal(len(toFetch))
 		tracker.Update(0)
 
-		newTraces, err := client.GetTraceTestsByIds(ctx, &backend.GetTraceTestsByIdsRequest{
-			ObservableServiceId: serviceID,
-			TraceTestIds:        toFetch,
-		}, auth)
-		if err != nil {
-			tracker.Stop()
-			return nil, fmt.Errorf("failed to fetch new trace tests: %w", err)
-		}
+		const chunkSize = 20
+		for i := 0; i < len(toFetch); i += chunkSize {
+			end := i + chunkSize
+			if end > len(toFetch) {
+				end = len(toFetch)
+			}
+			chunk := toFetch[i:end]
 
-		if err := traceCache.SaveTraces(newTraces.TraceTests); err != nil {
-			// Non-fatal, traces are still usable
-			fmt.Printf("Warning: failed to save some traces to cache: %v\n", err)
+			newSpans, err := client.GetPreAppStartSpansByIds(ctx, &backend.GetPreAppStartSpansByIdsRequest{
+				ObservableServiceId: serviceID,
+				SpanIds:             chunk,
+			}, auth)
+			if err != nil {
+				tracker.Stop()
+				return nil, fmt.Errorf("failed to fetch new pre-app-start spans: %w", err)
+			}
+
+			if err := spanCache.SaveSpans(newSpans.Spans); err != nil {
+				// Non-fatal, spans are still usable
+				fmt.Fprintf(os.Stderr, "\nWarning: failed to save some spans to cache: %v\n", err)
+			}
+			tracker.Update(end)
 		}
-		tracker.Update(len(toFetch))
+		tracker.Finish(fmt.Sprintf("✓ Fetched %d new pre-app-start spans", len(toFetch)))
+	} else if len(remoteIds) > 0 {
+		tracker.Finish(fmt.Sprintf("✓ Using %d cached pre-app-start spans", len(remoteIds)))
+	} else {
+		tracker.Finish("✓ No pre-app-start spans configured")
 	}
 
-	tracker.Finish("")
+	// 6. Load all from cache for use
+	return spanCache.LoadAllSpans()
+}
 
-	return traceCache.LoadAllTraces()
+// FetchAllPreAppStartSpans fetches all pre-app-start spans without caching (fallback).
+func FetchAllPreAppStartSpans(
+	ctx context.Context,
+	client *TuskClient,
+	auth AuthOptions,
+	serviceID string,
+) ([]*core.Span, error) {
+	var all []*core.Span
+	var cursor string
+
+	for {
+		req := &backend.GetPreAppStartSpansRequest{
+			ObservableServiceId: serviceID,
+			PageSize:            200,
+		}
+		if cursor != "" {
+			req.PaginationCursor = &cursor
+		}
+
+		resp, err := client.GetPreAppStartSpans(ctx, req, auth)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch pre-app-start spans: %w", err)
+		}
+
+		all = append(all, resp.Spans...)
+
+		if next := resp.GetNextCursor(); next != "" {
+			cursor = next
+			continue
+		}
+		break
+	}
+
+	return all, nil
+}
+
+// FetchGlobalSpansWithCache fetches global spans using ID-based cache diffing.
+// It only fetches new spans and removes deleted ones from cache.
+// On network error, it falls back to cached data if available.
+func FetchGlobalSpansWithCache(
+	ctx context.Context,
+	client *TuskClient,
+	auth AuthOptions,
+	serviceID string,
+) ([]*core.Span, error) {
+	spanCache, err := cache.NewSpanCache(serviceID, cache.SpanTypeGlobal)
+	if err != nil {
+		// Cache init failed, fall back to full fetch
+		return FetchAllGlobalSpans(ctx, client, auth, serviceID)
+	}
+
+	// 1. Fetch all IDs from API
+	tracker := utils.NewProgressTracker("Syncing global spans", false, false)
+	idsResp, err := client.GetAllGlobalSpanIds(ctx, &backend.GetAllGlobalSpanIdsRequest{
+		ObservableServiceId: serviceID,
+	}, auth)
+	if err != nil {
+		tracker.Stop()
+		// Network error: try loading from cache
+		cached, cacheErr := spanCache.LoadAllSpans()
+		if cacheErr != nil || len(cached) == 0 {
+			return nil, fmt.Errorf("failed to fetch global span IDs and no cache available: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "⚠ Using %d cached global spans (network error: %v)\n", len(cached), err)
+		return cached, nil
+	}
+	remoteIds := idsResp.SpanIds
+
+	// 2. Get cached IDs
+	cachedIds, err := spanCache.GetCachedIds()
+	if err != nil {
+		tracker.Stop()
+		// Cache read failed, fall back to full fetch
+		return FetchAllGlobalSpans(ctx, client, auth, serviceID)
+	}
+
+	// 3. Compute diff
+	toFetch, toDelete := cache.DiffIds(remoteIds, cachedIds)
+
+	// 4. Delete removed spans
+	if len(toDelete) > 0 {
+		if err := spanCache.DeleteSpans(toDelete); err != nil {
+			// Non-fatal, continue
+			fmt.Fprintf(os.Stderr, "Warning: failed to delete some cached global spans: %v\n", err)
+		}
+	}
+
+	// 5. Fetch new spans in chunks and save
+	if len(toFetch) > 0 {
+		tracker.SetTotal(len(toFetch))
+		tracker.Update(0)
+
+		const chunkSize = 20
+		for i := 0; i < len(toFetch); i += chunkSize {
+			end := i + chunkSize
+			if end > len(toFetch) {
+				end = len(toFetch)
+			}
+			chunk := toFetch[i:end]
+
+			newSpans, err := client.GetGlobalSpansByIds(ctx, &backend.GetGlobalSpansByIdsRequest{
+				ObservableServiceId: serviceID,
+				SpanIds:             chunk,
+			}, auth)
+			if err != nil {
+				tracker.Stop()
+				return nil, fmt.Errorf("failed to fetch new global spans: %w", err)
+			}
+
+			if err := spanCache.SaveSpans(newSpans.Spans); err != nil {
+				// Non-fatal, spans are still usable
+				fmt.Fprintf(os.Stderr, "\nWarning: failed to save some global spans to cache: %v\n", err)
+			}
+			tracker.Update(end)
+		}
+		tracker.Finish(fmt.Sprintf("✓ Fetched %d new global spans", len(toFetch)))
+	} else if len(remoteIds) > 0 {
+		tracker.Finish(fmt.Sprintf("✓ Using %d cached global spans", len(remoteIds)))
+	} else {
+		tracker.Finish("✓ No global spans configured")
+	}
+
+	// 6. Load all from cache for use
+	return spanCache.LoadAllSpans()
+}
+
+// FetchAllGlobalSpans fetches all global spans without caching (fallback).
+func FetchAllGlobalSpans(
+	ctx context.Context,
+	client *TuskClient,
+	auth AuthOptions,
+	serviceID string,
+) ([]*core.Span, error) {
+	var all []*core.Span
+	var cursor string
+
+	for {
+		req := &backend.GetGlobalSpansRequest{
+			ObservableServiceId: serviceID,
+			PageSize:            200,
+		}
+		if cursor != "" {
+			req.PaginationCursor = &cursor
+		}
+
+		resp, err := client.GetGlobalSpans(ctx, req, auth)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch global spans: %w", err)
+		}
+
+		all = append(all, resp.Spans...)
+
+		if next := resp.GetNextCursor(); next != "" {
+			cursor = next
+			continue
+		}
+		break
+	}
+
+	return all, nil
 }

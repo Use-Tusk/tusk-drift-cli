@@ -423,3 +423,67 @@ func (c *TuskClient) GetTraceTestsByIds(ctx context.Context, in *backend.GetTrac
 	}
 	return nil, fmt.Errorf("invalid response")
 }
+
+// GetAllPreAppStartSpanIds fetches all pre-app-start span IDs for a service (lightweight, no pagination).
+func (c *TuskClient) GetAllPreAppStartSpanIds(ctx context.Context, in *backend.GetAllPreAppStartSpanIdsRequest, auth AuthOptions) (*backend.GetAllPreAppStartSpanIdsResponseSuccess, error) {
+	var out backend.GetAllPreAppStartSpanIdsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_all_pre_app_start_span_ids", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}
+
+// GetPreAppStartSpansByIds fetches pre-app-start spans by their IDs (batch fetch).
+func (c *TuskClient) GetPreAppStartSpansByIds(ctx context.Context, in *backend.GetPreAppStartSpansByIdsRequest, auth AuthOptions) (*backend.GetPreAppStartSpansByIdsResponseSuccess, error) {
+	var out backend.GetPreAppStartSpansByIdsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_pre_app_start_spans_by_ids", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}
+
+// GetAllGlobalSpanIds fetches all global span IDs for a service (lightweight, no pagination).
+func (c *TuskClient) GetAllGlobalSpanIds(ctx context.Context, in *backend.GetAllGlobalSpanIdsRequest, auth AuthOptions) (*backend.GetAllGlobalSpanIdsResponseSuccess, error) {
+	var out backend.GetAllGlobalSpanIdsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_all_global_span_ids", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}
+
+// GetGlobalSpansByIds fetches global spans by their IDs (batch fetch).
+func (c *TuskClient) GetGlobalSpansByIds(ctx context.Context, in *backend.GetGlobalSpansByIdsRequest, auth AuthOptions) (*backend.GetGlobalSpansByIdsResponseSuccess, error) {
+	var out backend.GetGlobalSpansByIdsResponse
+	if err := c.makeTestRunServiceRequest(ctx, "get_global_spans_by_ids", in, &out, auth, DefaultRetryConfig(3)); err != nil {
+		return nil, err
+	}
+
+	if s := out.GetSuccess(); s != nil {
+		return s, nil
+	}
+	if e := out.GetError(); e != nil {
+		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
+	}
+	return nil, fmt.Errorf("invalid response")
+}
