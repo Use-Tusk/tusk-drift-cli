@@ -415,7 +415,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 	var preAppStartSpans []*core.Span
 	if !deferLoadTests {
 		if cloud && client != nil {
-			preAppStartSpans, err = runner.FetchPreAppStartSpansFromCloudWithCache(context.Background(), client, authOptions, cfg.Service.ID)
+			preAppStartSpans, err = runner.FetchPreAppStartSpansFromCloudWithCache(
+				context.Background(),
+				client,
+				authOptions,
+				cfg.Service.ID,
+				interactive,
+				quiet,
+			)
 			if err != nil {
 				log.Warn("Failed to fetch pre-app-start spans from cloud", "error", err)
 			}
@@ -550,14 +557,26 @@ func runTests(cmd *cobra.Command, args []string) error {
 			}
 			allTestsForSuiteSpans = preloadedTests
 
-			// Pre-fetch pre-app-start spans before TUI starts
-			preloadedPreAppStartSpans, err = runner.FetchPreAppStartSpansFromCloudWithCache(context.Background(), client, authOptions, cfg.Service.ID)
+			preloadedPreAppStartSpans, err = runner.FetchPreAppStartSpansFromCloudWithCache(
+				context.Background(),
+				client,
+				authOptions,
+				cfg.Service.ID,
+				true,
+				false,
+			)
 			if err != nil {
 				log.Warn("Failed to pre-fetch pre-app-start spans", "error", err)
 			}
 
-			// Pre-fetch global spans before TUI starts
-			preloadedGlobalSpans, err = runner.FetchGlobalSpansFromCloudWithCache(context.Background(), client, authOptions, cfg.Service.ID)
+			preloadedGlobalSpans, err = runner.FetchGlobalSpansFromCloudWithCache(
+				context.Background(),
+				client,
+				authOptions,
+				cfg.Service.ID,
+				true,
+				false,
+			)
 			if err != nil {
 				log.Warn("Failed to pre-fetch global spans", "error", err)
 			}
@@ -806,9 +825,22 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 	var err error
 
 	if allCloud {
-		all, err = api.FetchAllTraceTestsWithCache(ctx, client, auth, serviceID)
+		all, err = api.FetchAllTraceTestsWithCache(
+			ctx,
+			client,
+			auth,
+			serviceID,
+			false,
+			quiet,
+		)
 	} else {
-		all, err = api.FetchDriftRunTraceTests(ctx, client, auth, driftRunID, nil)
+		all, err = api.FetchDriftRunTraceTests(
+			ctx,
+			client,
+			auth,
+			driftRunID,
+			nil,
+		)
 	}
 
 	if err != nil {

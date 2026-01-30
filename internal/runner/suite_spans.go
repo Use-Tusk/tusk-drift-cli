@@ -63,7 +63,7 @@ func BuildSuiteSpansForRun(
 		} else {
 			// Fetch from cloud with cache
 			var err error
-			global, err = FetchGlobalSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID)
+			global, err = FetchGlobalSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 			if err != nil {
 				log.Warn("Failed to fetch global spans", "error", err)
 			}
@@ -93,7 +93,7 @@ func BuildSuiteSpansForRun(
 		} else {
 			// Fetch from cloud with cache
 			var err error
-			preAppStartSpans, err = FetchPreAppStartSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID)
+			preAppStartSpans, err = FetchPreAppStartSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 			if err != nil {
 				log.Warn("Failed to fetch pre-app-start spans", "error", err)
 			}
@@ -229,8 +229,10 @@ func FetchPreAppStartSpansFromCloudWithCache(
 	client *api.TuskClient,
 	auth api.AuthOptions,
 	serviceID string,
+	interactive bool,
+	quiet bool,
 ) ([]*core.Span, error) {
-	return api.FetchPreAppStartSpansWithCache(ctx, client, auth, serviceID)
+	return api.FetchPreAppStartSpansWithCache(ctx, client, auth, serviceID, interactive, quiet)
 }
 
 // FetchGlobalSpansFromCloudWithCache fetches global spans using cache.
@@ -240,8 +242,10 @@ func FetchGlobalSpansFromCloudWithCache(
 	client *api.TuskClient,
 	auth api.AuthOptions,
 	serviceID string,
+	interactive bool,
+	quiet bool,
 ) ([]*core.Span, error) {
-	return api.FetchGlobalSpansWithCache(ctx, client, auth, serviceID)
+	return api.FetchGlobalSpansWithCache(ctx, client, auth, serviceID, interactive, quiet)
 }
 
 // FetchGlobalSpansFromCloud fetches only spans marked as global (is_global=true) from cloud

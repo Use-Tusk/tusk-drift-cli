@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cache"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
@@ -150,6 +151,8 @@ func FetchAllTraceTestsWithCache(
 	client *TuskClient,
 	auth AuthOptions,
 	serviceID string,
+	interactive bool,
+	quiet bool,
 ) ([]*backend.TraceTest, error) {
 	traceCache, err := cache.NewTraceCache(serviceID)
 	if err != nil {
@@ -166,7 +169,7 @@ func FetchAllTraceTestsWithCache(
 		if cacheErr != nil || len(cached) == 0 {
 			return nil, fmt.Errorf("failed to fetch trace test IDs and no cache available: %w", err)
 		}
-		fmt.Printf("Warning: Using cached data due to network error: %v\n", err)
+		log.Warn("Using cached data due to network error", "error", err)
 		return cached, nil
 	}
 	remoteIds := idsResp.TraceTestIds
@@ -212,7 +215,7 @@ func FetchAllTraceTestsWithCache(
 
 			if err := traceCache.SaveTraces(newTraces.TraceTests); err != nil {
 				// Non-fatal, traces are still usable
-				fmt.Fprintf(os.Stderr, "\nWarning: failed to save some traces to cache: %v\n", err)
+				log.Warn("Failed to save some traces to cache", "error", err)
 			}
 			tracker.Update(end)
 		}
@@ -226,8 +229,12 @@ func FetchAllTraceTestsWithCache(
 	}
 
 	// Show cache status
-	if len(toFetch) == 0 && len(all) > 0 {
-		fmt.Fprintf(os.Stderr, "✓ Using %d cached traces\n", len(all))
+	if len(toFetch) == 0 && len(all) > 0 && !quiet {
+		if interactive {
+			log.ServiceLog(fmt.Sprintf("✓ Using %d cached traces", len(all)))
+		} else {
+			fmt.Fprintf(os.Stderr, "✓ Using %d cached traces\n", len(all))
+		}
 	}
 
 	return all, nil
@@ -241,6 +248,8 @@ func FetchPreAppStartSpansWithCache(
 	client *TuskClient,
 	auth AuthOptions,
 	serviceID string,
+	interactive bool,
+	quiet bool,
 ) ([]*core.Span, error) {
 	spanCache, err := cache.NewSpanCache(serviceID, cache.SpanTypePreAppStart)
 	if err != nil {
@@ -249,7 +258,7 @@ func FetchPreAppStartSpansWithCache(
 	}
 
 	// 1. Fetch all IDs from API
-	tracker := utils.NewProgressTracker("Syncing pre-app-start spans", false, false)
+	tracker := utils.NewProgressTracker("Syncing pre-app-start spans", interactive, quiet)
 	idsResp, err := client.GetAllPreAppStartSpanIds(ctx, &backend.GetAllPreAppStartSpanIdsRequest{
 		ObservableServiceId: serviceID,
 	}, auth)
@@ -367,6 +376,8 @@ func FetchGlobalSpansWithCache(
 	client *TuskClient,
 	auth AuthOptions,
 	serviceID string,
+	interactive bool,
+	quiet bool,
 ) ([]*core.Span, error) {
 	spanCache, err := cache.NewSpanCache(serviceID, cache.SpanTypeGlobal)
 	if err != nil {
@@ -375,7 +386,7 @@ func FetchGlobalSpansWithCache(
 	}
 
 	// 1. Fetch all IDs from API
-	tracker := utils.NewProgressTracker("Syncing global spans", false, false)
+	tracker := utils.NewProgressTracker("Syncing global spans", interactive, quiet)
 	idsResp, err := client.GetAllGlobalSpanIds(ctx, &backend.GetAllGlobalSpanIdsRequest{
 		ObservableServiceId: serviceID,
 	}, auth)
