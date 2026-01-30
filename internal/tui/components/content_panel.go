@@ -1,11 +1,10 @@
 package components
 
 import (
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -579,6 +578,15 @@ func (cp *ContentPanel) GetViewportWidth() int {
 	return cp.viewport.Width
 }
 
+// GetRawContent returns the raw content without ANSI codes
+func (cp *ContentPanel) GetRawContent() string {
+	var lines []string
+	for _, line := range cp.contentLines {
+		lines = append(lines, stripAnsi(line))
+	}
+	return strings.Join(lines, "\n")
+}
+
 // UpdateContentLines updates content lines without clearing selection
 // Use this when content changes but you want to preserve any active selection
 func (cp *ContentPanel) UpdateContentLines(lines []string) {
@@ -614,30 +622,21 @@ func stripAnsi(s string) string {
 }
 
 // copyToClipboard copies text to system clipboard
-func (cp *ContentPanel) copyToClipboard(text string) tea.Cmd {
+func (cp *ContentPanel) copyToClipboard(text string) {
 	if text == "" {
-		return nil
+		return
 	}
 
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("pbcopy")
-	case "linux":
-		if _, err := exec.LookPath("xclip"); err == nil {
-			cmd = exec.Command("xclip", "-selection", "clipboard")
-		} else if _, err := exec.LookPath("xsel"); err == nil {
-			cmd = exec.Command("xsel", "--clipboard", "--input")
-		} else {
-			return nil
-		}
-	default:
-		return nil
-	}
-
-	cmd.Stdin = strings.NewReader(text)
-	_ = cmd.Run()
+	_ = clipboard.WriteAll(text)
 	cp.showCopied = true
-	return nil
+}
+
+// CopyText copies the given text to clipboard and shows the "[copied]" indicator.
+// Returns a tea.Cmd to reset the indicator after a timeout.
+func (cp *ContentPanel) CopyText(text string) tea.Cmd {
+	cp.copyToClipboard(text)
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		cp.showCopied = false
+		return struct{}{}
+	})
 }

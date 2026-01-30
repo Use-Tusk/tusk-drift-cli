@@ -15,6 +15,11 @@ type LogPanelComponent struct {
 	testLogs      map[string][]string
 	currentTestID string
 	logMutex      sync.RWMutex
+
+	// Caching to avoid expensive rebuilds on every View() call
+	lastWrapWidth     int
+	contentNeedsSync  bool
+	pendingGotoBottom bool
 }
 
 // NewLogPanelComponent creates a new log panel
@@ -39,7 +44,22 @@ func (lp *LogPanelComponent) View(width, height int) string {
 	lp.logMutex.Lock()
 	defer lp.logMutex.Unlock()
 
-	lp.rebuildContent(false)
+	// Only rebuild content if something actually changed
+	currentWrapWidth := lp.ContentPanel.GetViewportWidth() - 2
+	if currentWrapWidth <= 0 {
+		currentWrapWidth = 70
+	}
+
+	// Check if we need to rebuild: width changed or content was marked dirty
+	widthChanged := lp.lastWrapWidth != currentWrapWidth
+	if lp.contentNeedsSync || widthChanged {
+		// Go to bottom if new content was added, but not if just width changed
+		gotoBottom := lp.pendingGotoBottom && !widthChanged
+		lp.rebuildContent(gotoBottom)
+		lp.lastWrapWidth = currentWrapWidth
+		lp.contentNeedsSync = false
+		lp.pendingGotoBottom = false
+	}
 
 	return lp.ContentPanel.View(width, height)
 }
@@ -56,7 +76,8 @@ func (lp *LogPanelComponent) AddServiceLog(line string) {
 	}
 
 	if lp.currentTestID == "" {
-		lp.rebuildContent(true)
+		lp.contentNeedsSync = true
+		lp.pendingGotoBottom = true
 	}
 }
 
@@ -76,7 +97,8 @@ func (lp *LogPanelComponent) AddTestLog(testID, line string) {
 	}
 
 	if lp.currentTestID == testID {
-		lp.rebuildContent(true)
+		lp.contentNeedsSync = true
+		lp.pendingGotoBottom = true
 	}
 }
 
@@ -106,7 +128,8 @@ func (lp *LogPanelComponent) SetCurrentTest(testID string) {
 
 	lp.currentTestID = testID
 	lp.updateTitle()
-	lp.rebuildContent(true)
+	lp.contentNeedsSync = true
+	lp.pendingGotoBottom = true
 }
 
 // SetOffset sets the panel's position on screen (for mouse coordinate translation)
@@ -169,4 +192,10 @@ func (lp *LogPanelComponent) updateTitle() {
 		}
 		lp.ContentPanel.SetTitle(title)
 	}
+}
+
+// CopyAllLogs copies all currently visible logs to the clipboard
+func (lp *LogPanelComponent) CopyAllLogs() tea.Cmd {
+	text := lp.GetRawLogs()
+	return lp.ContentPanel.CopyText(text)
 }
