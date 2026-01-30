@@ -627,8 +627,9 @@ func (cp *ContentPanel) copyToClipboard(text string) {
 		return
 	}
 
-	_ = clipboard.WriteAll(text)
-	cp.showCopied = true
+	if err := clipboard.WriteAll(text); err == nil {
+		cp.showCopied = true
+	}
 }
 
 // CopyText copies the given text to clipboard and shows the "[copied]" indicator.

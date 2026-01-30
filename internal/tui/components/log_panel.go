@@ -53,9 +53,8 @@ func (lp *LogPanelComponent) View(width, height int) string {
 	// Check if we need to rebuild: width changed or content was marked dirty
 	widthChanged := lp.lastWrapWidth != currentWrapWidth
 	if lp.contentNeedsSync || widthChanged {
-		// Go to bottom if new content was added, but not if just width changed
-		gotoBottom := lp.pendingGotoBottom && !widthChanged
-		lp.rebuildContent(gotoBottom)
+		// Go to bottom if new content was added
+		lp.rebuildContent(lp.pendingGotoBottom)
 		lp.lastWrapWidth = currentWrapWidth
 		lp.contentNeedsSync = false
 		lp.pendingGotoBottom = false
