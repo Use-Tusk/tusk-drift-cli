@@ -58,10 +58,8 @@ func BuildSuiteSpansForRun(
 	if opts.IsCloudMode && opts.Client != nil {
 		var global []*core.Span
 		if len(opts.PreloadedGlobalSpans) > 0 {
-			// Use preloaded spans if available
 			global = opts.PreloadedGlobalSpans
 		} else {
-			// Fetch from cloud with cache
 			var err error
 			global, err = FetchGlobalSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 			if err != nil {
@@ -88,10 +86,8 @@ func BuildSuiteSpansForRun(
 	if opts.IsCloudMode && opts.Client != nil {
 		var preAppStartSpans []*core.Span
 		if len(opts.PreloadedPreAppStartSpans) > 0 {
-			// Use preloaded spans if available
 			preAppStartSpans = opts.PreloadedPreAppStartSpans
 		} else {
-			// Fetch from cloud with cache
 			var err error
 			preAppStartSpans, err = FetchPreAppStartSpansFromCloudWithCache(ctx, opts.Client, opts.AuthOptions, opts.ServiceID, opts.Interactive, opts.Quiet)
 			if err != nil {
