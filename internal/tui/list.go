@@ -146,7 +146,7 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter", "d", "D":
 				m.sizeWarning.Dismiss()
 				return m, nil
-			case "q", "ctrl+c", "esc":
+			case "q", "ctrl+c":
 				return m, tea.Quit
 			}
 			return m, nil
@@ -155,7 +155,7 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case listView:
 			switch msg.String() {
-			case "q", "ctrl+c", "esc":
+			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "enter":
 				if m.cursor >= 0 &&
@@ -254,11 +254,13 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				return m, nil
+			case "y":
+				return m, m.detailsPanel.CopyAllContent()
 			}
 		case testExecutionView:
 			if m.testExecutor != nil && m.testExecutor.state == stateCompleted {
 				switch msg.String() {
-				case "q", "ctrl+c", "esc", "enter", " ":
+				case "q", "ctrl+c", "enter", " ":
 					// Clean up and return to list
 					m.testExecutor.cleanup()
 					log.SetTUILogger(nil)
@@ -478,7 +480,7 @@ func (m *listModel) View() string {
 		availableWidthForHelp = max(availableWidthForHelp, 20)
 
 		footer := utils.TruncateWithEllipsis(
-			testCount+"• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll details • ←/→: expand • enter: run • q: quit",
+			testCount+"• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll details • ←/→: expand • y: copy • enter: run • q: quit",
 			availableWidthForHelp,
 		)
 
