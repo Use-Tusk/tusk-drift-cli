@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -114,7 +115,15 @@ func validateCommandSafety(command string) error {
 		for _, prefix := range []string{"rm -rf ", "rm -fr "} {
 			if idx := strings.Index(cmdLower, prefix); idx != -1 {
 				target := strings.TrimSpace(command[idx+len(prefix):])
-				if strings.HasPrefix(target, ".tusk/") {
+
+				// Reject shell metacharacters that could chain commands
+				if strings.ContainsAny(target, ";|&$`()") {
+					break
+				}
+
+				// Normalize the path and verify it stays within .tusk/
+				cleaned := filepath.Clean(target)
+				if strings.HasPrefix(cleaned, ".tusk/") || cleaned == ".tusk" {
 					isAllowedRmRf = true
 				}
 			}

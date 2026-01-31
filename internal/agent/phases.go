@@ -648,6 +648,7 @@ func complexTestPhase() *Phase {
 			ToolGrep,
 			ToolAskUser,
 			ToolTransitionPhase,
+			ToolWriteFile,
 		),
 		Required:      false,
 		MaxIterations: 100,
