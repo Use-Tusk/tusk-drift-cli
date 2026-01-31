@@ -103,9 +103,6 @@ type executionFailedMsg struct {
 
 type environmentGroupCompleteMsg struct{}
 
-// refreshTickMsg triggers periodic UI refresh for live log updates
-type refreshTickMsg struct{}
-
 // TUI log writer to capture slog output
 type tuiLogWriter struct {
 	model *testExecutorModel
@@ -349,10 +346,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case refreshTickMsg:
-		// Just triggers a re-render, no action needed
-		return m, nil
-
 	case tea.WindowSizeMsg:
 		oldWidth := m.width
 		oldHeight := m.height
