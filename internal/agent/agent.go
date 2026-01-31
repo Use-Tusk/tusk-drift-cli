@@ -66,6 +66,7 @@ type Agent struct {
 	skipToCloud     bool
 	printMode       bool
 	eligibilityOnly bool
+	verifyMode      bool
 
 	// UI abstraction (TUI / headless)
 	ui     AgentUI
@@ -119,6 +120,11 @@ func New(cfg Config) (*Agent, error) {
 		phaseMgr.SetEligibilityOnlyMode()
 	}
 
+	// If verify mode, use only the verify phases
+	if cfg.VerifyMode {
+		phaseMgr.SetVerifyMode()
+	}
+
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 
 	a := &Agent{
@@ -133,6 +139,7 @@ func New(cfg Config) (*Agent, error) {
 		skipToCloud:     cfg.SkipToCloud,
 		printMode:       cfg.PrintMode,
 		eligibilityOnly: cfg.EligibilityOnly,
+		verifyMode:      cfg.VerifyMode,
 	}
 
 	if cfg.OutputLogs {
@@ -195,7 +202,7 @@ func (a *Agent) Run(parentCtx context.Context) error {
 
 	// Show intro screen and wait for user to continue
 	isProxyMode := a.client.mode == APIModeProxy
-	shouldContinue, err := a.ui.ShowIntro(isProxyMode, a.skipToCloud)
+	shouldContinue, err := a.ui.ShowIntro(isProxyMode, a.skipToCloud, a.verifyMode)
 	if err != nil {
 		return fmt.Errorf("failed to show intro: %w", err)
 	}
@@ -267,7 +274,7 @@ func (a *Agent) runAgent() error {
 
 	// Check for existing progress and skip to the appropriate phase (unless disabled)
 	existingProgress := ""
-	if !a.disableProgress {
+	if !a.disableProgress && !a.verifyMode && !a.eligibilityOnly {
 		existingProgress = a.readProgress()
 	}
 	if existingProgress != "" {
@@ -462,6 +469,32 @@ func (a *Agent) runAgent() error {
 			report.Summary.PartiallyCompatible,
 			report.Summary.NotCompatible), false)
 		a.ui.EligibilityCompleted(a.workDir)
+		time.Sleep(500 * time.Millisecond)
+		return a.setCompleted()
+	}
+
+	if a.verifyMode {
+		state := a.phaseManager.GetState()
+		a.trackEvent("drift_cli:setup_agent:verify_completed", map[string]any{
+			"simple_passed":  state.VerifySimplePassed,
+			"complex_passed": state.VerifyComplexPassed,
+			"duration_ms":    time.Since(a.startTime).Milliseconds(),
+		})
+
+		if !state.VerifySimplePassed {
+			a.ui.AgentText("\n\nVerification failed. Your Tusk Drift setup is not working correctly.\nPlease run 'tusk setup' to reconfigure.\n", false)
+			a.ui.Aborted("verification failed")
+			time.Sleep(500 * time.Millisecond)
+			return a.setFailed(fmt.Errorf("verification failed: simple test did not pass"))
+		}
+
+		msg := "\n\nVerification passed!"
+		if !state.VerifyComplexPassed {
+			msg += " (simple test passed, complex test failed/skipped)"
+		}
+		msg += "\n"
+		a.ui.AgentText(msg, false)
+		a.ui.Completed(a.workDir)
 		time.Sleep(500 * time.Millisecond)
 		return a.setCompleted()
 	}
@@ -1446,7 +1479,7 @@ func (a *Agent) findNextPhaseToRun(completedPhases []string) string {
 
 // saveProgress saves the current progress to the progress file
 func (a *Agent) saveProgress(completedPhases []string, currentPhase string, notes string) error {
-	if a.disableProgress || a.eligibilityOnly {
+	if a.disableProgress || a.eligibilityOnly || a.verifyMode {
 		return nil
 	}
 

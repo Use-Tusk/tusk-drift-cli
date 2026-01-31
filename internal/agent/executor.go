@@ -664,7 +664,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 						"description": "Whether to record environment variables"
 					}
 				},
-				"required": ["service_id", "sampling_rate", "export_spans", "enable_env_var_recording"]
+				"required": ["sampling_rate", "export_spans", "enable_env_var_recording"]
 			}`),
 		},
 		ToolCloudUploadTraces: {

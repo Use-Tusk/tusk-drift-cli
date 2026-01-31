@@ -50,11 +50,37 @@ If it fails:
 - Try to fix issues and retry (max 3 attempts)
 - If still failing, ask the user for help
 
+### Step 5: Save to Verify Cache
+
+If the test passed, save the endpoint info used to `.tusk/verify-cache.json` so that
+future `tusk setup --verify` runs can reuse it. Read the existing file first (if it
+exists) to preserve other entries (like `complex_test`).
+
+If `.tusk/verify-cache.json` does not exist, create it.
+
+Format:
+
+```json
+{
+  "simple_test": {
+    "url": "<the full URL used, e.g. http://localhost:3000/health>",
+    "method": "<GET/POST/etc>",
+    "headers": {},
+    "body": ""
+  }
+}
+```
+
+Write the updated JSON back to `.tusk/verify-cache.json`.
+
 When a simple test passes, call transition_phase with:
+
+```json
 {
   "results": {
     "simple_test_passed": true
   }
 }
+```
 
 If you cannot get it working after reasonable attempts, call transition_phase with simple_test_passed: false and explain what went wrong in the notes.

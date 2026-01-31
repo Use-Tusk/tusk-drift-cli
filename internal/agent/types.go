@@ -113,6 +113,13 @@ type State struct {
 	SuiteValidationSuccess   bool `json:"suite_validation_success"`
 	TestsInSuite             int  `json:"tests_in_suite"`
 	SuiteValidationAttempted bool `json:"suite_validation_attempted"`
+
+	// Verify mode state
+	OriginalSamplingRate          float64 `json:"original_sampling_rate,omitempty"`
+	OriginalExportSpans           bool    `json:"original_export_spans"`
+	OriginalEnableEnvVarRecording bool    `json:"original_enable_env_var_recording"`
+	VerifySimplePassed            bool    `json:"verify_simple_passed,omitempty"`
+	VerifyComplexPassed           bool    `json:"verify_complex_passed,omitempty"`
 }
 
 // PhaseError represents an error that occurred during a phase
@@ -140,4 +147,5 @@ type Config struct {
 	PrintMode       bool // Headless mode - no TUI, stream to stdout
 	OutputLogs      bool // Output all logs to a file in .tusk/logs/
 	EligibilityOnly bool // Only run eligibility check, output JSON and exit
+	VerifyMode      bool // Verify existing setup works by re-recording and replaying
 }

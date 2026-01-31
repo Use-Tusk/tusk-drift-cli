@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -106,6 +107,29 @@ func NewProcessTools(pm *ProcessManager, workDir string) *ProcessTools {
 func validateCommandSafety(command string) error {
 	cmdLower := strings.ToLower(command)
 
+	// Allow rm -rf only when targeting .tusk/ directory
+	// verifySetupPhase() need to run `rm -rf .tusk/traces/*` to delete existing traces
+	isAllowedRmRf := false
+	if strings.Contains(cmdLower, "rm -rf") || strings.Contains(cmdLower, "rm -fr") {
+		// Extract everything after "rm -rf " or "rm -fr "
+		for _, prefix := range []string{"rm -rf ", "rm -fr "} {
+			if idx := strings.Index(cmdLower, prefix); idx != -1 {
+				target := strings.TrimSpace(command[idx+len(prefix):])
+
+				// Reject shell metacharacters that could chain commands
+				if strings.ContainsAny(target, ";|&$`()") {
+					break
+				}
+
+				// Normalize the path and verify it stays within .tusk/
+				cleaned := filepath.Clean(target)
+				if strings.HasPrefix(cleaned, ".tusk/") || cleaned == ".tusk" {
+					isAllowedRmRf = true
+				}
+			}
+		}
+	}
+
 	// Dangerous command patterns - these could cause data loss or system damage
 	dangerousPatterns := []struct {
 		pattern string
@@ -151,6 +175,9 @@ func validateCommandSafety(command string) error {
 
 	for _, dp := range dangerousPatterns {
 		if strings.Contains(cmdLower, dp.pattern) {
+			if isAllowedRmRf && (dp.pattern == "rm -rf" || dp.pattern == "rm -fr") {
+				continue
+			}
 			return fmt.Errorf("command blocked for safety: '%s' contains '%s' (%s). This command is not allowed during setup", command, dp.pattern, dp.reason)
 		}
 	}

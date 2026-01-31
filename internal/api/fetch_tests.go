@@ -290,7 +290,8 @@ func FetchPreAppStartSpansWithCache(
 		}
 	}
 
-	if len(toFetch) > 0 {
+	switch {
+	case len(toFetch) > 0:
 		tracker.SetTotal(len(toFetch))
 		tracker.Update(0)
 
@@ -318,9 +319,9 @@ func FetchPreAppStartSpansWithCache(
 			tracker.Update(end)
 		}
 		tracker.Finish(fmt.Sprintf("✓ Fetched %d new pre-app-start spans", len(toFetch)))
-	} else if len(remoteIds) > 0 {
+	case len(remoteIds) > 0:
 		tracker.Finish(fmt.Sprintf("✓ Using %d cached pre-app-start spans", len(remoteIds)))
-	} else {
+	default:
 		tracker.Finish("✓ No pre-app-start spans configured")
 	}
 
@@ -410,7 +411,8 @@ func FetchGlobalSpansWithCache(
 		}
 	}
 
-	if len(toFetch) > 0 {
+	switch {
+	case len(toFetch) > 0:
 		tracker.SetTotal(len(toFetch))
 		tracker.Update(0)
 
@@ -438,9 +440,9 @@ func FetchGlobalSpansWithCache(
 			tracker.Update(end)
 		}
 		tracker.Finish(fmt.Sprintf("✓ Fetched %d new global spans", len(toFetch)))
-	} else if len(remoteIds) > 0 {
+	case len(remoteIds) > 0:
 		tracker.Finish(fmt.Sprintf("✓ Using %d cached global spans", len(remoteIds)))
-	} else {
+	default:
 		tracker.Finish("✓ No global spans configured")
 	}
 

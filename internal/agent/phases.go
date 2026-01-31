@@ -199,6 +199,23 @@ func (pm *PhaseManager) UpdateState(results map[string]interface{}) {
 	if v, ok := results["suite_validation_attempted"].(bool); ok {
 		pm.state.SuiteValidationAttempted = v
 	}
+
+	// Verify mode state
+	if v, ok := results["original_sampling_rate"].(float64); ok {
+		pm.state.OriginalSamplingRate = v
+	}
+	if v, ok := results["original_export_spans"].(bool); ok {
+		pm.state.OriginalExportSpans = v
+	}
+	if v, ok := results["original_enable_env_var_recording"].(bool); ok {
+		pm.state.OriginalEnableEnvVarRecording = v
+	}
+	if v, ok := results["verify_simple_passed"].(bool); ok {
+		pm.state.VerifySimplePassed = v
+	}
+	if v, ok := results["verify_complex_passed"].(bool); ok {
+		pm.state.VerifyComplexPassed = v
+	}
 }
 
 // StateAsContext returns the current state as a string for the prompt
@@ -346,6 +363,17 @@ func (pm *PhaseManager) SetCloudOnlyMode() {
 func (pm *PhaseManager) SetEligibilityOnlyMode() {
 	pm.phases = []*Phase{
 		eligibilityCheckPhase(),
+	}
+	pm.currentIdx = 0
+}
+
+// SetVerifyMode replaces all phases with verify-only phases
+func (pm *PhaseManager) SetVerifyMode() {
+	pm.phases = []*Phase{
+		verifySetupPhase(),
+		verifySimpleTestPhase(),
+		verifyComplexTestPhase(),
+		verifyRestorePhase(),
 	}
 	pm.currentIdx = 0
 }
@@ -620,6 +648,7 @@ func complexTestPhase() *Phase {
 			ToolGrep,
 			ToolAskUser,
 			ToolTransitionPhase,
+			ToolWriteFile,
 		),
 		Required:      false,
 		MaxIterations: 100,
@@ -841,6 +870,93 @@ func cloudSummaryPhase() *Phase {
 			ToolTransitionPhase,
 		),
 		Required: true,
+	}
+}
+
+// Verify Mode Phases
+
+func verifySetupPhase() *Phase {
+	return &Phase{
+		ID:           "verify_setup",
+		Name:         "Verify Setup",
+		Description:  "Validate config and prepare for verification",
+		Instructions: PhaseVerifySetupPrompt,
+		Tools: Tools(
+			ToolTuskValidateConfig,
+			ToolReadFile,
+			ToolWriteFile,
+			ToolCloudSaveConfig,
+			ToolRunCommand,
+			ToolAskUser,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 15,
+	}
+}
+
+func verifySimpleTestPhase() *Phase {
+	return &Phase{
+		ID:           "verify_simple_test",
+		Name:         "Verify Simple Test",
+		Description:  "Record and replay a simple health check",
+		Instructions: PhaseVerifySimpleTestPrompt,
+		Tools: Tools(
+			ToolStartBackgroundProcess,
+			ToolStopBackgroundProcess,
+			ToolWaitForReady,
+			ToolGetProcessLogs,
+			ToolHTTPRequest,
+			ToolTuskList,
+			ToolTuskRun,
+			ToolReadFile,
+			ToolWriteFile,
+			ToolRunCommand,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 50,
+	}
+}
+
+func verifyComplexTestPhase() *Phase {
+	return &Phase{
+		ID:           "verify_complex_test",
+		Name:         "Verify Complex Test",
+		Description:  "Record and replay a complex endpoint (optional)",
+		Instructions: PhaseVerifyComplexTestPrompt,
+		Tools: Tools(
+			ToolStartBackgroundProcess,
+			ToolStopBackgroundProcess,
+			ToolWaitForReady,
+			ToolGetProcessLogs,
+			ToolHTTPRequest,
+			ToolTuskList,
+			ToolTuskRun,
+			ToolReadFile,
+			ToolWriteFile,
+			ToolGrep,
+			ToolTransitionPhase,
+		),
+		Required:      false,
+		MaxIterations: 50,
+	}
+}
+
+func verifyRestorePhase() *Phase {
+	return &Phase{
+		ID:           "verify_restore",
+		Name:         "Verify Restore",
+		Description:  "Restore config and report results",
+		Instructions: PhaseVerifyRestorePrompt,
+		Tools: Tools(
+			ToolCloudSaveConfig,
+			ToolReadFile,
+			ToolWriteFile,
+			ToolTransitionPhase,
+		),
+		Required:      true,
+		MaxIterations: 10,
 	}
 }
 
