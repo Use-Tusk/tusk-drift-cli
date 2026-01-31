@@ -103,9 +103,6 @@ type executionFailedMsg struct {
 
 type environmentGroupCompleteMsg struct{}
 
-// refreshTickMsg triggers periodic UI refresh for live log updates
-type refreshTickMsg struct{}
-
 // TUI log writer to capture slog output
 type tuiLogWriter struct {
 	model *testExecutorModel
@@ -349,10 +346,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case refreshTickMsg:
-		// Just triggers a re-render, no action needed
-		return m, nil
-
 	case tea.WindowSizeMsg:
 		oldWidth := m.width
 		oldHeight := m.height
@@ -375,7 +368,7 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter", "d", "D":
 				m.sizeWarning.Dismiss()
 				return m, nil
-			case "q", "ctrl+c", "esc":
+			case "q", "ctrl+c":
 				m.cleanup()
 				return m, tea.Quit
 			}
@@ -399,7 +392,6 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
 					m.logPanel.SetCurrentTest(selectedTest.TraceID)
 				}
-				return m, nil
 			case tea.MouseButtonWheelDown:
 				// Scroll viewport only, clamp cursor to visible bounds
 				m.testTable.ScrollDown(3)
@@ -409,17 +401,18 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if selectedTest := m.testTable.GetSelectedTest(); selectedTest != nil {
 					m.logPanel.SetCurrentTest(selectedTest.TraceID)
 				}
-				return m, nil
 			}
-		} else {
-			// - X: leftWidth + border(1) + padding(1) = leftWidth + 2
-			// - Y: headerHeight + title(1) + empty line(1) = headerHeight + 2
-			m.logPanel.SetOffset(leftWidth+2, headerHeight+2)
-			if cmd := m.logPanel.Update(msg); cmd != nil {
-				return m, cmd
-			}
+			// Always return for left-side mouse events to prevent fall-through
 			return m, nil
 		}
+		// Right panel - handle mouse events there
+		// - X: leftWidth + border(1) + padding(1) = leftWidth + 2
+		// - Y: headerHeight + title(1) + empty line(1) = headerHeight + 2
+		m.logPanel.SetOffset(leftWidth+2, headerHeight+2)
+		if cmd := m.logPanel.Update(msg); cmd != nil {
+			return m, cmd
+		}
+		return m, nil
 
 	case testsLoadedMsg:
 		// Inject tests into model and start execution
@@ -726,7 +719,10 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 		m.updateLogPanelFromSelection()
 		return m, nil
 
-	case "q", "ctrl+c", "esc":
+	case "y":
+		return m, m.logPanel.CopyAllLogs()
+
+	case "q", "ctrl+c":
 		m.cleanup()
 		return m, tea.Quit
 	}
@@ -745,7 +741,7 @@ func (m *testExecutorModel) updateLogPanelFromSelection() {
 
 func (m *testExecutorModel) getFooterText() string {
 	testCount := fmt.Sprintf("%d TESTS ", len(m.tests))
-	return testCount + "• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll logs • q: quit"
+	return testCount + "• j/k: select • u/d: scroll • g/G: top/bottom • J/K/U/D: scroll logs • y: copy logs • q: quit"
 }
 
 func (m *testExecutorModel) View() string {

@@ -236,6 +236,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 					log.Stderrln("Skipping: " + err.Error())
 					return nil
 				}
+				// Handle PAUSED_BY_LABEL error as a no-op in CI mode
+				if api.IsPausedByLabelError(err) && ci {
+					log.Stderrln("Skipping: " + err.Error())
+					return nil
+				}
 				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
 				return fmt.Errorf("failed to create drift run: %w", err)
 			}
@@ -427,7 +432,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 	var preAppStartSpans []*core.Span
 	if !deferLoadTests {
 		if cloud && client != nil {
-			preAppStartSpans, err = runner.FetchPreAppStartSpansFromCloud(context.Background(), client, authOptions, cfg.Service.ID, false, quiet)
+			preAppStartSpans, err = runner.FetchPreAppStartSpansFromCloudWithCache(
+				context.Background(),
+				client,
+				authOptions,
+				cfg.Service.ID,
+				interactive,
+				quiet,
+			)
 			if err != nil {
 				log.Warn("Failed to fetch pre-app-start spans from cloud", "error", err)
 			}
@@ -540,6 +552,9 @@ func runTests(cmd *cobra.Command, args []string) error {
 		var preloadedTests []runner.Test
 		var loadTestsFn func(ctx context.Context) ([]runner.Test, error)
 
+		// Pre-fetch spans for cloud mode (before TUI starts)
+		var preloadedPreAppStartSpans []*core.Span
+		var preloadedGlobalSpans []*core.Span
 		if cloud && client != nil {
 			// Load tests upfront with progress bar
 			var err error
@@ -558,6 +573,30 @@ func runTests(cmd *cobra.Command, args []string) error {
 				}
 			}
 			allTestsForSuiteSpans = preloadedTests
+
+			preloadedPreAppStartSpans, err = runner.FetchPreAppStartSpansFromCloudWithCache(
+				context.Background(),
+				client,
+				authOptions,
+				cfg.Service.ID,
+				true,
+				false,
+			)
+			if err != nil {
+				log.Warn("Failed to pre-fetch pre-app-start spans", "error", err)
+			}
+
+			preloadedGlobalSpans, err = runner.FetchGlobalSpansFromCloudWithCache(
+				context.Background(),
+				client,
+				authOptions,
+				cfg.Service.ID,
+				true,
+				false,
+			)
+			if err != nil {
+				log.Warn("Failed to pre-fetch global spans", "error", err)
+			}
 		} else {
 			initialLogs = append(initialLogs, "📁 Loading tests from local traces...")
 			baseLoadTestsFn := makeLoadTestsFunc(
@@ -607,13 +646,15 @@ func runTests(cmd *cobra.Command, args []string) error {
 					context.Background(),
 					exec,
 					runner.SuiteSpanOptions{
-						IsCloudMode:            cloud,
-						Client:                 client,
-						AuthOptions:            authOptions,
-						ServiceID:              cfg.Service.ID,
-						TraceTestID:            traceTestID,
-						Interactive:            true,
-						AllowSuiteWideMatching: isValidation,
+						IsCloudMode:               cloud,
+						Client:                    client,
+						AuthOptions:               authOptions,
+						ServiceID:                 cfg.Service.ID,
+						TraceTestID:               traceTestID,
+						Interactive:               true,
+						AllowSuiteWideMatching:    isValidation,
+						PreloadedPreAppStartSpans: preloadedPreAppStartSpans,
+						PreloadedGlobalSpans:      preloadedGlobalSpans,
 					},
 					testsForSpans,
 				)
@@ -801,17 +842,26 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 	var err error
 
 	if allCloud {
-		all, err = api.FetchAllTraceTests(ctx, client, auth, serviceID, nil)
+		all, err = api.FetchAllTraceTestsWithCache(
+			ctx,
+			client,
+			auth,
+			serviceID,
+			false,
+			quiet,
+		)
 	} else {
-		all, err = api.FetchDriftRunTraceTests(ctx, client, auth, driftRunID, nil)
+		all, err = api.FetchDriftRunTraceTests(
+			ctx,
+			client,
+			auth,
+			driftRunID,
+			nil,
+		)
 	}
 
 	if err != nil {
 		return nil, err
-	}
-
-	if !quiet {
-		log.Stderrln(fmt.Sprintf("➤ Fetched %d trace tests from Tusk Drift Cloud", len(all)))
 	}
 
 	return runner.ConvertTraceTestsToRunnerTests(all), nil
