@@ -524,6 +524,8 @@ func (c *TuskClient) GetGlobalSpansByIds(ctx context.Context, in *backend.GetGlo
 		return nil, fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
 	return nil, fmt.Errorf("invalid response")
+}
+
 // ExportSpans uploads spans to Tusk Cloud
 func (c *TuskClient) ExportSpans(ctx context.Context, in *backend.ExportSpansRequest, auth AuthOptions) (*backend.ExportSpansResponse, error) {
 	var out backend.ExportSpansResponse

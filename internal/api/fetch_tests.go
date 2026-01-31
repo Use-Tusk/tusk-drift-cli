@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -10,6 +11,18 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
+)
+
+var (
+	ErrFetchTraceTests          = errors.New("unable to fetch tests from Tusk Cloud")
+	ErrFetchTraceTestIDs        = errors.New("unable to fetch test IDs from Tusk Cloud and no cache available")
+	ErrFetchNewTraceTests       = errors.New("unable to fetch new tests from Tusk Cloud")
+	ErrFetchPreAppStartSpanIDs  = errors.New("unable to fetch pre-app-start span IDs from Tusk Cloud and no cache available")
+	ErrFetchNewPreAppStartSpans = errors.New("unable to fetch new pre-app-start spans from Tusk Cloud")
+	ErrFetchPreAppStartSpans    = errors.New("unable to fetch pre-app-start spans from Tusk Cloud")
+	ErrFetchGlobalSpanIDs       = errors.New("unable to fetch global span IDs from Tusk Cloud and no cache available")
+	ErrFetchNewGlobalSpans      = errors.New("unable to fetch new global spans from Tusk Cloud")
+	ErrFetchGlobalSpans         = errors.New("unable to fetch global spans from Tusk Cloud")
 )
 
 // FetchAllTraceTestsOptions configures the fetch behavior
@@ -59,7 +72,7 @@ func FetchAllTraceTests(
 		resp, err := client.GetAllTraceTests(ctx, req, auth)
 		if err != nil {
 			tracker.Stop()
-			return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrFetchTraceTests, err)
 		}
 
 		all = append(all, resp.TraceTests...)
@@ -120,7 +133,7 @@ func FetchDriftRunTraceTests(
 		resp, err := client.GetDriftRunTraceTests(ctx, req, auth)
 		if err != nil {
 			tracker.Stop()
-			return nil, fmt.Errorf("failed to fetch trace tests from backend: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrFetchTraceTests, err)
 		}
 
 		all = append(all, resp.TraceTests...)
@@ -165,7 +178,7 @@ func FetchAllTraceTestsWithCache(
 	if err != nil {
 		cached, cacheErr := traceCache.LoadAllTraces()
 		if cacheErr != nil || len(cached) == 0 {
-			return nil, fmt.Errorf("failed to fetch trace test IDs and no cache available: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrFetchTraceTestIDs, err)
 		}
 		log.Warn("Using cached data due to network error", "error", err)
 		return cached, nil
@@ -203,7 +216,7 @@ func FetchAllTraceTestsWithCache(
 			}, auth)
 			if err != nil {
 				tracker.Stop()
-				return nil, fmt.Errorf("failed to fetch new trace tests: %w", err)
+				return nil, fmt.Errorf("%w: %w", ErrFetchNewTraceTests, err)
 			}
 
 			if err := traceCache.SaveTraces(newTraces.TraceTests); err != nil {
@@ -255,7 +268,7 @@ func FetchPreAppStartSpansWithCache(
 		tracker.Stop()
 		cached, cacheErr := spanCache.LoadAllSpans()
 		if cacheErr != nil || len(cached) == 0 {
-			return nil, fmt.Errorf("failed to fetch pre-app-start span IDs and no cache available: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrFetchPreAppStartSpanIDs, err)
 		}
 		fmt.Fprintf(os.Stderr, "⚠ Using %d cached pre-app-start spans (network error: %v)\n", len(cached), err)
 		return cached, nil
@@ -295,7 +308,7 @@ func FetchPreAppStartSpansWithCache(
 			}, auth)
 			if err != nil {
 				tracker.Stop()
-				return nil, fmt.Errorf("failed to fetch new pre-app-start spans: %w", err)
+				return nil, fmt.Errorf("%w: %w", ErrFetchNewPreAppStartSpans, err)
 			}
 
 			if err := spanCache.SaveSpans(newSpans.Spans); err != nil {
@@ -336,7 +349,7 @@ func FetchAllPreAppStartSpans(
 
 		resp, err := client.GetPreAppStartSpans(ctx, req, auth)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch pre-app-start spans: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrFetchPreAppStartSpans, err)
 		}
 
 		all = append(all, resp.Spans...)
@@ -375,7 +388,7 @@ func FetchGlobalSpansWithCache(
 		tracker.Stop()
 		cached, cacheErr := spanCache.LoadAllSpans()
 		if cacheErr != nil || len(cached) == 0 {
-			return nil, fmt.Errorf("failed to fetch global span IDs and no cache available: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrFetchGlobalSpanIDs, err)
 		}
 		fmt.Fprintf(os.Stderr, "⚠ Using %d cached global spans (network error: %v)\n", len(cached), err)
 		return cached, nil
@@ -415,7 +428,7 @@ func FetchGlobalSpansWithCache(
 			}, auth)
 			if err != nil {
 				tracker.Stop()
-				return nil, fmt.Errorf("failed to fetch new global spans: %w", err)
+				return nil, fmt.Errorf("%w: %w", ErrFetchNewGlobalSpans, err)
 			}
 
 			if err := spanCache.SaveSpans(newSpans.Spans); err != nil {
@@ -455,7 +468,7 @@ func FetchAllGlobalSpans(
 
 		resp, err := client.GetGlobalSpans(ctx, req, auth)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch global spans: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrFetchGlobalSpans, err)
 		}
 
 		all = append(all, resp.Spans...)
