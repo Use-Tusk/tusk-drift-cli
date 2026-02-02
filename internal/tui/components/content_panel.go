@@ -11,7 +11,13 @@ import (
 	"github.com/muesli/reflow/ansi"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
+
+// isSoftLineBreak checks if line starts with soft line break marker
+func isSoftLineBreak(line string) bool {
+	return strings.HasPrefix(line, utils.SoftLineBreak)
+}
 
 // SelectionPos represents a position in the content
 type SelectionPos struct {
@@ -58,7 +64,7 @@ type ContentPanel struct {
 	xOffset int
 	yOffset int
 
-	// Content storage for selection
+	// Content storage for selection (may contain SoftLineBreak markers)
 	contentLines []string
 
 	// Copied indicator
@@ -114,7 +120,17 @@ func (cp *ContentPanel) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	x := msg.X - cp.xOffset
 	y := msg.Y - cp.yOffset
 
-	if x < 0 || x >= cp.viewport.Width || y < 0 {
+	if y < 0 {
+		return nil
+	}
+
+	// error margin for clicks near the left border
+	if x < 0 && x >= -3 {
+		x = 0
+	}
+
+	// Reject clicks too far outside horizontal bounds
+	if x < 0 || x >= cp.viewport.Width {
 		return nil
 	}
 
@@ -341,20 +357,23 @@ func (cp *ContentPanel) updateViewportContent() {
 			highlighted.WriteString("\n")
 		}
 
+		// Strip markers for display (markers are kept in contentLines for copy logic)
+		displayLine := utils.StripAllMarkers(line)
+
 		if !cp.hasSelection && !cp.selecting {
-			highlighted.WriteString(line)
+			highlighted.WriteString(displayLine)
 			continue
 		}
 
-		lineWidth := ansi.PrintableRuneWidth(line)
+		lineWidth := ansi.PrintableRuneWidth(displayLine)
 
 		if i < start.Line || i > end.Line {
-			highlighted.WriteString(line)
+			highlighted.WriteString(displayLine)
 			continue
 		}
 
 		highlighted.WriteString(cp.highlightLine(
-			line,
+			displayLine,
 			lineWidth,
 			i,
 			start,
@@ -447,6 +466,7 @@ func (cp *ContentPanel) normalizeSelection() (SelectionPos, SelectionPos) {
 }
 
 // GetSelectedText returns the currently selected text
+// Uses SoftLineBreak markers to properly join wrapped lines without adding unwanted newlines
 func (cp *ContentPanel) GetSelectedText() string {
 	if !cp.hasSelection || len(cp.contentLines) == 0 {
 		return ""
@@ -455,14 +475,15 @@ func (cp *ContentPanel) GetSelectedText() string {
 	start, end := cp.normalizeSelection()
 
 	var result strings.Builder
-
 	for i := start.Line; i <= end.Line && i < len(cp.contentLines); i++ {
 		if i < 0 {
 			continue
 		}
 
 		line := cp.contentLines[i]
-		plainLine := stripAnsi(line)
+		isContinuation := isSoftLineBreak(line)
+
+		plainLine := utils.StripAllMarkers(stripAnsi(line))
 		runes := []rune(plainLine)
 
 		startCol := 0
@@ -485,12 +506,12 @@ func (cp *ContentPanel) GetSelectedText() string {
 			startCol = len(runes)
 		}
 
-		if startCol < endCol {
-			result.WriteString(string(runes[startCol:endCol]))
+		if i > start.Line && !isContinuation {
+			result.WriteString("\n")
 		}
 
-		if i < end.Line {
-			result.WriteString("\n")
+		if startCol < endCol {
+			result.WriteString(string(runes[startCol:endCol]))
 		}
 	}
 
@@ -513,11 +534,31 @@ func (cp *ContentPanel) SetContent(content string) {
 	cp.viewport.SetContent(content)
 }
 
+// SetContentWithWrapping sets content and wraps it to the given width
+// Uses SoftLineBreak markers so copying preserves original line structure
+func (cp *ContentPanel) SetContentWithWrapping(content string, wrapWidth int) {
+	if wrapWidth <= 0 {
+		wrapWidth = 70
+	}
+
+	lines := strings.Split(content, "\n")
+	var wrappedLines []string
+
+	for _, line := range lines {
+		wrapped := utils.WrapLine(line, wrapWidth)
+		wrappedLines = append(wrappedLines, wrapped...)
+	}
+
+	cp.contentLines = wrappedLines
+	cp.ClearSelection()
+	cp.viewport.SetContent(utils.StripAllMarkers(strings.Join(wrappedLines, "\n")))
+}
+
 // SetContentLines sets the content lines directly (useful for pre-processed content)
 func (cp *ContentPanel) SetContentLines(lines []string) {
 	cp.contentLines = lines
 	cp.ClearSelection()
-	cp.viewport.SetContent(strings.Join(lines, "\n"))
+	cp.viewport.SetContent(utils.StripAllMarkers(strings.Join(lines, "\n")))
 }
 
 // SetTitle sets the panel title
@@ -589,9 +630,11 @@ func (cp *ContentPanel) GetRawContent() string {
 
 // UpdateContentLines updates content lines without clearing selection
 // Use this when content changes but you want to preserve any active selection
+// Lines may contain SoftLineBreak markers which will be stripped for display
+// but preserved for copy operations
 func (cp *ContentPanel) UpdateContentLines(lines []string) {
 	cp.contentLines = lines
-	cp.updateViewportContent()
+	cp.viewport.SetContent(utils.StripAllMarkers(strings.Join(lines, "\n")))
 }
 
 // IsSelecting returns true if the user is currently selecting text
