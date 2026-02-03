@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	cachedRenderer    *glamour.TermRenderer
-	cachedStyleConfig *styleConfig
+	markdownRenderer    *glamour.TermRenderer
+	markdownStyleConfig *styleConfig
 )
 
 // styleConfig holds the cached style configuration
@@ -59,31 +59,20 @@ func init() {
 		panic("failed to marshal style overrides: " + err.Error())
 	}
 
-	cachedStyleConfig = &styleConfig{
+	markdownStyleConfig = &styleConfig{
 		baseStyle:     baseStyle,
 		overridesJSON: overridesJSON,
 	}
 
 	// Initialize default renderer with width 90
-	cachedRenderer, err = glamour.NewTermRenderer(
-		glamour.WithStandardStyle(cachedStyleConfig.baseStyle),
+	markdownRenderer, err = glamour.NewTermRenderer(
+		glamour.WithStandardStyle(markdownStyleConfig.baseStyle),
 		glamour.WithWordWrap(90),
-		glamour.WithStylesFromJSONBytes(cachedStyleConfig.overridesJSON),
+		glamour.WithStylesFromJSONBytes(markdownStyleConfig.overridesJSON),
 	)
 	if err != nil {
 		panic("failed to create glamour renderer: " + err.Error())
 	}
-}
-
-// getStyleConfig returns the cached style configuration.
-func getStyleConfig() *styleConfig {
-	return cachedStyleConfig
-}
-
-// getRenderer returns the cached glamour renderer.
-// Uses width of 90 for the default renderer.
-func getRenderer() *glamour.TermRenderer {
-	return cachedRenderer
 }
 
 func RenderMarkdown(markdown string) string {
@@ -91,7 +80,7 @@ func RenderMarkdown(markdown string) string {
 		return markdown
 	}
 
-	rendered, err := getRenderer().Render(markdown)
+	rendered, err := markdownRenderer.Render(markdown)
 	if err != nil {
 		return markdown
 	}
@@ -110,11 +99,10 @@ func RenderMarkdownWithWidth(markdown string, width int) string {
 		width = 80
 	}
 
-	cfg := getStyleConfig()
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(cfg.baseStyle),
+		glamour.WithStandardStyle(markdownStyleConfig.baseStyle),
 		glamour.WithWordWrap(width),
-		glamour.WithStylesFromJSONBytes(cfg.overridesJSON),
+		glamour.WithStylesFromJSONBytes(markdownStyleConfig.overridesJSON),
 	)
 	if err != nil {
 		return markdown
