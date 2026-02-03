@@ -10,15 +10,23 @@ import (
 )
 
 var (
-	cachedRenderer *glamour.TermRenderer
-	rendererOnce   sync.Once
+	cachedRenderer    *glamour.TermRenderer
+	rendererOnce      sync.Once
+	cachedStyleConfig *styleConfig
+	styleConfigOnce   sync.Once
 )
 
-// getRenderer returns a cached glamour renderer, creating it on first call.
+// styleConfig holds the cached style configuration
+type styleConfig struct {
+	baseStyle     string
+	overridesJSON []byte
+}
+
+// getStyleConfig returns a cached style configuration, creating it on first call.
 // Reference: https://github.com/charmbracelet/glamour/tree/master/styles
-func getRenderer() (*glamour.TermRenderer, error) {
+func getStyleConfig() (*styleConfig, error) {
 	var initErr error
-	rendererOnce.Do(func() {
+	styleConfigOnce.Do(func() {
 		hasDarkBackground := styles.HasDarkBackground
 		baseStyle := "dark"
 		if !hasDarkBackground {
@@ -58,10 +66,29 @@ func getRenderer() (*glamour.TermRenderer, error) {
 			return
 		}
 
+		cachedStyleConfig = &styleConfig{
+			baseStyle:     baseStyle,
+			overridesJSON: overridesJSON,
+		}
+	})
+	return cachedStyleConfig, initErr
+}
+
+// getRenderer returns a cached glamour renderer, creating it on first call.
+// Uses width of 90 for the default renderer.
+func getRenderer() (*glamour.TermRenderer, error) {
+	var initErr error
+	rendererOnce.Do(func() {
+		cfg, err := getStyleConfig()
+		if err != nil {
+			initErr = err
+			return
+		}
+
 		cachedRenderer, initErr = glamour.NewTermRenderer(
-			glamour.WithStandardStyle(baseStyle),
+			glamour.WithStandardStyle(cfg.baseStyle),
 			glamour.WithWordWrap(90),
-			glamour.WithStylesFromJSONBytes(overridesJSON),
+			glamour.WithStylesFromJSONBytes(cfg.overridesJSON),
 		)
 	})
 	return cachedRenderer, initErr
@@ -85,7 +112,8 @@ func RenderMarkdown(markdown string) string {
 	return rendered
 }
 
-// RenderMarkdownWithWidth renders markdown with a specific word wrap width
+// RenderMarkdownWithWidth renders markdown with a specific word wrap width.
+// Uses width of 80 as a fallback if width <= 0.
 func RenderMarkdownWithWidth(markdown string, width int) string {
 	if styles.NoColor() || !IsTerminal() {
 		return markdown
@@ -95,48 +123,15 @@ func RenderMarkdownWithWidth(markdown string, width int) string {
 		width = 80
 	}
 
-	hasDarkBackground := styles.HasDarkBackground
-	baseStyle := "dark"
-	if !hasDarkBackground {
-		baseStyle = "light"
-	}
-
-	styleOverrides := make(map[string]any)
-	styleOverrides["document"] = map[string]any{
-		"margin": 0,
-	}
-	styleOverrides["code_block"] = map[string]any{
-		"margin": 0,
-	}
-
-	if hasDarkBackground {
-		styleOverrides["document"].(map[string]any)["color"] = "255"
-		styleOverrides["heading"] = map[string]any{
-			"color": styles.PrimaryColor,
-		}
-		styleOverrides["h1"] = map[string]any{
-			"color":            "255",
-			"background_color": styles.SecondaryColor,
-		}
-	} else {
-		styleOverrides["heading"] = map[string]any{
-			"color": styles.SecondaryColor,
-		}
-		styleOverrides["h1"] = map[string]any{
-			"color":            "255",
-			"background_color": styles.SecondaryColor,
-		}
-	}
-
-	overridesJSON, err := json.Marshal(styleOverrides)
+	cfg, err := getStyleConfig()
 	if err != nil {
 		return markdown
 	}
 
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(baseStyle),
+		glamour.WithStandardStyle(cfg.baseStyle),
 		glamour.WithWordWrap(width),
-		glamour.WithStylesFromJSONBytes(overridesJSON),
+		glamour.WithStylesFromJSONBytes(cfg.overridesJSON),
 	)
 	if err != nil {
 		return markdown
