@@ -16,7 +16,7 @@ import (
 
 // isSoftLineBreak checks if line starts with soft line break marker
 func isSoftLineBreak(line string) bool {
-	return strings.HasPrefix(line, utils.SoftLineBreak)
+	return utils.IsSoftLineBreak(line)
 }
 
 // SelectionPos represents a position in the content
@@ -466,7 +466,6 @@ func (cp *ContentPanel) normalizeSelection() (SelectionPos, SelectionPos) {
 }
 
 // GetSelectedText returns the currently selected text
-// Uses SoftLineBreak markers to properly join wrapped lines without adding unwanted newlines
 func (cp *ContentPanel) GetSelectedText() string {
 	if !cp.hasSelection || len(cp.contentLines) == 0 {
 		return ""

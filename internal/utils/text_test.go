@@ -27,7 +27,12 @@ func TestWrapLine_WrapsAtSpacesAndRemovesLeadingSpace(t *testing.T) {
 	text := "abc def ghi"
 	got := WrapLine(text, 5)
 	require.Len(t, got, 3)
-	assert.Equal(t, []string{"abc", "def", "ghi"}, got)
+	// First line has no marker, continuation lines have SoftLineBreak
+	assert.Equal(t, "abc", got[0])
+	assert.True(t, strings.HasPrefix(got[1], SoftLineBreak), "second line should have SoftLineBreak marker")
+	assert.True(t, strings.HasPrefix(got[2], SoftLineBreak), "third line should have SoftLineBreak marker")
+	// Verify joining produces original text
+	assert.Equal(t, text, JoinWrappedLines(got))
 }
 
 func TestWrapLine_LongWordSplitsWithinLimit(t *testing.T) {
@@ -35,9 +40,17 @@ func TestWrapLine_LongWordSplitsWithinLimit(t *testing.T) {
 	maxWidth := 10
 	got := WrapLine(text, maxWidth)
 	require.GreaterOrEqual(t, len(got), 2)
-	for _, line := range got {
-		assert.LessOrEqual(t, len(line), maxWidth, "line exceeds maxWidth: %q", line)
+	for i, line := range got {
+		// Strip markers before checking visible length
+		visible := StripAllMarkers(line)
+		assert.LessOrEqual(t, len(visible), maxWidth, "line %d exceeds maxWidth: %q", i, visible)
+		// Continuation lines should have SoftLineBreak marker
+		if i > 0 {
+			assert.True(t, strings.HasPrefix(line, SoftLineBreak), "continuation line should have SoftLineBreak marker")
+		}
 	}
+	// Verify joining produces original text
+	assert.Equal(t, text, JoinWrappedLines(got))
 }
 
 func TestWrapLine_PreservesANSICodesAndWrapsCorrectly(t *testing.T) {
@@ -49,21 +62,31 @@ func TestWrapLine_PreservesANSICodesAndWrapsCorrectly(t *testing.T) {
 	// Should wrap at "hello" and "world", preserving ANSI codes
 }
 
-func TestWrapLine_PreservesLeadingWhitespace(t *testing.T) {
+func TestWrapLine_PreservesLeadingWhitespaceOnFirstLine(t *testing.T) {
 	text := "    hello world test"
 	got := WrapLine(text, 15)
 	require.GreaterOrEqual(t, len(got), 2)
-	for _, line := range got {
-		assert.True(t, strings.HasPrefix(line, "    "), "wrapped line should preserve leading whitespace")
+	// First line preserves leading whitespace
+	assert.True(t, strings.HasPrefix(got[0], "    "), "first line should preserve leading whitespace: %q", got[0])
+	// Continuation lines don't have leading whitespace (just space before word)
+	for i := 1; i < len(got); i++ {
+		stripped := StripAllMarkers(got[i])
+		assert.True(t, strings.HasPrefix(stripped, " "), "continuation line %d should start with space: %q", i, stripped)
 	}
+	// Verify joining produces original text
+	assert.Equal(t, text, JoinWrappedLines(got))
 }
 
 func TestWrapLine_DefaultWidthWhenZero(t *testing.T) {
 	long := strings.Repeat("a", 100)
 	got := WrapLine(long, 0)
 	require.Len(t, got, 2)
+	// First line has no marker
 	assert.Equal(t, 80, len(got[0]))
-	assert.Equal(t, 20, len(got[1]))
+	// Second line has SoftLineBreak marker (mid-word split)
+	assert.Equal(t, 20, len(StripAllMarkers(got[1])))
+	// Verify joining produces original text
+	assert.Equal(t, long, JoinWrappedLines(got))
 }
 
 func TestWrapText_WrapsAndPreservesLines(t *testing.T) {
@@ -73,7 +96,9 @@ func TestWrapText_WrapsAndPreservesLines(t *testing.T) {
 	require.Greater(t, len(lines), 2)
 	assert.Equal(t, "short", lines[0])
 	for i := 1; i < len(lines); i++ {
-		assert.LessOrEqual(t, len(lines[i]), 10)
+		// Strip markers before checking visible length
+		visible := StripAllMarkers(lines[i])
+		assert.LessOrEqual(t, len(visible), 10, "line %d exceeds maxWidth: %q", i, visible)
 	}
 }
 

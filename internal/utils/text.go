@@ -13,8 +13,8 @@ import (
 
 const NoWrapMarker = "\x00NOWRAP\x00"
 
-// SoftLineBreak marks a line as a continuation from word wrapping (not a real line break)
-// This marker is placed at the START of continuation lines
+// SoftLineBreak marks a continuation line (join directly when copying, no newline)
+// The space (if any) is preserved in the content itself
 const SoftLineBreak = "\x00SOFT\x00"
 
 // MarkNonWrappable adds an invisible marker to indicate text should not be wrapped
@@ -44,8 +44,8 @@ func IsSoftLineBreak(line string) bool {
 	return strings.HasPrefix(line, SoftLineBreak)
 }
 
-// JoinWrappedLines joins lines respecting soft line breaks
-// Lines starting with SoftLineBreak are joined without newline
+// JoinWrappedLines joins lines respecting soft line breaks, SoftLineBreak lines
+// are joined directly
 func JoinWrappedLines(lines []string) string {
 	if len(lines) == 0 {
 		return ""
@@ -53,11 +53,9 @@ func JoinWrappedLines(lines []string) string {
 
 	var result strings.Builder
 	for i, line := range lines {
-		if IsSoftLineBreak(line) {
-			// Continuation line - join without newline, strip marker
+		if strings.HasPrefix(line, SoftLineBreak) {
 			result.WriteString(strings.TrimPrefix(line, SoftLineBreak))
 		} else {
-			// Real line - add newline before (except for first line)
 			if i > 0 {
 				result.WriteString("\n")
 			}
@@ -118,8 +116,7 @@ func WrapLine(text string, maxWidth int) []string {
 			if i == 0 {
 				lines = append(lines, leadingWhitespace+chunk)
 			} else {
-				// Mark continuation with SoftLineBreak
-				lines = append(lines, SoftLineBreak+leadingWhitespace+chunk)
+				lines = append(lines, SoftLineBreak+chunk)
 			}
 		}
 		return lines
@@ -140,12 +137,10 @@ func WrapLine(text string, maxWidth int) []string {
 			chunks := splitLongWord(word, maxWidth-leadingSpaces)
 			for j, chunk := range chunks {
 				if j < len(chunks)-1 {
-					// All chunks except the last get their own line
-					lines = append(lines, leadingWhitespace+chunk)
+					lines = append(lines, SoftLineBreak+chunk)
 				} else {
-					// Last chunk starts the next line
-					currentLine = leadingWhitespace + chunk
-					currentVisibleLen = leadingSpaces + visibleLen(chunk)
+					currentLine = chunk
+					currentVisibleLen = visibleLen(chunk)
 				}
 			}
 			continue
@@ -161,10 +156,9 @@ func WrapLine(text string, maxWidth int) []string {
 			currentLine += " " + word
 			currentVisibleLen += spaceLen + wordVisibleLen
 		default:
-			// Word doesn't fit, start new line
 			lines = append(lines, currentLine)
-			currentLine = leadingWhitespace + word
-			currentVisibleLen = leadingSpaces + wordVisibleLen
+			currentLine = " " + word
+			currentVisibleLen = 1 + wordVisibleLen
 		}
 	}
 
