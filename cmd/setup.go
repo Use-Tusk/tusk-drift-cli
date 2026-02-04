@@ -28,6 +28,7 @@ var (
 	setupOutputLogs      bool
 	setupEligibilityOnly bool
 	setupVerifyMode      bool
+	setupGuidance        string
 )
 
 var setupCmd = &cobra.Command{
@@ -49,6 +50,8 @@ func init() {
 	setupCmd.Flags().BoolVar(&setupOutputLogs, "output-logs", false, "Output all logs (tool calls, messages) to .tusk/logs/setup-<datetime>.log")
 	setupCmd.Flags().BoolVar(&setupEligibilityOnly, "eligibility-only", false, "Only check eligibility for SDK setup across all services in the directory tree, output JSON report and exit")
 	setupCmd.Flags().BoolVar(&setupVerifyMode, "verify", false, "Verify that an existing Tusk Drift setup is working correctly by re-recording and replaying traces")
+	setupCmd.Flags().StringVar(&setupGuidance, "guidance", "", "Additional guidance for the eligibility check agent (used with --eligibility-only)")
+	_ = setupCmd.Flags().MarkHidden("guidance") // Hidden - primarily for backend use
 }
 
 // APIConfig holds the configuration for connecting to the LLM API
@@ -190,6 +193,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		OutputLogs:      setupOutputLogs,
 		EligibilityOnly: setupEligibilityOnly,
 		VerifyMode:      setupVerifyMode,
+		UserGuidance:    setupGuidance,
 	}
 
 	a, err := agent.New(cfg)

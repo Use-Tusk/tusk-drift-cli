@@ -154,6 +154,11 @@ func New(cfg Config) (*Agent, error) {
 		a.logger = logger
 	}
 
+	// Set user guidance on state if provided
+	if cfg.UserGuidance != "" {
+		a.phaseManager.GetState().UserGuidance = cfg.UserGuidance
+	}
+
 	return a, nil
 }
 

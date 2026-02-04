@@ -86,6 +86,7 @@ type State struct {
 
 	// Eligibility mode
 	EligibilityReport string `json:"eligibility_report,omitempty"` // Raw JSON report
+	UserGuidance      string `json:"-"`                            // Input guidance, not persisted
 
 	// Cloud setup state
 	IsAuthenticated       bool    `json:"is_authenticated"`
@@ -141,11 +142,12 @@ type Config struct {
 	SystemPrompt    string
 	MaxTokens       int
 	WorkDir         string
-	SkipPermissions bool // Skip permission prompts for consequential actions
-	DisableProgress bool // Don't save or resume from PROGRESS.md
-	SkipToCloud     bool // Skip local setup and go directly to cloud setup (for testing)
-	PrintMode       bool // Headless mode - no TUI, stream to stdout
-	OutputLogs      bool // Output all logs to a file in .tusk/logs/
-	EligibilityOnly bool // Only run eligibility check, output JSON and exit
-	VerifyMode      bool // Verify existing setup works by re-recording and replaying
+	SkipPermissions bool   // Skip permission prompts for consequential actions
+	DisableProgress bool   // Don't save or resume from PROGRESS.md
+	SkipToCloud     bool   // Skip local setup and go directly to cloud setup (for testing)
+	PrintMode       bool   // Headless mode - no TUI, stream to stdout
+	OutputLogs      bool   // Output all logs to a file in .tusk/logs/
+	EligibilityOnly bool   // Only run eligibility check, output JSON and exit
+	VerifyMode      bool   // Verify existing setup works by re-recording and replaying
+	UserGuidance    string // Additional user-provided guidance for the agent
 }
