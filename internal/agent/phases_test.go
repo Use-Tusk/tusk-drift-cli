@@ -5,31 +5,31 @@ import (
 	"testing"
 )
 
-func TestEligibilityCheckPhase_UserContext(t *testing.T) {
+func TestEligibilityCheckPhase_UserGuidance(t *testing.T) {
 	tests := []struct {
 		name         string
-		userContext  string
+		userGuidance string
 		wantContains string
 		wantMissing  string
 	}{
 		{
-			name:        "no context",
-			userContext: "",
-			wantMissing: "User Guidance",
+			name:         "no guidance",
+			userGuidance: "",
+			wantMissing:  "User Guidance",
 		},
 		{
-			name:         "with context",
-			userContext:  "Focus on the api/ folder",
+			name:         "with guidance",
+			userGuidance: "Focus on the api/ folder",
 			wantContains: "Focus on the api/ folder",
 		},
 		{
-			name:         "context includes guidance header",
-			userContext:  "The legacy/ folder is deprecated",
+			name:         "guidance includes header",
+			userGuidance: "The legacy/ folder is deprecated",
 			wantContains: "## User Guidance",
 		},
 		{
-			name:         "context includes importance note",
-			userContext:  "Only check the backend service",
+			name:         "guidance includes importance note",
+			userGuidance: "Only check the backend service",
 			wantContains: "extremely important to take this into account",
 		},
 	}
@@ -37,7 +37,7 @@ func TestEligibilityCheckPhase_UserContext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			phase := eligibilityCheckPhase()
-			state := &State{UserContext: tt.userContext}
+			state := &State{UserGuidance: tt.userGuidance}
 			result := phase.OnEnter(state)
 
 			if tt.wantContains != "" && !strings.Contains(result, tt.wantContains) {
@@ -52,15 +52,15 @@ func TestEligibilityCheckPhase_UserContext(t *testing.T) {
 
 func TestEligibilityCheckPhase_ManifestsStillPresent(t *testing.T) {
 	phase := eligibilityCheckPhase()
-	state := &State{UserContext: "Some user context"}
+	state := &State{UserGuidance: "Some user guidance"}
 	result := phase.OnEnter(state)
 
-	// Verify manifests section is still present when user context is provided
+	// Verify manifests section is still present when user guidance is provided
 	if !strings.Contains(result, "### SDK Manifests") {
 		t.Error("expected SDK Manifests section to be present")
 	}
 
-	// Verify user context comes after manifests
+	// Verify user guidance comes after manifests
 	manifestIdx := strings.Index(result, "### SDK Manifests")
 	guidanceIdx := strings.Index(result, "## User Guidance")
 	if guidanceIdx < manifestIdx {

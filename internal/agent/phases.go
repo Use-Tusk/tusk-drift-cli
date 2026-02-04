@@ -995,11 +995,11 @@ func eligibilityCheckPhase() *Phase {
 				extra.WriteString(fmt.Sprintf("**%s Manifest**:\n```json\n%s\n```\n\n", lang, manifest))
 			}
 
-			// Add user context if provided
-			if state.UserContext != "" {
+			// Add user guidance if provided
+			if state.UserGuidance != "" {
 				extra.WriteString("## User Guidance\n\n")
-				extra.WriteString("The user provided the following context:\n")
-				extra.WriteString(state.UserContext)
+				extra.WriteString("The user provided the following guidance:\n")
+				extra.WriteString(state.UserGuidance)
 				extra.WriteString("\n\nIt is extremely important to take this into account during your analysis.\n")
 			}
 

@@ -86,7 +86,7 @@ type State struct {
 
 	// Eligibility mode
 	EligibilityReport string `json:"eligibility_report,omitempty"` // Raw JSON report
-	UserContext       string `json:"-"`                            // Input context, not persisted
+	UserGuidance      string `json:"-"`                            // Input guidance, not persisted
 
 	// Cloud setup state
 	IsAuthenticated       bool    `json:"is_authenticated"`
@@ -149,5 +149,5 @@ type Config struct {
 	OutputLogs      bool // Output all logs to a file in .tusk/logs/
 	EligibilityOnly bool // Only run eligibility check, output JSON and exit
 	VerifyMode      bool // Verify existing setup works by re-recording and replaying
-	UserContext     string // Additional user-provided context for the agent
+	UserGuidance    string // Additional user-provided guidance for the agent
 }
