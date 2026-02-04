@@ -65,6 +65,36 @@ func NewMockMatcher(server *Server) *MockMatcher {
 	return &MockMatcher{server: server}
 }
 
+func shouldSkipSchemaFallbackMatching(req *core.GetMockRequest) bool {
+	// Guardrail: for DB spans like psycopg2.query, schema-based matching (priorities 7-10)
+	// is extremely high collision risk because many different SQL statements share the same schema:
+	// {"query": string, "parameters": array}. Similarity scoring can then pick an incorrect span
+	// and return a wrong row shape/value, which is worse than "no mock found".
+	//
+	// For these spans we rely on exact/reduced INPUT VALUE hash matching only (priorities 1-6).
+	if req == nil || req.OutboundSpan == nil {
+		return false
+	}
+	// Only apply to non-pre-app-start requests. Pre-app-start spans are often stable initialization
+	// queries and are already more permissive elsewhere in the matcher.
+	if req.OutboundSpan.IsPreAppStart {
+		return false
+	}
+
+	pkg := strings.ToLower(req.OutboundSpan.PackageName)
+	if pkg != "psycopg2" && pkg != "psycopg" {
+		return false
+	}
+
+	// Be conservative: only skip schema fallback for query submodule spans.
+	submodule := strings.ToLower(req.OutboundSpan.SubmoduleName)
+	name := strings.ToLower(req.OutboundSpan.Name)
+	if submodule == "query" || strings.HasSuffix(name, ".query") {
+		return true
+	}
+	return false
+}
+
 // FindBestMatchWithTracePriority implements the priority matching algorithm.
 // It first searches the current trace (Priorities 1-4), then checks suite-wide by value hash
 // (Priorities 5-6), then falls back to schema-based matching in the current trace (Priorities 7-10).
@@ -392,6 +422,17 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 			}, nil
 		}
 		log.Debug("Priority 6 failed: No global span by reduced input value hash", "traceId", traceID)
+	}
+
+	if shouldSkipSchemaFallbackMatching(req) {
+		log.Debug(
+			"Skipping schema-based matching for query spans (high collision risk)",
+			"traceId", traceID,
+			"package", req.OutboundSpan.PackageName,
+			"submodule", req.OutboundSpan.SubmoduleName,
+			"spanName", req.OutboundSpan.Name,
+		)
+		return nil, nil, fmt.Errorf("no matching span found")
 	}
 
 	// Priority 7-10: Schema-based matching still uses sortedSpans (by package)
