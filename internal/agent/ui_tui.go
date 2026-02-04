@@ -131,8 +131,8 @@ func (u *TUIUI) PromptUserSelect(question string, options []SelectOption) (strin
 }
 
 // PromptPermission asks the user for permission to execute a tool
-func (u *TUIUI) PromptPermission(toolName, preview string) string {
-	return u.model.RequestPermission(u.program, toolName, preview)
+func (u *TUIUI) PromptPermission(toolName, preview string, commandPrefixes []string) string {
+	return u.model.RequestPermission(u.program, toolName, preview, commandPrefixes)
 }
 
 // PromptKillPort asks the user if they want to kill a process on a port

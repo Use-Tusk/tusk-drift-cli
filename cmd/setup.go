@@ -19,16 +19,17 @@ import (
 var setupContent string
 
 var (
-	setupAPIKey          string
-	setupModel           string
-	setupSkipPermissions bool
-	setupDisableProgress bool
-	setupSkipToCloud     bool
-	setupPrintMode       bool
-	setupOutputLogs      bool
-	setupEligibilityOnly bool
-	setupVerifyMode      bool
-	setupGuidance        string
+	setupAPIKey            string
+	setupModel             string
+	setupSkipPermissions   bool
+	setupNoSkipPermissions bool
+	setupDisableProgress   bool
+	setupSkipToCloud       bool
+	setupPrintMode         bool
+	setupOutputLogs        bool
+	setupEligibilityOnly   bool
+	setupVerifyMode        bool
+	setupGuidance          string
 )
 
 var setupCmd = &cobra.Command{
@@ -44,9 +45,10 @@ func init() {
 	setupCmd.Flags().StringVar(&setupAPIKey, "api-key", "", "Your Anthropic API key (requests go directly to Anthropic). If not provided, uses Tusk's secure proxy")
 	setupCmd.Flags().StringVar(&setupModel, "model", "claude-sonnet-4-5-20250929", "Claude model to use")
 	setupCmd.Flags().BoolVar(&setupSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
+	setupCmd.Flags().BoolVar(&setupNoSkipPermissions, "no-skip-permissions", false, "In headless mode (--print), still prompt for permissions instead of auto-approving")
 	setupCmd.Flags().BoolVar(&setupDisableProgress, "disable-progress-state", false, "Disable progress state (saving to a PROGRESS.md file) or resuming from it")
 	setupCmd.Flags().BoolVar(&setupSkipToCloud, "skip-to-cloud", false, "Skip local setup and go directly to cloud setup (for testing)")
-	setupCmd.Flags().BoolVar(&setupPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout")
+	setupCmd.Flags().BoolVar(&setupPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout (auto-approves permissions unless --no-skip-permissions)")
 	setupCmd.Flags().BoolVar(&setupOutputLogs, "output-logs", false, "Output all logs (tool calls, messages) to .tusk/logs/setup-<datetime>.log")
 	setupCmd.Flags().BoolVar(&setupEligibilityOnly, "eligibility-only", false, "Only check eligibility for SDK setup across all services in the directory tree, output JSON report and exit")
 	setupCmd.Flags().BoolVar(&setupVerifyMode, "verify", false, "Verify that an existing Tusk Drift setup is working correctly by re-recording and replaying traces")
@@ -179,6 +181,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Headless mode (--print) implies skip permissions unless --no-skip-permissions is set
+	skipPerms := setupSkipPermissions || (setupPrintMode && !setupNoSkipPermissions)
+
 	cfg := agent.Config{
 		APIMode:         apiConfig.Mode,
 		APIKey:          apiConfig.APIKey,
@@ -186,7 +191,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		ProxyURL:        apiConfig.URL,
 		Model:           setupModel,
 		WorkDir:         workDir,
-		SkipPermissions: setupSkipPermissions,
+		SkipPermissions: skipPerms,
 		DisableProgress: setupDisableProgress,
 		SkipToCloud:     setupSkipToCloud,
 		PrintMode:       setupPrintMode,

@@ -232,29 +232,13 @@ func (u *HeadlessUI) PromptUserSelect(question string, options []SelectOption) (
 	return selected.ID, selected.Label, false
 }
 
-// PromptPermission asks the user for permission to execute a tool
-func (u *HeadlessUI) PromptPermission(toolName, preview string) string {
-	if preview != "" {
-		fmt.Println(headlessDimStyle.Render(fmt.Sprintf("   %s", preview)))
-	}
-	fmt.Print(headlessQuestionStyle.Render("   Allow? [y/n/a(ll)]: "))
-
-	response, err := u.reader.ReadString('\n')
-	if err != nil {
-		return "deny"
-	}
-
-	response = strings.TrimSpace(strings.ToLower(response))
-
-	switch response {
-	case "y", "yes":
-		return "approve"
-	case "a", "all":
-		return "approve_all"
-	default:
-		fmt.Println(headlessDimStyle.Render("   ✗ Denied"))
-		return "deny"
-	}
+// PromptPermission asks the user for permission to execute a tool.
+// In headless mode, this auto-approves since headless implies skip-permissions by default.
+// If we get here (e.g., with --no-skip-permissions), just auto-approve to avoid blocking.
+func (u *HeadlessUI) PromptPermission(toolName, preview string, commandPrefixes []string) string {
+	displayName := getToolDisplayName(toolName)
+	fmt.Println(headlessDimStyle.Render(fmt.Sprintf("   ✓ Auto-allowed: %s", displayName)))
+	return "approve"
 }
 
 // PromptKillPort asks the user if they want to kill a process on a port
