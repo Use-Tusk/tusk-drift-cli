@@ -223,7 +223,7 @@ func splitLongWord(word string, maxWidth int) []string {
 
 // WrapText wraps multiple lines of content to fit within the specified width
 func WrapText(content string, maxWidth int) string {
-	return strings.Join(WrapLines(strings.Split(content, "\n"), maxWidth), "\n")
+	return StripAllMarkers(strings.Join(WrapLines(strings.Split(content, "\n"), maxWidth), "\n"))
 }
 
 // WrapLines wraps multiple lines to fit within the specified width

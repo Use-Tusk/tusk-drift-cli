@@ -633,7 +633,7 @@ func (cp *ContentPanel) GetRawContent() string {
 // but preserved for copy operations
 func (cp *ContentPanel) UpdateContentLines(lines []string) {
 	cp.contentLines = lines
-	cp.viewport.SetContent(utils.StripAllMarkers(strings.Join(lines, "\n")))
+	cp.updateViewportContent()
 }
 
 // IsSelecting returns true if the user is currently selecting text
