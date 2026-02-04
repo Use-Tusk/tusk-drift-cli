@@ -53,8 +53,8 @@ install-buf:
 
 install-lint-tools:
 	@echo "📦 Installing linting tools..."
-	go install mvdan.cc/gofumpt@latest
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	GOTOOLCHAIN=local go install mvdan.cc/gofumpt@latest
+	GOTOOLCHAIN=local go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "✅ Linting tools installed"
 
 setup: install-buf deps install-lint-tools
