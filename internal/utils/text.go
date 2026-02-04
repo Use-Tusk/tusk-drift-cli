@@ -137,7 +137,7 @@ func WrapLine(text string, maxWidth int) []string {
 			chunks := splitLongWord(word, maxWidth-leadingSpaces)
 			for j, chunk := range chunks {
 				if j < len(chunks)-1 {
-					lines = append(lines, SoftLineBreak+chunk)
+					lines = append(lines, chunk)
 				} else {
 					currentLine = chunk
 					currentVisibleLen = visibleLen(chunk)
