@@ -977,9 +977,10 @@ func eligibilityCheckPhase() *Phase {
 		Required:      true,
 		MaxIterations: 100,
 		OnEnter: func(state *State) string {
+			var extra strings.Builder
+
 			// Fetch manifests for all supported languages
-			var manifestInfo strings.Builder
-			manifestInfo.WriteString("### SDK Manifests\n\n")
+			extra.WriteString("### SDK Manifests\n\n")
 
 			for _, lang := range []string{"nodejs", "python"} {
 				url := tools.GetManifestURLForProjectType(lang)
@@ -988,13 +989,21 @@ func eligibilityCheckPhase() *Phase {
 				}
 				manifest, err := tools.FetchManifestFromURL(url)
 				if err != nil {
-					manifestInfo.WriteString(fmt.Sprintf("**%s**: Failed to fetch manifest - %s\n\n", lang, err))
+					extra.WriteString(fmt.Sprintf("**%s**: Failed to fetch manifest - %s\n\n", lang, err))
 					continue
 				}
-				manifestInfo.WriteString(fmt.Sprintf("**%s Manifest**:\n```json\n%s\n```\n\n", lang, manifest))
+				extra.WriteString(fmt.Sprintf("**%s Manifest**:\n```json\n%s\n```\n\n", lang, manifest))
 			}
 
-			return manifestInfo.String()
+			// Add user context if provided
+			if state.UserContext != "" {
+				extra.WriteString("## User Guidance\n\n")
+				extra.WriteString("The user provided the following context:\n")
+				extra.WriteString(state.UserContext)
+				extra.WriteString("\n\nIt is extremely important to take this into account during your analysis.\n")
+			}
+
+			return extra.String()
 		},
 	}
 }
