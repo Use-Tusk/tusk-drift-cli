@@ -207,24 +207,31 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		Name:                getString("name"),
 		PackageName:         getString("packageName"),
 		InstrumentationName: getString("instrumentationName"),
-		SubmoduleName:       getString("submodule_name"),
-		InputValue:          convertToStruct("inputValue"),
-		OutputValue:         convertToStruct("outputValue"),
-		InputSchema:         convertToJsonSchema("inputSchema"),
-		OutputSchema:        convertToJsonSchema("outputSchema"),
-		InputSchemaHash:     getString("inputSchemaHash"),
-		OutputSchemaHash:    getString("outputSchemaHash"),
-		InputValueHash:      getString("inputValueHash"),
-		OutputValueHash:     getString("outputValueHash"),
-		Kind:                core.SpanKind(getInt32("kind")),
-		Status:              status,
-		Timestamp:           timestamp,
-		Duration:            duration,
-		IsPreAppStart:       getBool("isPreAppStart"),
-		IsRootSpan:          getBool("isRootSpan"),
-		Metadata:            convertToStruct("metadata"),
-		PackageType:         core.PackageType(getInt32("packageType")),
-		Environment:         environment,
+		// Prefer canonical proto JSON name ("submoduleName"), but accept legacy snake_case ("submodule_name")
+		SubmoduleName: func() string {
+			v := getString("submoduleName")
+			if v != "" {
+				return v
+			}
+			return getString("submodule_name")
+		}(),
+		InputValue:       convertToStruct("inputValue"),
+		OutputValue:      convertToStruct("outputValue"),
+		InputSchema:      convertToJsonSchema("inputSchema"),
+		OutputSchema:     convertToJsonSchema("outputSchema"),
+		InputSchemaHash:  getString("inputSchemaHash"),
+		OutputSchemaHash: getString("outputSchemaHash"),
+		InputValueHash:   getString("inputValueHash"),
+		OutputValueHash:  getString("outputValueHash"),
+		Kind:             core.SpanKind(getInt32("kind")),
+		Status:           status,
+		Timestamp:        timestamp,
+		Duration:         duration,
+		IsPreAppStart:    getBool("isPreAppStart"),
+		IsRootSpan:       getBool("isRootSpan"),
+		Metadata:         convertToStruct("metadata"),
+		PackageType:      core.PackageType(getInt32("packageType")),
+		Environment:      environment,
 	}, nil
 }
 
@@ -271,7 +278,10 @@ func mapToJsonSchema(m map[string]any) *core.JsonSchema {
 	}
 
 	// Extract matchImportance
+	// Accept both proto JSON name ("matchImportance") and Python-exported snake_case ("match_importance")
 	if matchVal, ok := m["matchImportance"].(float64); ok {
+		schema.MatchImportance = &matchVal
+	} else if matchVal, ok := m["match_importance"].(float64); ok {
 		schema.MatchImportance = &matchVal
 	}
 
