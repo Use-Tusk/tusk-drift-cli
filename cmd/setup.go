@@ -27,8 +27,8 @@ var (
 	setupPrintMode       bool
 	setupOutputLogs      bool
 	setupEligibilityOnly bool
-	setupVerifyMode   bool
-	setupGuidance     string
+	setupVerifyMode      bool
+	setupGuidance        string
 )
 
 var setupCmd = &cobra.Command{
