@@ -344,6 +344,7 @@ func (cp *ContentPanel) renderScrollbar() string {
 // updateViewportContent re-renders content with selection highlighting
 func (cp *ContentPanel) updateViewportContent() {
 	if len(cp.contentLines) == 0 {
+		cp.viewport.SetContent("")
 		return
 	}
 
