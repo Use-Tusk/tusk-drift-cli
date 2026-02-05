@@ -21,6 +21,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SpanUploadBatchSize is the number of spans to upload in each batch.
+// 500 spans × ~32 columns = ~16K params, well under PostgreSQL's 65K param limit.
+const SpanUploadBatchSize = 500
+
 // CloudTools provides cloud-related operations for the agent
 type CloudTools struct {
 	authenticator      *auth.Authenticator
@@ -901,41 +905,64 @@ func (ct *CloudTools) UploadTraces(input json.RawMessage) (string, error) {
 		return string(data), nil
 	}
 
-	// Upload spans to cloud
+	// Upload spans to cloud in batches to avoid PostgreSQL parameter limits
 	ctx := context.Background()
 	client, authOptions, _, err := api.SetupCloud(ctx, false)
 	if err != nil {
 		return "", fmt.Errorf("failed to setup cloud connection: %w", err)
 	}
 
-	req := &backend.ExportSpansRequest{
-		ObservableServiceId: params.ServiceID,
-		Environment:         "setup-agent",
-		SdkVersion:          "cli-setup",
-		SdkInstanceId:       fmt.Sprintf("setup-%d", time.Now().Unix()),
-		Spans:               allSpans,
-	}
+	// Split spans into batches
+	spanBatches := utils.BatchSlice(allSpans, SpanUploadBatchSize)
+	sdkInstanceId := fmt.Sprintf("setup-%d", time.Now().Unix())
 
-	resp, err := client.ExportSpans(ctx, req, authOptions)
-	if err != nil {
-		return "", fmt.Errorf("failed to upload traces: %w", err)
-	}
+	var totalUploaded int
+	var uploadErrors []string
 
-	if !resp.Success {
-		result := map[string]interface{}{
-			"success":         false,
-			"message":         resp.Message,
-			"traces_uploaded": 0,
+	for i, batch := range spanBatches {
+		req := &backend.ExportSpansRequest{
+			ObservableServiceId: params.ServiceID,
+			Environment:         "setup-agent",
+			SdkVersion:          "cli-setup",
+			SdkInstanceId:       sdkInstanceId,
+			Spans:               batch,
 		}
-		data, _ := json.Marshal(result)
-		return string(data), nil
+
+		resp, err := client.ExportSpans(ctx, req, authOptions)
+		if err != nil {
+			uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %v", i+1, len(spanBatches), err))
+			continue // Best effort: continue with remaining batches
+		}
+
+		if !resp.Success {
+			uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %s", i+1, len(spanBatches), resp.Message))
+			continue
+		}
+
+		totalUploaded += len(batch)
+	}
+
+	// Determine overall success
+	success := totalUploaded > 0
+	var message string
+	switch {
+	case len(uploadErrors) == 0:
+		message = "Traces uploaded successfully"
+	case totalUploaded > 0:
+		message = fmt.Sprintf("Partial upload: %d/%d spans uploaded. Errors: %v", totalUploaded, len(allSpans), uploadErrors)
+	default:
+		message = fmt.Sprintf("Upload failed: %v", uploadErrors)
 	}
 
 	result := map[string]interface{}{
-		"success":         true,
-		"message":         "Traces uploaded successfully",
+		"success":         success,
+		"message":         message,
 		"traces_uploaded": len(traceFiles),
-		"spans_uploaded":  len(allSpans),
+		"spans_uploaded":  totalUploaded,
+		"total_spans":     len(allSpans),
+	}
+	if len(uploadErrors) > 0 {
+		result["errors"] = uploadErrors
 	}
 	data, _ := json.Marshal(result)
 	return string(data), nil
