@@ -519,6 +519,15 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 
 	req.Header.Set("x-td-trace-id", test.TraceID)
 
+	// Provide the recorded root span timestamp to the service so the SDK can start time travel
+	// at inbound request start (REPLAY). This is critical for deterministic cache key generation
+	// (e.g. django-cachalot keys that incorporate timezone.now()).
+	//
+	// Note: We intentionally round to microsecond precision to match Python datetime resolution.
+	if rootSpanTime, ok := GetRootSpanTime(test.Spans); ok {
+		req.Header.Set("x-td-root-timestamp", rootSpanTime.UTC().Round(time.Microsecond).Format(time.RFC3339Nano))
+	}
+
 	if test.Request.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -532,7 +541,12 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	// Send time travel request to Python SDK before making HTTP request
 	// This ensures auth checks at the inbound request level use the recorded time
 	if e.server != nil && e.server.GetSDKRuntime() == core.Runtime_RUNTIME_PYTHON {
-		timestamp, source := GetFirstSpanTimestamp(test.Spans)
+		// Prefer server/root timestamp for inbound-level determinism (e.g., caching keys derived from time).
+		// If not available, fall back to the earliest recorded non-server span.
+		timestamp, source := GetServerSpanTimestamp(test.Spans)
+		if timestamp == 0 {
+			timestamp, source = GetFirstSpanTimestamp(test.Spans)
+		}
 		if timestamp > 0 {
 			if err := e.server.SendSetTimeTravel(timestamp, test.TraceID, source); err != nil {
 				// Log warning but don't fail the test - time travel is best-effort
@@ -765,5 +779,32 @@ func GetFirstSpanTimestamp(spans []*core.Span) (float64, string) {
 	}
 
 	// No timestamp available
+	return 0, "none"
+}
+
+// GetRootSpanTime returns the root/server span timestamp, if present.
+func GetRootSpanTime(spans []*core.Span) (time.Time, bool) {
+	for _, span := range spans {
+		if span == nil || span.Timestamp == nil {
+			continue
+		}
+		if span.IsRootSpan {
+			return span.Timestamp.AsTime(), true
+		}
+	}
+	return time.Time{}, false
+}
+
+// GetServerSpanTimestamp returns the server/root span timestamp to use for time travel.
+func GetServerSpanTimestamp(spans []*core.Span) (float64, string) {
+	for _, span := range spans {
+		if span == nil || span.Timestamp == nil {
+			continue
+		}
+		if span.IsRootSpan {
+			spanTimestamp := float64(span.Timestamp.Seconds) + float64(span.Timestamp.Nanos)/1e9
+			return spanTimestamp, "server_span"
+		}
+	}
 	return 0, "none"
 }
