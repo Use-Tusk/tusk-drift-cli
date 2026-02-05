@@ -1289,10 +1289,11 @@ func extractCommandPrefixes(command string) []string {
 	return prefixes
 }
 
-// allCommandPrefixesAllowed checks if all command prefixes are in the allowlist
+// allCommandPrefixesAllowed checks if all command prefixes are in the allowlist.
+// Returns true if prefixes is empty (all commands were trivial and filtered out).
 func (a *Agent) allCommandPrefixesAllowed(prefixes []string) bool {
 	if len(prefixes) == 0 {
-		return false
+		return true // No meaningful commands to approve - auto-allow trivial commands
 	}
 	for _, p := range prefixes {
 		if !a.allowedCommandPrefixes[p] {

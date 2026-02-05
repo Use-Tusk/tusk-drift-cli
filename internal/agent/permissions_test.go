@@ -175,9 +175,9 @@ func TestAllCommandPrefixesAllowed(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "empty prefixes",
+			name:     "empty prefixes (trivial commands auto-allowed)",
 			prefixes: []string{},
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "single allowed",
