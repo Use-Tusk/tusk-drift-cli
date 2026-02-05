@@ -41,11 +41,36 @@ var toolDisplayNames = map[string]string{
 	"transition_phase":         "Complete phase",
 }
 
+// Plural forms for "allow all X" context
+var toolDisplayNamesPlural = map[string]string{
+	"read_file":                "file reads",
+	"write_file":               "file writes",
+	"list_directory":           "directory listings",
+	"grep":                     "file searches",
+	"patch_file":               "file edits",
+	"run_command":              "commands",
+	"start_background_process": "service starts",
+	"stop_background_process":  "service stops",
+	"get_process_logs":         "log retrievals",
+	"wait_for_ready":           "ready checks",
+	"http_request":             "HTTP requests",
+	"tusk_validate_config":     "config validations",
+	"tusk_list":                "trace listings",
+	"tusk_run":                 "test runs",
+}
+
 func getToolDisplayName(name string) string {
 	if friendly, ok := toolDisplayNames[name]; ok {
 		return friendly
 	}
 	return name
+}
+
+func getToolDisplayNamePlural(name string) string {
+	if plural, ok := toolDisplayNamesPlural[name]; ok {
+		return plural
+	}
+	return getToolDisplayName(name)
 }
 
 // TUI Messages
@@ -118,9 +143,10 @@ type (
 	}
 
 	permissionRequestMsg struct {
-		toolName   string
-		preview    string
-		responseCh chan string // "approve", "approve_all", "deny"
+		toolName        string
+		preview         string
+		commandPrefixes []string    // For run_command granularity
+		responseCh      chan string // "approve", "approve_tool_type", "approve_commands:<csv>", "approve_all", "deny"
 	}
 
 	// For graceful shutdown
@@ -170,28 +196,29 @@ type TUIModel struct {
 	todoMutex    sync.RWMutex
 
 	// User input
-	userInputMode        bool
-	userInputPrompt      string
-	userInputTextarea    textarea.Model
-	userInputCh          chan string
-	portConflictMode     bool
-	portConflictPort     int
-	portConflictCh       chan bool
-	rerunConfirmMode     bool
-	rerunConfirmCh       chan bool
-	cloudSetupPromptMode bool
-	cloudSetupPromptCh   chan bool
-	userSelectMode       bool
-	userSelectPrompt     string
-	userSelectOptions    []SelectOption
-	userSelectIndex      int
-	userSelectCh         chan string
-	permissionMode       bool
-	permissionTool       string
-	permissionPreview    string
-	permissionCh         chan string
-	permissionDenyMode   bool   // Text input mode for "deny with alternative"
-	permissionDenyBuffer string // Buffer for alternative text
+	userInputMode             bool
+	userInputPrompt           string
+	userInputTextarea         textarea.Model
+	userInputCh               chan string
+	portConflictMode          bool
+	portConflictPort          int
+	portConflictCh            chan bool
+	rerunConfirmMode          bool
+	rerunConfirmCh            chan bool
+	cloudSetupPromptMode      bool
+	cloudSetupPromptCh        chan bool
+	userSelectMode            bool
+	userSelectPrompt          string
+	userSelectOptions         []SelectOption
+	userSelectIndex           int
+	userSelectCh              chan string
+	permissionMode            bool
+	permissionTool            string
+	permissionPreview         string
+	permissionCommandPrefixes []string // For run_command granularity
+	permissionCh              chan string
+	permissionDenyMode        bool
+	permissionDenyBuffer      string
 
 	// UI state
 	viewport      viewport.Model
@@ -589,6 +616,7 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.permissionMode = true
 		m.permissionTool = msg.toolName
 		m.permissionPreview = msg.preview
+		m.permissionCommandPrefixes = msg.commandPrefixes
 		m.permissionCh = msg.responseCh
 		m.updateViewportSize() // Shrink content area for permission prompt
 		m.addLog("spacing", "", "")
@@ -974,16 +1002,34 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.permissionCh <- "approve"
 			}
 			m.permissionMode = false
+			m.permissionCommandPrefixes = nil
 			m.updateViewportSize() // Reclaim space
-			m.addLog("dim", "   ✓ Approved", "")
+			m.addLog("dim", "   ✓ Allowed", "")
+			return m, nil
+		case "t", "T":
+			if m.permissionCh != nil {
+				if len(m.permissionCommandPrefixes) > 0 {
+					// For commands, approve the specific command prefixes
+					m.permissionCh <- "approve_commands:" + strings.Join(m.permissionCommandPrefixes, ",")
+					m.addLog("dim", fmt.Sprintf("   ✓ Allowed (will auto-allow future `%s` commands)", strings.Join(m.permissionCommandPrefixes, "`, `")), "")
+				} else {
+					// Approve the tool type
+					m.permissionCh <- "approve_tool_type"
+					m.addLog("dim", fmt.Sprintf("   ✓ Allowed (will auto-allow future %s)", getToolDisplayNamePlural(m.permissionTool)), "")
+				}
+			}
+			m.permissionMode = false
+			m.permissionCommandPrefixes = nil
+			m.updateViewportSize() // Reclaim space
 			return m, nil
 		case "a", "A":
 			if m.permissionCh != nil {
 				m.permissionCh <- "approve_all"
 			}
 			m.permissionMode = false
+			m.permissionCommandPrefixes = nil
 			m.updateViewportSize() // Reclaim space
-			m.addLog("dim", "   ✓ Approved (skipping future prompts)", "")
+			m.addLog("dim", "   ✓ Allowed (will auto-allow all future actions)", "")
 			return m, nil
 		case "n", "N":
 			// Switch to deny mode with text input for alternative
@@ -995,6 +1041,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.permissionCh <- "deny"
 			}
 			m.permissionMode = false
+			m.permissionCommandPrefixes = nil
 			m.updateViewportSize() // Reclaim space
 			m.addLog("dim", "   ✗ Denied", "")
 			return m, nil
@@ -1003,6 +1050,7 @@ func (m *TUIModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.permissionCh <- "deny"
 			}
 			m.permissionMode = false
+			m.permissionCommandPrefixes = nil
 			m.updateViewportSize() // Reclaim space
 			return m, m.initiateShutdown()
 		}
@@ -1404,7 +1452,17 @@ func (m *TUIModel) renderFooter() string {
 		helpText = components.Footer(m.width, "Enter: submit • Esc: back")
 		return inputLine + "\n" + helpText
 	case m.permissionMode:
-		helpText = components.Footer(m.width, "y: approve • a: approve all • n: deny & suggest alternative • Ctrl+C: cancel")
+		var tOption string
+		if len(m.permissionCommandPrefixes) > 0 {
+			display := "`" + strings.Join(m.permissionCommandPrefixes, "`, `") + "`"
+			if len(display) > 25 {
+				display = display[:22] + "..."
+			}
+			tOption = fmt.Sprintf("t: allow all %s commands", display)
+		} else {
+			tOption = "t: allow all " + getToolDisplayNamePlural(m.permissionTool)
+		}
+		helpText = components.Footer(m.width, fmt.Sprintf("y: allow once • %s • a: allow all actions • n: deny & suggest", tOption))
 		return helpText
 	case m.completed:
 		helpText = components.Footer(m.width, "q/Esc: quit")
@@ -1751,10 +1809,11 @@ func (m *TUIModel) RequestUserSelect(program *tea.Program, question string, opti
 }
 
 // RequestPermission asks the user for permission to execute a tool.
-// Returns "approve", "approve_all", or "deny".
-func (m *TUIModel) RequestPermission(program *tea.Program, toolName string, preview string) string {
+// commandPrefixes is non-empty for run_command/start_background_process to enable command-level granularity.
+// Returns "approve", "approve_tool_type", "approve_commands:<csv>", "approve_all", "deny", or "deny:<alternative>".
+func (m *TUIModel) RequestPermission(program *tea.Program, toolName, preview string, commandPrefixes []string) string {
 	responseCh := make(chan string, 1)
-	program.Send(permissionRequestMsg{toolName: toolName, preview: preview, responseCh: responseCh})
+	program.Send(permissionRequestMsg{toolName: toolName, preview: preview, commandPrefixes: commandPrefixes, responseCh: responseCh})
 
 	select {
 	case response := <-responseCh:

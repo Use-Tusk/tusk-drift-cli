@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -61,12 +62,14 @@ type Agent struct {
 	totalTokensIn  int
 	totalTokensOut int
 
-	skipPermissions bool
-	disableProgress bool
-	skipToCloud     bool
-	printMode       bool
-	eligibilityOnly bool
-	verifyMode      bool
+	skipPermissions        bool
+	disableProgress        bool
+	skipToCloud            bool
+	printMode              bool
+	eligibilityOnly        bool
+	verifyMode             bool
+	allowedToolTypes       map[ToolName]bool // Tools user has approved for session
+	allowedCommandPrefixes map[string]bool   // Command prefixes approved (e.g., "npm install")
 
 	// UI abstraction (TUI / headless)
 	ui     AgentUI
@@ -128,18 +131,20 @@ func New(cfg Config) (*Agent, error) {
 	tools, executors := RegisterTools(cfg.WorkDir, pm, phaseMgr)
 
 	a := &Agent{
-		client:          client,
-		allTools:        tools,
-		executors:       executors,
-		phaseManager:    phaseMgr,
-		processManager:  pm,
-		workDir:         cfg.WorkDir,
-		skipPermissions: cfg.SkipPermissions,
-		disableProgress: cfg.DisableProgress,
-		skipToCloud:     cfg.SkipToCloud,
-		printMode:       cfg.PrintMode,
-		eligibilityOnly: cfg.EligibilityOnly,
-		verifyMode:      cfg.VerifyMode,
+		client:                 client,
+		allTools:               tools,
+		executors:              executors,
+		phaseManager:           phaseMgr,
+		processManager:         pm,
+		workDir:                cfg.WorkDir,
+		skipPermissions:        cfg.SkipPermissions,
+		disableProgress:        cfg.DisableProgress,
+		skipToCloud:            cfg.SkipToCloud,
+		printMode:              cfg.PrintMode,
+		eligibilityOnly:        cfg.EligibilityOnly,
+		verifyMode:             cfg.VerifyMode,
+		allowedToolTypes:       make(map[ToolName]bool),
+		allowedCommandPrefixes: make(map[string]bool),
 	}
 
 	if cfg.OutputLogs {
@@ -903,35 +908,71 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 
 		// Check if tool requires permission
 		if !a.skipPermissions {
-			if toolDef := GetRegistry().Get(ToolName(c.Name)); toolDef != nil && toolDef.RequiresConfirmation {
-				preview := formatToolPreview(c.Name, inputStr)
-				response := a.ui.PromptPermission(c.Name, preview)
+			toolName := ToolName(c.Name)
+			toolDef := GetRegistry().Get(toolName)
 
-				switch {
-				case response == "approve":
-					// Continue with execution
-				case response == "approve_all":
-					a.skipPermissions = true
-					// Continue with execution
-				case response == "deny":
-					a.ui.ToolComplete(c.Name, false, "User denied permission")
-					results = append(results, Content{
-						Type:      "tool_result",
-						ToolUseID: c.ID,
-						Content:   "Error: User denied permission for this action. Please try a different approach.",
-						IsError:   true,
-					})
-					continue
-				case strings.HasPrefix(response, "deny:"):
-					alternative := strings.TrimPrefix(response, "deny:")
-					a.ui.ToolComplete(c.Name, false, "User suggested alternative")
-					results = append(results, Content{
-						Type:      "tool_result",
-						ToolUseID: c.ID,
-						Content:   fmt.Sprintf("User denied this action and suggested: %s\n\nPlease follow the user's suggestion instead.", alternative),
-						IsError:   true,
-					})
-					continue
+			if toolDef != nil && toolDef.RequiresConfirmation {
+				shouldPrompt := false
+				var commandPrefixes []string
+
+				if toolName == ToolRunCommand || toolName == ToolStartBackgroundProcess {
+					// For commands, check command prefix allowlist
+					var params struct {
+						Command string `json:"command"`
+					}
+					if err := json.Unmarshal(c.Input, &params); err == nil && params.Command != "" {
+						commandPrefixes = extractCommandPrefixes(params.Command)
+						if !a.allCommandPrefixesAllowed(commandPrefixes) {
+							shouldPrompt = true
+						}
+					} else {
+						shouldPrompt = true // Can't parse command, prompt to be safe
+					}
+				} else if !a.allowedToolTypes[toolName] {
+					// For non-command tools, check tool type allowlist
+					shouldPrompt = true
+				}
+
+				if shouldPrompt {
+					preview := formatToolPreview(c.Name, inputStr)
+					response := a.ui.PromptPermission(c.Name, preview, commandPrefixes)
+
+					switch {
+					case response == "approve":
+						// Continue with execution (one-time)
+					case response == "approve_tool_type":
+						a.allowedToolTypes[toolName] = true
+						// Continue with execution
+					case strings.HasPrefix(response, "approve_commands:"):
+						// Add all prefixes to allowlist
+						prefixesStr := strings.TrimPrefix(response, "approve_commands:")
+						for _, p := range strings.Split(prefixesStr, ",") {
+							a.allowedCommandPrefixes[p] = true
+						}
+						// Continue with execution
+					case response == "approve_all":
+						a.skipPermissions = true
+						// Continue with execution
+					case response == "deny":
+						a.ui.ToolComplete(c.Name, false, "User denied permission")
+						results = append(results, Content{
+							Type:      "tool_result",
+							ToolUseID: c.ID,
+							Content:   "Error: User denied permission for this action. Please try a different approach.",
+							IsError:   true,
+						})
+						continue
+					case strings.HasPrefix(response, "deny:"):
+						alternative := strings.TrimPrefix(response, "deny:")
+						a.ui.ToolComplete(c.Name, false, "User suggested alternative")
+						results = append(results, Content{
+							Type:      "tool_result",
+							ToolUseID: c.ID,
+							Content:   fmt.Sprintf("User denied this action and suggested: %s\n\nPlease follow the user's suggestion instead.", alternative),
+							IsError:   true,
+						})
+						continue
+					}
 				}
 			}
 		}
@@ -1184,6 +1225,82 @@ func extractPortsFromCommand(cmd string) []int {
 	}
 
 	return unique
+}
+
+// extractCommandPrefixes extracts command prefixes from a shell command string.
+// Returns all unique prefixes for chained commands.
+// Uses base+subcommand format for commands with meaningful subcommands (e.g., "npm install" not just "npm").
+// Filters out trivial shell builtins that don't need user approval.
+func extractCommandPrefixes(command string) []string {
+	// Split by chain operators
+	chainOps := regexp.MustCompile(`\s*(?:&&|\|\||[;|])\s*`)
+	parts := chainOps.Split(command, -1)
+
+	// Trivial commands that don't need explicit approval (commonly used in shell patterns)
+	trivialCommands := map[string]bool{
+		"true":  true, // no-op success
+		"false": true, // no-op failure
+		":":     true, // bash no-op
+		"echo":  true, // just prints
+		"test":  true, // condition check
+		"[":     true, // condition check (alias for test)
+	}
+
+	seen := make(map[string]bool)
+	var prefixes []string
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			continue
+		}
+
+		baseCmd := fields[0]
+
+		if trivialCommands[baseCmd] {
+			continue
+		}
+
+		subcommandCmds := map[string]bool{
+			"npm": true, "yarn": true, "pnpm": true,
+			"pip": true, "pip3": true, "poetry": true, "uv": true,
+			"git": true, "docker": true, "go": true, "cargo": true,
+			"kubectl": true, "make": true,
+		}
+
+		var prefix string
+		if subcommandCmds[baseCmd] && len(fields) > 1 && !strings.HasPrefix(fields[1], "-") {
+			prefix = baseCmd + " " + fields[1] // e.g., "npm install"
+		} else {
+			prefix = baseCmd // e.g., "cat", "uvicorn"
+		}
+
+		if !seen[prefix] {
+			seen[prefix] = true
+			prefixes = append(prefixes, prefix)
+		}
+	}
+
+	return prefixes
+}
+
+// allCommandPrefixesAllowed checks if all command prefixes are in the allowlist.
+// Returns true if prefixes is empty (all commands were trivial and filtered out).
+func (a *Agent) allCommandPrefixesAllowed(prefixes []string) bool {
+	if len(prefixes) == 0 {
+		return true // No meaningful commands to approve - auto-allow trivial commands
+	}
+	for _, p := range prefixes {
+		if !a.allowedCommandPrefixes[p] {
+			return false
+		}
+	}
+	return true
 }
 
 func isPortInUse(port int) bool {

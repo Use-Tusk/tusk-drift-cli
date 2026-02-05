@@ -40,8 +40,10 @@ type AgentUI interface {
 	PromptUserInput(question string) (string, bool)
 	// Returns (selectedID, selectedLabel, cancelled)
 	PromptUserSelect(question string, options []SelectOption) (string, string, bool)
-	// Returns "approve", "approve_all", "deny", or "deny:<alternative>"
-	PromptPermission(toolName, preview string) string
+	// PromptPermission asks for permission to execute a tool.
+	// commandPrefixes is non-empty for run_command/start_background_process to enable command-level granularity.
+	// Returns "approve", "approve_tool_type", "approve_commands:<csv>", "approve_all", "deny", or "deny:<alternative>"
+	PromptPermission(toolName, preview string, commandPrefixes []string) string
 	// Returns true if user wants to kill the process
 	PromptKillPort(port int) bool
 	// Returns (rerun, cancelled)
