@@ -84,31 +84,23 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 	return spans, nil
 }
 
-// maybeMapOTelSpanKinds detects if spans use OpenTelemetry SpanKind values and maps them
-// to proto SpanKind values if needed.
+// maybeFixSpanKinds fixes SpanKind values for traces from older Node SDK versions.
 //
-// Background: OpenTelemetry uses different enum values than our proto definition:
+// Background: The Node SDK had a bug where it wrote OpenTelemetry SpanKind enum values
+// to JSONL files instead of Proto values. This causes validation failures because:
 //   - OTel:  INTERNAL=0, SERVER=1, CLIENT=2, PRODUCER=3, CONSUMER=4
 //   - Proto: UNSPECIFIED=0, INTERNAL=1, SERVER=2, CLIENT=3, PRODUCER=4, CONSUMER=5
 //
-// The Node SDK historically wrote OTel values to JSONL files, while Python SDK writes
-// proto values. This function detects which format is used and applies the +1 mapping
-// if needed for backwards compatibility.
+// Detection: If ANY root span has kind != SERVER (2), we have malformed spans.
+// This handles mixed old/new traces correctly - if even one is wrong, we fix all.
 //
-// Detection heuristic: If a span has isRootSpan=true (which means it's a SERVER span)
-// but kind=1 (OTel SERVER), then the file uses OTel values and needs mapping.
-// If isRootSpan=true and kind=2 (proto SERVER), no mapping is needed.
+// Fix: Rather than blindly adding +1, we derive SpanKind from semantic info:
+//   - ENV_VARS_SNAPSHOT → INTERNAL
+//   - isRootSpan=true → SERVER
+//   - everything else → CLIENT
 //
-// TODO: This can be removed once all Node SDK users have upgraded to a version that
-// writes proto SpanKind values to JSONL files.
+// TODO: Remove once old locally-stored traces have aged out.
 func maybeFixSpanKinds(spans []*core.Span) []*core.Span {
-	// TODO: Remove once old locally-stored traces have aged out.
-	// Workaround for a bug (now fixed) in the Node SDK that didn't convert OTel span kinds
-	// to protobuf span kinds during JSONL export.
-	//
-	// Detection: If ANY root span is not SERVER (kind != 2), we have malformed spans.
-	// This handles mixed old/new traces correctly - if even one is wrong, we fix all.
-	//
 	// Fix: Derive SpanKind from semantic info (name, isRootSpan) instead of trusting
 	// the numeric kind value. This is more robust than +1 mapping.
 

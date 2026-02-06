@@ -199,7 +199,8 @@ func updateField(node *yaml.Node, path []string, value any) error {
 	return updateField(nestedMapping, path[1:], value)
 }
 
-// SaveServiceIDToConfig saves the service ID to the config file
+// SaveServiceIDToConfig saves the service ID to .tusk/config.yaml.
+// Uses yaml.Node parsing to preserve file structure, comments, and unknown fields.
 func SaveServiceIDToConfig(serviceID string) error {
 	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
 		cfg.Service.ID = serviceID
@@ -208,7 +209,9 @@ func SaveServiceIDToConfig(serviceID string) error {
 	})
 }
 
-// SaveRecordingConfig saves recording settings to the config file
+// SaveRecordingConfig saves recording settings to .tusk/config.yaml.
+// Uses yaml.Node parsing to preserve file structure, comments, and unknown fields
+// (e.g., exclude_paths, transforms that the user may have configured).
 func SaveRecordingConfig(samplingRate float64, exportSpans, enableEnvVarRecording bool) error {
 	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
 		cfg.Recording.SamplingRate = samplingRate
