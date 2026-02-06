@@ -2,16 +2,6 @@ github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
 github.com/Use-Tusk/fence v0.1.16 h1:iTHn7ttCbvUANZ9Bo/3HyZYAw7ZrNAjoZjaX7kDbE0I=
 github.com/Use-Tusk/fence v0.1.16/go.mod h1:topOkP7EULI+78u+Ax775d36GqWfx2BhqkVEQ/QXXAU=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.24 h1:q5rdVm46qk+6s7THk1QeSYDJc+/nL63ChyEYF/VxaTM=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.24/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.25-0.20260127032119-ba5c9c37743f h1:fgrFZDrRqSPfVtBg0FPT5W4KUmXDTL9eO3cG0OnGC0s=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.25-0.20260127032119-ba5c9c37743f/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.27 h1:AEQjJwXUEs3cu427/GSF05GnutFak7iVEdn8mknPmTw=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.27/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.28 h1:S+sGmSdhwxWYXo/761Fn6Tey7HN7Zp4TTvVSPwJDf24=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.28/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.29 h1:wlVHhIa85jSlSVWGiRlLIEYoIqSh7oLsLJRXH5lKJmM=
-github.com/Use-Tusk/tusk-drift-schemas v0.1.29/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.30 h1:A45pJ/Za6BLIfTLF53BhuzKHHSJ9L7dXEisnuKT5dTc=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.30/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
 github.com/agnivade/levenshtein v1.0.3 h1:M5ZnqLOoZR8ygVq0FfkXsNOKzMCk0xRiow0R5+5VkQ0=
