@@ -742,7 +742,7 @@ func GetFirstSpanTimestamp(spans []*core.Span) (float64, string) {
 
 		spanTimestamp := float64(span.Timestamp.Seconds) + float64(span.Timestamp.Nanos)/1e9
 
-		// Track server span separately as fallback
+		// Track server span
 		if span.IsRootSpan {
 			serverSpanTimestamp = spanTimestamp
 			continue
