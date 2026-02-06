@@ -728,7 +728,8 @@ func OutputResultsSummary(results []TestResult, format string, quiet bool) error
 }
 
 // GetFirstSpanTimestamp returns the timestamp to use for time travel.
-// Priority: first recorded span (non-server) > server span
+// Priority: server/root span > earliest non-server span.
+// Root span is preferred for inbound-level determinism (e.g., caching keys derived from time).
 func GetFirstSpanTimestamp(spans []*core.Span) (float64, string) {
 	var firstTimestamp float64 = math.MaxFloat64
 	var serverSpanTimestamp float64 = 0
@@ -741,7 +742,7 @@ func GetFirstSpanTimestamp(spans []*core.Span) (float64, string) {
 
 		spanTimestamp := float64(span.Timestamp.Seconds) + float64(span.Timestamp.Nanos)/1e9
 
-		// Track server span separately as fallback
+		// Track server span
 		if span.IsRootSpan {
 			serverSpanTimestamp = spanTimestamp
 			continue
@@ -754,14 +755,14 @@ func GetFirstSpanTimestamp(spans []*core.Span) (float64, string) {
 		}
 	}
 
-	// Return earliest non-server span if found
-	if foundNonServerSpan {
-		return firstTimestamp, "first_span"
-	}
-
-	// Fallback to server span
+	// Prefer root/server span for inbound-level determinism (e.g., caching keys derived from time).
+	// Fall back to the earliest recorded non-server span if no root span exists.
 	if serverSpanTimestamp > 0 {
 		return serverSpanTimestamp, "server_span"
+	}
+
+	if foundNonServerSpan {
+		return firstTimestamp, "first_span"
 	}
 
 	// No timestamp available
