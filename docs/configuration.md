@@ -285,6 +285,12 @@ For authentication in cloud mode, either use:
       <td><code>true</code></td>
       <td>Ignore date formats (e.g., <code>YYYY-MM-DD</code>) when both sides are dates.</td>
     </tr>
+    <tr>
+      <td><code>comparison.ignore_jwt_fields</code></td>
+      <td>boolean</td>
+      <td><code>true</code></td>
+      <td>When both expected and actual values are JWT tokens, decode their payloads and compare claims individually (ignoring the <code>jti</code> claim and applying other dynamic field rules to each claim). This handles tokens that differ only in per‑issuance fields like <code>jti</code> and their resulting signature.</td>
+    </tr>
   </tbody>
 </table>
 
