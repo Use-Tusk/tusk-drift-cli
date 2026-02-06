@@ -10,15 +10,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	onboardcloud "github.com/Use-Tusk/tusk-drift-cli/internal/tui/onboard-cloud"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
-	"gopkg.in/yaml.v3"
 )
 
 // SpanUploadBatchSize is the number of spans to upload in each batch.
@@ -658,6 +659,11 @@ func (ct *CloudTools) CreateObservableService(input json.RawMessage) (string, er
 		return "", fmt.Errorf("invalid response from server")
 	}
 
+	// Save service ID to config immediately
+	if err := onboardcloud.SaveServiceIDToConfig(successResp.ObservableServiceId); err != nil {
+		return "", fmt.Errorf("service created but failed to save to config: %w", err)
+	}
+
 	result := struct {
 		Success   bool   `json:"success"`
 		ServiceID string `json:"service_id"`
@@ -739,6 +745,7 @@ func (ct *CloudTools) CheckApiKeyExists(input json.RawMessage) (string, error) {
 }
 
 // SaveCloudConfig saves the cloud configuration to .tusk/config.yaml
+// Uses the same yaml.Node-based approach as the TUI to preserve ordering, comments, and unknown fields.
 func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 	var params struct {
 		ServiceID             string  `json:"service_id"`
@@ -750,38 +757,16 @@ func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 		return "", fmt.Errorf("invalid input: %w", err)
 	}
 
-	configPath := ".tusk/config.yaml"
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	var config map[string]any
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return "", fmt.Errorf("failed to parse config file: %w", err)
-	}
-
+	// Save service ID if provided and not already set
 	if params.ServiceID != "" {
-		if service, ok := config["service"].(map[string]any); ok {
-			if _, hasID := service["id"]; !hasID {
-				service["id"] = params.ServiceID
-			}
+		if err := onboardcloud.SaveServiceIDToConfig(params.ServiceID); err != nil {
+			return "", fmt.Errorf("failed to save service ID: %w", err)
 		}
 	}
 
-	config["recording"] = map[string]any{
-		"sampling_rate":            params.SamplingRate,
-		"export_spans":             params.ExportSpans,
-		"enable_env_var_recording": params.EnableEnvVarRecording,
-	}
-
-	output, err := yaml.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, output, 0o600); err != nil {
-		return "", fmt.Errorf("failed to write config file: %w", err)
+	// Save recording config (preserves other fields like exclude_paths, transforms)
+	if err := onboardcloud.SaveRecordingConfig(params.SamplingRate, params.ExportSpans, params.EnableEnvVarRecording); err != nil {
+		return "", fmt.Errorf("failed to save recording config: %w", err)
 	}
 
 	return "Cloud configuration saved to .tusk/config.yaml", nil
@@ -916,31 +901,49 @@ func (ct *CloudTools) UploadTraces(input json.RawMessage) (string, error) {
 	spanBatches := utils.BatchSlice(allSpans, SpanUploadBatchSize)
 	sdkInstanceId := fmt.Sprintf("setup-%d", time.Now().Unix())
 
+	// Upload batches concurrently with max concurrency of 5
+	const maxConcurrency = 5
+	semaphore := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	var totalUploaded int
 	var uploadErrors []string
 
 	for i, batch := range spanBatches {
-		req := &backend.ExportSpansRequest{
-			ObservableServiceId: params.ServiceID,
-			Environment:         "setup-agent",
-			SdkVersion:          "cli-setup",
-			SdkInstanceId:       sdkInstanceId,
-			Spans:               batch,
-		}
+		wg.Add(1)
+		go func(batchIdx int, batchSpans []*core.Span) {
+			defer wg.Done()
+			semaphore <- struct{}{}        // Acquire
+			defer func() { <-semaphore }() // Release
 
-		resp, err := client.ExportSpans(ctx, req, authOptions)
-		if err != nil {
-			uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %v", i+1, len(spanBatches), err))
-			continue // Best effort: continue with remaining batches
-		}
+			req := &backend.ExportSpansRequest{
+				ObservableServiceId: params.ServiceID,
+				Environment:         "setup-agent",
+				SdkVersion:          "cli-setup",
+				SdkInstanceId:       sdkInstanceId,
+				Spans:               batchSpans,
+			}
 
-		if !resp.Success {
-			uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %s", i+1, len(spanBatches), resp.Message))
-			continue
-		}
+			resp, err := client.ExportSpans(ctx, req, authOptions)
 
-		totalUploaded += len(batch)
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %v", batchIdx+1, len(spanBatches), err))
+				return
+			}
+
+			if !resp.Success {
+				uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %s", batchIdx+1, len(spanBatches), resp.Message))
+				return
+			}
+
+			totalUploaded += len(batchSpans)
+		}(i, batch)
 	}
+
+	wg.Wait()
 
 	// Determine overall success
 	success := totalUploaded > 0

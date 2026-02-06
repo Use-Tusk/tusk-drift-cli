@@ -77,7 +77,81 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 		return nil, fmt.Errorf("failed reading %s: %w", filename, err)
 	}
 
+	// Fix SpanKind values if needed (backwards compatibility for old Node SDK traces).
+	// See maybeFixSpanKinds for details.
+	spans = maybeFixSpanKinds(spans)
+
 	return spans, nil
+}
+
+// maybeMapOTelSpanKinds detects if spans use OpenTelemetry SpanKind values and maps them
+// to proto SpanKind values if needed.
+//
+// Background: OpenTelemetry uses different enum values than our proto definition:
+//   - OTel:  INTERNAL=0, SERVER=1, CLIENT=2, PRODUCER=3, CONSUMER=4
+//   - Proto: UNSPECIFIED=0, INTERNAL=1, SERVER=2, CLIENT=3, PRODUCER=4, CONSUMER=5
+//
+// The Node SDK historically wrote OTel values to JSONL files, while Python SDK writes
+// proto values. This function detects which format is used and applies the +1 mapping
+// if needed for backwards compatibility.
+//
+// Detection heuristic: If a span has isRootSpan=true (which means it's a SERVER span)
+// but kind=1 (OTel SERVER), then the file uses OTel values and needs mapping.
+// If isRootSpan=true and kind=2 (proto SERVER), no mapping is needed.
+//
+// TODO: This can be removed once all Node SDK users have upgraded to a version that
+// writes proto SpanKind values to JSONL files.
+func maybeFixSpanKinds(spans []*core.Span) []*core.Span {
+	// TODO: Remove once old locally-stored traces have aged out.
+	// Workaround for a bug (now fixed) in the Node SDK that didn't convert OTel span kinds
+	// to protobuf span kinds during JSONL export.
+	//
+	// Detection: If ANY root span is not SERVER (kind != 2), we have malformed spans.
+	// This handles mixed old/new traces correctly - if even one is wrong, we fix all.
+	//
+	// Fix: Derive SpanKind from semantic info (name, isRootSpan) instead of trusting
+	// the numeric kind value. This is more robust than +1 mapping.
+
+	needsFix := false
+	for _, span := range spans {
+		if span.IsRootSpan && span.Kind != core.SpanKind_SPAN_KIND_SERVER {
+			log.Debug("[SpanKind] Found malformed root span",
+				"name", span.Name,
+				"kind", span.Kind,
+				"expected", core.SpanKind_SPAN_KIND_SERVER)
+			needsFix = true
+			break
+		}
+	}
+
+	if !needsFix {
+		log.Debug("[SpanKind] All root spans have correct SERVER kind, no fix needed")
+		return spans
+	}
+
+	log.Debug("[SpanKind] Deriving SpanKind from semantic info for all spans", "count", len(spans))
+
+	// Derive SpanKind from name and isRootSpan instead of trusting the JSON value
+	for _, span := range spans {
+		oldKind := span.Kind
+		switch {
+		case span.Name == "ENV_VARS_SNAPSHOT":
+			span.Kind = core.SpanKind_SPAN_KIND_INTERNAL
+		case span.IsRootSpan:
+			span.Kind = core.SpanKind_SPAN_KIND_SERVER
+		default:
+			span.Kind = core.SpanKind_SPAN_KIND_CLIENT
+		}
+		if oldKind != span.Kind {
+			log.Debug("[SpanKind] Fixed span",
+				"name", span.Name,
+				"oldKind", oldKind,
+				"newKind", span.Kind,
+				"isRootSpan", span.IsRootSpan)
+		}
+	}
+
+	return spans
 }
 
 // ParseProtobufSpanFromJSON parses a JSON line into a protobuf Span

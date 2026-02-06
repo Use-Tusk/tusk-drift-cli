@@ -2,6 +2,9 @@ package agent
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateEligibilityReport_Valid(t *testing.T) {
@@ -390,18 +393,12 @@ func TestParseEligibilityReport_ValidJSON(t *testing.T) {
 	}`
 
 	report, err := ParseEligibilityReport(jsonStr)
-	if err != nil {
-		t.Errorf("expected valid JSON to parse, got error: %v", err)
-	}
-	if report == nil {
-		t.Fatal("expected non-nil report")
-	}
-	if report.Services["./backend"].Status != StatusCompatible {
-		t.Errorf("expected status compatible, got %s", report.Services["./backend"].Status)
-	}
-	if report.Services["./backend"].Runtime != RuntimeNodeJS {
-		t.Errorf("expected runtime nodejs, got %s", report.Services["./backend"].Runtime)
-	}
+	require.NoError(t, err, "expected valid JSON to parse")
+	require.NotNil(t, report)
+	backend, ok := report.Services["./backend"]
+	require.True(t, ok, "expected ./backend service in report")
+	assert.Equal(t, StatusCompatible, backend.Status)
+	assert.Equal(t, RuntimeNodeJS, backend.Runtime)
 }
 
 func TestParseEligibilityReport_InvalidJSON(t *testing.T) {
@@ -453,10 +450,6 @@ func TestParseEligibilityReport_OtherRuntime(t *testing.T) {
 	}`
 
 	report, err := ParseEligibilityReport(jsonStr)
-	if err != nil {
-		t.Errorf("expected valid JSON to parse, got error: %v", err)
-	}
-	if report.Services["./backend"].Runtime != RuntimeOther {
-		t.Errorf("expected runtime other, got %s", report.Services["./backend"].Runtime)
-	}
+	require.NoError(t, err, "expected valid JSON to parse")
+	assert.Equal(t, RuntimeOther, report.Services["./backend"].Runtime)
 }

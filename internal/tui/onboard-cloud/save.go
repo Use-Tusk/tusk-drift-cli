@@ -199,7 +199,8 @@ func updateField(node *yaml.Node, path []string, value any) error {
 	return updateField(nestedMapping, path[1:], value)
 }
 
-func saveServiceIDToConfig(serviceID string) error {
+// SaveServiceIDToConfig saves the service ID to the config file
+func SaveServiceIDToConfig(serviceID string) error {
 	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
 		cfg.Service.ID = serviceID
 		u.Set([]string{"service", "id"}, serviceID)
@@ -207,7 +208,8 @@ func saveServiceIDToConfig(serviceID string) error {
 	})
 }
 
-func saveRecordingConfig(samplingRate float64, exportSpans, enableEnvVarRecording bool) error {
+// SaveRecordingConfig saves recording settings to the config file
+func SaveRecordingConfig(samplingRate float64, exportSpans, enableEnvVarRecording bool) error {
 	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
 		cfg.Recording.SamplingRate = samplingRate
 		cfg.Recording.ExportSpans = &exportSpans

@@ -130,7 +130,7 @@ func createObservableService(m *Model) tea.Cmd {
 			return createObservableServiceErrorMsg{err: fmt.Errorf("invalid response from server")}
 		}
 
-		if err := saveServiceIDToConfig(successResp.ObservableServiceId); err != nil {
+		if err := SaveServiceIDToConfig(successResp.ObservableServiceId); err != nil {
 			return createObservableServiceErrorMsg{err: fmt.Errorf("service created but failed to save to config: %w", err)}
 		}
 

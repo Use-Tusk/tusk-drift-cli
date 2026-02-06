@@ -190,3 +190,223 @@ func TestParseSpansFromFile_NoFilterReturnsAllValid(t *testing.T) {
 	names := []string{spans[0].Name, spans[1].Name}
 	assert.ElementsMatch(t, []string{"A", "B"}, names)
 }
+
+func TestParseSpansFromFile_MapsOTelSpanKindsToProto(t *testing.T) {
+	// Test that OTel SpanKind values (SERVER=1, CLIENT=2) are mapped to Proto values (SERVER=2, CLIENT=3)
+	// when the file contains isRootSpan=true with kind=1 (OTel SERVER).
+	tmp := t.TempDir()
+	filename := filepath.Join(tmp, "trace.jsonl")
+
+	// OTel values: SERVER=1, CLIENT=2
+	serverSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s1",
+		"name":       "server",
+		"isRootSpan": true,
+		"kind":       1, // OTel SERVER
+	}
+	clientSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s2",
+		"name":       "client",
+		"isRootSpan": false,
+		"kind":       2, // OTel CLIENT
+	}
+
+	serverBytes, err := json.Marshal(serverSpan)
+	require.NoError(t, err)
+	clientBytes, err := json.Marshal(clientSpan)
+	require.NoError(t, err)
+
+	var data []byte
+	data = append(data, serverBytes...)
+	data = append(data, '\n')
+	data = append(data, clientBytes...)
+	data = append(data, '\n')
+	require.NoError(t, os.WriteFile(filename, data, 0o644))
+
+	spans, err := ParseSpansFromFile(filename, nil)
+	require.NoError(t, err)
+	require.Len(t, spans, 2)
+
+	// After mapping: OTel SERVER (1) → Proto SERVER (2), OTel CLIENT (2) → Proto CLIENT (3)
+	var server, client *core.Span
+	for _, s := range spans {
+		if s.Name == "server" {
+			server = s
+		} else if s.Name == "client" {
+			client = s
+		}
+	}
+
+	require.NotNil(t, server)
+	require.NotNil(t, client)
+	assert.Equal(t, core.SpanKind_SPAN_KIND_SERVER, server.Kind, "OTel SERVER (1) should map to Proto SERVER (2)")
+	assert.Equal(t, core.SpanKind_SPAN_KIND_CLIENT, client.Kind, "OTel CLIENT (2) should map to Proto CLIENT (3)")
+}
+
+func TestParseSpansFromFile_DoesNotMapProtoSpanKinds(t *testing.T) {
+	// Test that Proto SpanKind values are NOT remapped when the file already uses Proto values.
+	// Detection: isRootSpan=true with kind=2 (Proto SERVER) means no mapping needed.
+	tmp := t.TempDir()
+	filename := filepath.Join(tmp, "trace.jsonl")
+
+	// Proto values: SERVER=2, CLIENT=3
+	serverSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s1",
+		"name":       "server",
+		"isRootSpan": true,
+		"kind":       2, // Proto SERVER
+	}
+	clientSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s2",
+		"name":       "client",
+		"isRootSpan": false,
+		"kind":       3, // Proto CLIENT
+	}
+
+	serverBytes, err := json.Marshal(serverSpan)
+	require.NoError(t, err)
+	clientBytes, err := json.Marshal(clientSpan)
+	require.NoError(t, err)
+
+	var data []byte
+	data = append(data, serverBytes...)
+	data = append(data, '\n')
+	data = append(data, clientBytes...)
+	data = append(data, '\n')
+	require.NoError(t, os.WriteFile(filename, data, 0o644))
+
+	spans, err := ParseSpansFromFile(filename, nil)
+	require.NoError(t, err)
+	require.Len(t, spans, 2)
+
+	// Values should remain unchanged since they're already Proto format
+	var server, client *core.Span
+	for _, s := range spans {
+		if s.Name == "server" {
+			server = s
+		} else if s.Name == "client" {
+			client = s
+		}
+	}
+
+	require.NotNil(t, server)
+	require.NotNil(t, client)
+	assert.Equal(t, core.SpanKind_SPAN_KIND_SERVER, server.Kind, "Proto SERVER (2) should stay as Proto SERVER (2)")
+	assert.Equal(t, core.SpanKind_SPAN_KIND_CLIENT, client.Kind, "Proto CLIENT (3) should stay as Proto CLIENT (3)")
+}
+
+func TestParseSpansFromFile_FixesEnvVarsSnapshotSpan(t *testing.T) {
+	// Test that ENV_VARS_SNAPSHOT spans get INTERNAL kind
+	tmp := t.TempDir()
+	filename := filepath.Join(tmp, "trace.jsonl")
+
+	// Mix of spans including ENV_VARS_SNAPSHOT with wrong kind
+	serverSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s1",
+		"name":       "server",
+		"isRootSpan": true,
+		"kind":       1, // Wrong - triggers fix
+	}
+	envSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s2",
+		"name":       "ENV_VARS_SNAPSHOT",
+		"isRootSpan": false,
+		"kind":       0, // Whatever value - should become INTERNAL
+	}
+
+	serverBytes, err := json.Marshal(serverSpan)
+	require.NoError(t, err)
+	envBytes, err := json.Marshal(envSpan)
+	require.NoError(t, err)
+
+	var data []byte
+	data = append(data, serverBytes...)
+	data = append(data, '\n')
+	data = append(data, envBytes...)
+	data = append(data, '\n')
+	require.NoError(t, os.WriteFile(filename, data, 0o644))
+
+	spans, err := ParseSpansFromFile(filename, nil)
+	require.NoError(t, err)
+	require.Len(t, spans, 2)
+
+	var server, env *core.Span
+	for _, s := range spans {
+		if s.Name == "server" {
+			server = s
+		} else if s.Name == "ENV_VARS_SNAPSHOT" {
+			env = s
+		}
+	}
+
+	require.NotNil(t, server)
+	require.NotNil(t, env)
+	assert.Equal(t, core.SpanKind_SPAN_KIND_SERVER, server.Kind)
+	assert.Equal(t, core.SpanKind_SPAN_KIND_INTERNAL, env.Kind, "ENV_VARS_SNAPSHOT should be INTERNAL")
+}
+
+func TestParseSpansFromFile_HandlesMixedOldNewTraces(t *testing.T) {
+	// Test that mixed old (OTel) and new (Proto) traces are handled correctly.
+	// If ANY root span is wrong, we fix ALL spans using semantic derivation.
+	tmp := t.TempDir()
+	filename := filepath.Join(tmp, "trace.jsonl")
+
+	// First trace: old format (OTel values)
+	oldServerSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s1",
+		"name":       "old-server",
+		"isRootSpan": true,
+		"kind":       1, // OTel SERVER - wrong
+	}
+	oldClientSpan := map[string]any{
+		"traceId":    "t1",
+		"spanId":     "s2",
+		"name":       "old-client",
+		"isRootSpan": false,
+		"kind":       2, // OTel CLIENT - wrong
+	}
+	// Second trace: new format (Proto values)
+	newServerSpan := map[string]any{
+		"traceId":    "t2",
+		"spanId":     "s3",
+		"name":       "new-server",
+		"isRootSpan": true,
+		"kind":       2, // Proto SERVER - correct
+	}
+	newClientSpan := map[string]any{
+		"traceId":    "t2",
+		"spanId":     "s4",
+		"name":       "new-client",
+		"isRootSpan": false,
+		"kind":       3, // Proto CLIENT - correct
+	}
+
+	var data []byte
+	for _, span := range []map[string]any{oldServerSpan, oldClientSpan, newServerSpan, newClientSpan} {
+		bytes, err := json.Marshal(span)
+		require.NoError(t, err)
+		data = append(data, bytes...)
+		data = append(data, '\n')
+	}
+	require.NoError(t, os.WriteFile(filename, data, 0o644))
+
+	spans, err := ParseSpansFromFile(filename, nil)
+	require.NoError(t, err)
+	require.Len(t, spans, 4)
+
+	// All spans should have correct proto kinds (derived from isRootSpan)
+	for _, s := range spans {
+		if s.IsRootSpan {
+			assert.Equal(t, core.SpanKind_SPAN_KIND_SERVER, s.Kind, "Root span %s should be SERVER", s.Name)
+		} else {
+			assert.Equal(t, core.SpanKind_SPAN_KIND_CLIENT, s.Kind, "Non-root span %s should be CLIENT", s.Name)
+		}
+	}
+}
