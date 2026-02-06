@@ -143,35 +143,22 @@ func (lp *LogPanelComponent) rebuildContent(gotoBottom bool) {
 		wrapWidth = 70
 	}
 
-	var wrappedLines []string
-
+	var sourceLogs []string
 	if lp.currentTestID == "" {
-		for _, line := range lp.serviceLogs {
-			subLines := strings.Split(line, "\n")
-			for _, subLine := range subLines {
-				wrapped := utils.WrapLine(subLine, wrapWidth)
-				wrappedLines = append(wrappedLines, wrapped...)
-			}
-		}
+		sourceLogs = lp.serviceLogs
 	} else {
 		if logs, exists := lp.testLogs[lp.currentTestID]; exists {
-			for _, line := range logs {
-				subLines := strings.Split(line, "\n")
-				for _, subLine := range subLines {
-					wrapped := utils.WrapLine(subLine, wrapWidth)
-					wrappedLines = append(wrappedLines, wrapped...)
-				}
-			}
+			sourceLogs = logs
 		} else {
-			wrappedLines = []string{"No logs available for this test yet..."}
+			lp.ContentPanel.UpdateContentLines([]string{"No logs available for this test yet..."})
+			if gotoBottom {
+				lp.ContentPanel.GotoBottom()
+			}
+			return
 		}
 	}
 
-	for i, line := range wrappedLines {
-		wrappedLines[i] = utils.StripNoWrapMarker(line)
-	}
-
-	lp.ContentPanel.UpdateContentLines(wrappedLines)
+	lp.ContentPanel.UpdateContentLines(utils.WrapLines(sourceLogs, wrapWidth))
 
 	if gotoBottom {
 		lp.ContentPanel.GotoBottom()

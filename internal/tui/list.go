@@ -59,24 +59,25 @@ const detailsUpdateInterval = 100 * time.Millisecond
 type detailsTickMsg struct{}
 
 type listModel struct {
-	viewport       viewport.Model
-	tests          []runner.Test
-	executor       *runner.Executor
-	width          int
-	height         int
-	state          viewState
-	testExecutor   *testExecutorModel
-	selectedTest   *runner.Test
-	suiteOpts      runner.SuiteSpanOptions
-	err            error
-	sizeWarning    *components.TerminalSizeWarning
-	expandedTraces map[string]bool // map of trace id to whether it's expanded
-	rowInfos       []rowInfo
-	rows           []tableRow // Pre-built row data
-	cursor         int        // Currently selected row
-	detailsPanel   *components.DetailsPanel
-	lastCursor     int
-	detailsCache   map[string]string
+	viewport             viewport.Model
+	tests                []runner.Test
+	executor             *runner.Executor
+	width                int
+	height               int
+	actualLeftPanelWidth int
+	state                viewState
+	testExecutor         *testExecutorModel
+	selectedTest         *runner.Test
+	suiteOpts            runner.SuiteSpanOptions
+	err                  error
+	sizeWarning          *components.TerminalSizeWarning
+	expandedTraces       map[string]bool // map of trace id to whether it's expanded
+	rowInfos             []rowInfo
+	rows                 []tableRow // Pre-built row data
+	cursor               int        // Currently selected row
+	detailsPanel         *components.DetailsPanel
+	lastCursor           int
+	detailsCache         map[string]string
 
 	// Debouncing for details panel updates
 	lastDetailsUpdate    time.Time
@@ -285,7 +286,11 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if m.state == listView {
-			tableWidth := m.width / 2
+			// Use actual rendered width for accurate mouse handling
+			tableWidth := m.actualLeftPanelWidth
+			if tableWidth == 0 {
+				tableWidth = m.width / 2
+			}
 
 			// Check if mouse is over the table (left side)
 			if msg.X < tableWidth {
@@ -333,15 +338,23 @@ func (m *listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.state == listView {
-			tableWidth := msg.Width/2 - 1 // -1 for scrollbar
+			widths := components.CalculatePanelWidths(
+				msg.Width,
+				components.MinLeftPanelWidth,
+				components.MinRightPanelWidth,
+			)
+			tableWidth := widths.Left - 1 // -1 for scrollbar
+			detailsWidth := widths.Right
 			// header (1) + empty line (1) + "Tests" title (1) + table header (2) + margin (1) + footer (1) = 7
-			tableHeight := msg.Height - 7
-			if tableHeight < 1 {
-				tableHeight = 1
-			}
+			tableHeight := max(msg.Height-7, 1)
 			m.viewport.Width = tableWidth
 			m.viewport.Height = tableHeight
 			m.updateViewportContent()
+
+			// Update details panel size and re-render content with new width
+			m.detailsPanel.SetSize(detailsWidth, msg.Height-3)
+			m.detailsCache = make(map[string]string, len(m.detailsCache))
+			m.updateDetailsContent()
 		} else if m.state == testExecutionView && m.testExecutor != nil {
 			// Forward window size to test executor
 			updatedExecutor, cmd := m.testExecutor.Update(msg)
@@ -487,12 +500,16 @@ func (m *listModel) View() string {
 
 		help := components.Footer(m.width, footer)
 
-		tableWidth := m.width / 2
-		detailsWidth := m.width - tableWidth
+		widths := components.CalculatePanelWidths(
+			m.width,
+			components.MinLeftPanelWidth,
+			components.MinRightPanelWidth,
+		)
+		tableWidth := widths.Left
+		detailsWidth := widths.Right
 
 		m.detailsPanel.SetSize(detailsWidth, m.height-3)
-		m.detailsPanel.SetXOffset(tableWidth + 2) // panel position + border (1) + padding (1)
-		m.detailsPanel.SetYOffset(3)              // header (1) + empty line (1) + title (1)
+		m.detailsPanel.SetYOffset(3) // header (1) + empty line (1) + title (1)
 
 		testsSectionTitle := lipgloss.NewStyle().
 			Bold(true).
@@ -526,6 +543,9 @@ func (m *listModel) View() string {
 			tableHeader,
 			tableWithScrollbar,
 		))
+
+		m.actualLeftPanelWidth = lipgloss.Width(leftSide)
+		m.detailsPanel.SetXOffset(m.actualLeftPanelWidth + 2) // +border(1) +padding(1)
 
 		mainContent := lipgloss.JoinHorizontal(
 			lipgloss.Top,
@@ -562,17 +582,14 @@ func (m *listModel) updateDetailsContent() {
 		m.detailsPanel.SetTitle("Span Details")
 	}
 
-	cacheKey := fmt.Sprintf("%d:%s", info.testIndex, info.spanID)
-
-	if cached, ok := m.detailsCache[cacheKey]; ok {
-		m.detailsPanel.SetContent(cached)
-		m.detailsPanel.GotoTop()
-		return
+	wrapWidth := m.detailsPanel.GetViewportWidth()
+	if wrapWidth <= 0 {
+		wrapWidth = 80
 	}
 
 	lines := m.generateDetailsContent()
-	content := utils.RenderMarkdown(strings.Join(lines, "\n"))
-	m.detailsCache[cacheKey] = content
+	content := utils.RenderMarkdownWithWidth(strings.Join(lines, "\n"), wrapWidth)
+
 	m.detailsPanel.SetContent(content)
 	m.detailsPanel.GotoTop()
 }

@@ -13,6 +13,10 @@ import (
 
 const NoWrapMarker = "\x00NOWRAP\x00"
 
+// SoftLineBreak marks a continuation line (join directly when copying, no newline)
+// The space (if any) is preserved in the content itself
+const SoftLineBreak = "\x00SOFT\x00"
+
 // MarkNonWrappable adds an invisible marker to indicate text should not be wrapped
 func MarkNonWrappable(text string) string {
 	return NoWrapMarker + text
@@ -21,6 +25,44 @@ func MarkNonWrappable(text string) string {
 // StripNoWrapMarker removes the non-wrappable marker from text before display
 func StripNoWrapMarker(text string) string {
 	return strings.ReplaceAll(text, NoWrapMarker, "")
+}
+
+// StripSoftLineBreak removes the soft line break marker
+func StripSoftLineBreak(text string) string {
+	return strings.ReplaceAll(text, SoftLineBreak, "")
+}
+
+// StripAllMarkers removes all internal markers from text
+func StripAllMarkers(text string) string {
+	text = strings.ReplaceAll(text, NoWrapMarker, "")
+	text = strings.ReplaceAll(text, SoftLineBreak, "")
+	return text
+}
+
+// IsSoftLineBreak checks if a line is a continuation from wrapping
+func IsSoftLineBreak(line string) bool {
+	return strings.HasPrefix(line, SoftLineBreak)
+}
+
+// JoinWrappedLines joins lines respecting soft line breaks, SoftLineBreak lines
+// are joined directly
+func JoinWrappedLines(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+
+	var result strings.Builder
+	for i, line := range lines {
+		if strings.HasPrefix(line, SoftLineBreak) {
+			result.WriteString(strings.TrimPrefix(line, SoftLineBreak))
+		} else {
+			if i > 0 {
+				result.WriteString("\n")
+			}
+			result.WriteString(line)
+		}
+	}
+	return result.String()
 }
 
 // ANSI color code regex pattern
@@ -70,8 +112,12 @@ func WrapLine(text string, maxWidth int) []string {
 	// If there are no spaces (single long word) and it's too long, split it
 	if len(words) == 1 && visibleLen(words[0]) > maxWidth-leadingSpaces {
 		chunks := splitLongWord(words[0], maxWidth-leadingSpaces)
-		for _, chunk := range chunks {
-			lines = append(lines, leadingWhitespace+chunk)
+		for i, chunk := range chunks {
+			if i == 0 {
+				lines = append(lines, leadingWhitespace+chunk)
+			} else {
+				lines = append(lines, SoftLineBreak+chunk)
+			}
 		}
 		return lines
 	}
@@ -91,12 +137,10 @@ func WrapLine(text string, maxWidth int) []string {
 			chunks := splitLongWord(word, maxWidth-leadingSpaces)
 			for j, chunk := range chunks {
 				if j < len(chunks)-1 {
-					// All chunks except the last get their own line
-					lines = append(lines, leadingWhitespace+chunk)
+					lines = append(lines, chunk)
 				} else {
-					// Last chunk starts the next line
-					currentLine = leadingWhitespace + chunk
-					currentVisibleLen = leadingSpaces + visibleLen(chunk)
+					currentLine = chunk
+					currentVisibleLen = visibleLen(chunk)
 				}
 			}
 			continue
@@ -112,10 +156,9 @@ func WrapLine(text string, maxWidth int) []string {
 			currentLine += " " + word
 			currentVisibleLen += spaceLen + wordVisibleLen
 		default:
-			// Word doesn't fit, start new line
 			lines = append(lines, currentLine)
-			currentLine = leadingWhitespace + word
-			currentVisibleLen = leadingSpaces + wordVisibleLen
+			currentLine = " " + word
+			currentVisibleLen = 1 + wordVisibleLen
 		}
 	}
 
@@ -126,6 +169,11 @@ func WrapLine(text string, maxWidth int) []string {
 
 	if len(lines) == 0 {
 		return []string{text}
+	}
+
+	// Mark continuation lines (all except first) with SoftLineBreak
+	for i := 1; i < len(lines); i++ {
+		lines[i] = SoftLineBreak + lines[i]
 	}
 
 	return lines
@@ -173,21 +221,31 @@ func splitLongWord(word string, maxWidth int) []string {
 	return chunks
 }
 
-// WrapLogs wraps multiple lines of log content to fit within the specified width
+// WrapText wraps multiple lines of content to fit within the specified width
 func WrapText(content string, maxWidth int) string {
+	return StripAllMarkers(strings.Join(WrapLines(strings.Split(content, "\n"), maxWidth), "\n"))
+}
+
+// WrapLines wraps multiple lines to fit within the specified width
+// Returns a slice of wrapped lines with SoftLineBreak markers on continuation lines
+// NoWrapMarker is stripped from output
+func WrapLines(lines []string, maxWidth int) []string {
 	if maxWidth <= 0 {
 		maxWidth = 80
 	}
 
-	lines := strings.Split(content, "\n")
-	var wrappedLines []string
-
+	var result []string
 	for _, line := range lines {
-		wrapped := WrapLine(line, maxWidth)
-		wrappedLines = append(wrappedLines, wrapped...)
+		// Handle embedded newlines
+		subLines := strings.Split(line, "\n")
+		for _, subLine := range subLines {
+			wrapped := WrapLine(subLine, maxWidth)
+			for _, w := range wrapped {
+				result = append(result, StripNoWrapMarker(w))
+			}
+		}
 	}
-
-	return strings.Join(wrappedLines, "\n")
+	return result
 }
 
 // FormatJSONForDiff formats a JSON value with proper indentation for diff display

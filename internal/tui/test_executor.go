@@ -16,7 +16,6 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
@@ -47,8 +46,9 @@ type testExecutorModel struct {
 	header    *components.TestExecutionHeaderComponent
 
 	// UI dimensions
-	width  int
-	height int
+	width                int
+	height               int
+	actualLeftPanelWidth int // For accurate mouse coordinates
 
 	// Control flags
 	serverStarted  bool
@@ -378,7 +378,11 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleTableNavigation(msg)
 
 	case tea.MouseMsg:
-		leftWidth := m.width / 2
+		// Use actual rendered width for accurate mouse handling
+		leftWidth := m.actualLeftPanelWidth
+		if leftWidth == 0 {
+			leftWidth = m.width / 2
+		}
 		headerHeight := 4 // header takes 4 lines
 
 		if msg.X < leftWidth {
@@ -405,8 +409,8 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Always return for left-side mouse events to prevent fall-through
 			return m, nil
 		}
-		// Right panel - handle mouse events there
-		// - X: leftWidth + border(1) + padding(1) = leftWidth + 2
+		// Use actual left panel width for accurate offset
+		// - X: actualLeftWidth + border(1) + padding(1) = actualLeftWidth + 2
 		// - Y: headerHeight + title(1) + empty line(1) = headerHeight + 2
 		m.logPanel.SetOffset(leftWidth+2, headerHeight+2)
 		if cmd := m.logPanel.Update(msg); cmd != nil {
@@ -749,9 +753,6 @@ func (m *testExecutorModel) View() string {
 		return m.sizeWarning.View(m.width, m.height)
 	}
 
-	if m.width < 100 {
-		return m.verticalLayout()
-	}
 	return m.horizontalLayout()
 }
 
@@ -759,8 +760,13 @@ func (m *testExecutorModel) horizontalLayout() string {
 	// header (4) + footer (1) = 5
 	contentHeight := m.height - 5
 
-	leftWidth := m.width / 2
-	rightWidth := m.width - leftWidth
+	widths := components.CalculatePanelWidths(
+		m.width,
+		components.MinLeftPanelWidth,
+		components.MinRightPanelWidth,
+	)
+	leftWidth := widths.Left
+	rightWidth := widths.Right
 
 	header := m.header.View(m.width)
 
@@ -777,10 +783,17 @@ func (m *testExecutorModel) horizontalLayout() string {
 
 	logView := m.logPanel.View(rightWidth, contentHeight)
 
+	leftStyle := lipgloss.NewStyle().MaxWidth(leftWidth)
+	rightStyle := lipgloss.NewStyle().MaxWidth(rightWidth)
+
+	leftSide := leftStyle.Render(tableWithScrollbar)
+
+	m.actualLeftPanelWidth = lipgloss.Width(leftSide)
+
 	mainContent := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		tableWithScrollbar,
-		logView,
+		leftSide,
+		rightStyle.Render(logView),
 	)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, mainContent, footer)
@@ -792,35 +805,6 @@ func (m *testExecutorModel) renderTableScrollbar(contentHeight int) string {
 	scrollOffset := m.testTable.ViewportYOffset()
 
 	return components.RenderScrollbar(contentHeight, totalRows, scrollOffset)
-}
-
-func (m *testExecutorModel) verticalLayout() string {
-	// header (4) + info (2) + footer (1) = 7
-	contentHeight := m.height - 7
-
-	header := m.header.View(m.width)
-
-	footer := components.Footer(m.width, utils.TruncateWithEllipsis(m.getFooterText(), m.width))
-
-	infoMsg := "Vertical layout enabled for narrow terminal. Seeing weird formatting? Make this window wider for horizontal layout."
-	wrappedInfo := utils.WrapText(infoMsg, m.width)
-	infoStyle := styles.DimStyle.Italic(true)
-	styledInfo := infoStyle.Render(wrappedInfo)
-
-	// Split content height between table and log
-	tableHeight := contentHeight / 2
-	logHeight := contentHeight - tableHeight
-
-	tableView := m.testTable.View(m.width, tableHeight)
-	logView := m.logPanel.View(m.width, logHeight)
-
-	return lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		tableView,
-		logView,
-		styledInfo,
-		footer,
-	)
 }
 
 func (m *testExecutorModel) addServiceLog(line string) {
