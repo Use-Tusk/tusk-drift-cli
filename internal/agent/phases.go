@@ -772,6 +772,8 @@ func cloudCreateServicePhase() *Phase {
 		Instructions: PhaseCloudCreateServicePrompt,
 		Tools: Tools(
 			ToolCloudCreateService,
+			ToolListDirectory,
+			ToolReadFile,
 			ToolTransitionPhase,
 			ToolAskUser,
 		),

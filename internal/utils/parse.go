@@ -77,7 +77,73 @@ func ParseSpansFromFile(filename string, filter SpanFilter) ([]*core.Span, error
 		return nil, fmt.Errorf("failed reading %s: %w", filename, err)
 	}
 
+	// Fix SpanKind values if needed (backwards compatibility for old Node SDK traces).
+	// See maybeFixSpanKinds for details.
+	spans = maybeFixSpanKinds(spans)
+
 	return spans, nil
+}
+
+// maybeFixSpanKinds fixes SpanKind values for traces from older Node SDK versions.
+//
+// Background: The Node SDK had a bug where it wrote OpenTelemetry SpanKind enum values
+// to JSONL files instead of Proto values. This causes validation failures because:
+//   - OTel:  INTERNAL=0, SERVER=1, CLIENT=2, PRODUCER=3, CONSUMER=4
+//   - Proto: UNSPECIFIED=0, INTERNAL=1, SERVER=2, CLIENT=3, PRODUCER=4, CONSUMER=5
+//
+// Detection: If ANY root span has kind != SERVER (2), we have malformed spans.
+// This handles mixed old/new traces correctly - if even one is wrong, we fix all.
+//
+// Fix: Rather than blindly adding +1, we derive SpanKind from semantic info:
+//   - ENV_VARS_SNAPSHOT → INTERNAL
+//   - isRootSpan=true → SERVER
+//   - everything else → CLIENT
+//
+// TODO: Remove once old locally-stored traces have aged out.
+func maybeFixSpanKinds(spans []*core.Span) []*core.Span {
+	// Fix: Derive SpanKind from semantic info (name, isRootSpan) instead of trusting
+	// the numeric kind value. This is more robust than +1 mapping.
+
+	needsFix := false
+	for _, span := range spans {
+		if span.IsRootSpan && span.Kind != core.SpanKind_SPAN_KIND_SERVER {
+			log.Debug("[SpanKind] Found malformed root span",
+				"name", span.Name,
+				"kind", span.Kind,
+				"expected", core.SpanKind_SPAN_KIND_SERVER)
+			needsFix = true
+			break
+		}
+	}
+
+	if !needsFix {
+		log.Debug("[SpanKind] All root spans have correct SERVER kind, no fix needed")
+		return spans
+	}
+
+	log.Debug("[SpanKind] Deriving SpanKind from semantic info for all spans", "count", len(spans))
+
+	// Derive SpanKind from name and isRootSpan instead of trusting the JSON value
+	for _, span := range spans {
+		oldKind := span.Kind
+		switch {
+		case span.Name == "ENV_VARS_SNAPSHOT":
+			span.Kind = core.SpanKind_SPAN_KIND_INTERNAL
+		case span.IsRootSpan:
+			span.Kind = core.SpanKind_SPAN_KIND_SERVER
+		default:
+			span.Kind = core.SpanKind_SPAN_KIND_CLIENT
+		}
+		if oldKind != span.Kind {
+			log.Debug("[SpanKind] Fixed span",
+				"name", span.Name,
+				"oldKind", oldKind,
+				"newKind", span.Kind,
+				"isRootSpan", span.IsRootSpan)
+		}
+	}
+
+	return spans
 }
 
 // ParseProtobufSpanFromJSON parses a JSON line into a protobuf Span

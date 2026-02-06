@@ -163,7 +163,7 @@ recording:
 	require.NoError(t, err)
 
 	// Save new recording config
-	err = saveRecordingConfig(1.0, true, true)
+	err = SaveRecordingConfig(1.0, true, true)
 	require.NoError(t, err)
 
 	// Read the file back

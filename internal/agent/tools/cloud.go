@@ -10,16 +10,21 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	onboardcloud "github.com/Use-Tusk/tusk-drift-cli/internal/tui/onboard-cloud"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
-	"gopkg.in/yaml.v3"
 )
+
+// SpanUploadBatchSize is the number of spans to upload in each batch.
+// 500 spans × ~32 columns = ~16K params, well under PostgreSQL's 65K param limit.
+const SpanUploadBatchSize = 500
 
 // CloudTools provides cloud-related operations for the agent
 type CloudTools struct {
@@ -654,6 +659,11 @@ func (ct *CloudTools) CreateObservableService(input json.RawMessage) (string, er
 		return "", fmt.Errorf("invalid response from server")
 	}
 
+	// Save service ID to config immediately
+	if err := onboardcloud.SaveServiceIDToConfig(successResp.ObservableServiceId); err != nil {
+		return "", fmt.Errorf("service created but failed to save to config: %w", err)
+	}
+
 	result := struct {
 		Success   bool   `json:"success"`
 		ServiceID string `json:"service_id"`
@@ -735,6 +745,7 @@ func (ct *CloudTools) CheckApiKeyExists(input json.RawMessage) (string, error) {
 }
 
 // SaveCloudConfig saves the cloud configuration to .tusk/config.yaml
+// Uses the same yaml.Node-based approach as the TUI to preserve ordering, comments, and unknown fields.
 func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 	var params struct {
 		ServiceID             string  `json:"service_id"`
@@ -746,38 +757,16 @@ func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 		return "", fmt.Errorf("invalid input: %w", err)
 	}
 
-	configPath := ".tusk/config.yaml"
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	var config map[string]any
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return "", fmt.Errorf("failed to parse config file: %w", err)
-	}
-
+	// Save service ID if provided and not already set
 	if params.ServiceID != "" {
-		if service, ok := config["service"].(map[string]any); ok {
-			if _, hasID := service["id"]; !hasID {
-				service["id"] = params.ServiceID
-			}
+		if err := onboardcloud.SaveServiceIDToConfig(params.ServiceID); err != nil {
+			return "", fmt.Errorf("failed to save service ID: %w", err)
 		}
 	}
 
-	config["recording"] = map[string]any{
-		"sampling_rate":            params.SamplingRate,
-		"export_spans":             params.ExportSpans,
-		"enable_env_var_recording": params.EnableEnvVarRecording,
-	}
-
-	output, err := yaml.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, output, 0o600); err != nil {
-		return "", fmt.Errorf("failed to write config file: %w", err)
+	// Save recording config (preserves other fields like exclude_paths, transforms)
+	if err := onboardcloud.SaveRecordingConfig(params.SamplingRate, params.ExportSpans, params.EnableEnvVarRecording); err != nil {
+		return "", fmt.Errorf("failed to save recording config: %w", err)
 	}
 
 	return "Cloud configuration saved to .tusk/config.yaml", nil
@@ -901,41 +890,82 @@ func (ct *CloudTools) UploadTraces(input json.RawMessage) (string, error) {
 		return string(data), nil
 	}
 
-	// Upload spans to cloud
+	// Upload spans to cloud in batches to avoid PostgreSQL parameter limits
 	ctx := context.Background()
 	client, authOptions, _, err := api.SetupCloud(ctx, false)
 	if err != nil {
 		return "", fmt.Errorf("failed to setup cloud connection: %w", err)
 	}
 
-	req := &backend.ExportSpansRequest{
-		ObservableServiceId: params.ServiceID,
-		Environment:         "setup-agent",
-		SdkVersion:          "cli-setup",
-		SdkInstanceId:       fmt.Sprintf("setup-%d", time.Now().Unix()),
-		Spans:               allSpans,
+	// Split spans into batches
+	spanBatches := utils.BatchSlice(allSpans, SpanUploadBatchSize)
+	sdkInstanceId := fmt.Sprintf("setup-%d", time.Now().Unix())
+
+	// Upload batches concurrently with max concurrency of 5
+	const maxConcurrency = 5
+	semaphore := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var totalUploaded int
+	var uploadErrors []string
+
+	for i, batch := range spanBatches {
+		wg.Add(1)
+		go func(batchIdx int, batchSpans []*core.Span) {
+			defer wg.Done()
+			semaphore <- struct{}{}        // Acquire
+			defer func() { <-semaphore }() // Release
+
+			req := &backend.ExportSpansRequest{
+				ObservableServiceId: params.ServiceID,
+				Environment:         "setup-agent",
+				SdkVersion:          "cli-setup",
+				SdkInstanceId:       sdkInstanceId,
+				Spans:               batchSpans,
+			}
+
+			resp, err := client.ExportSpans(ctx, req, authOptions)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %v", batchIdx+1, len(spanBatches), err))
+				return
+			}
+
+			if !resp.Success {
+				uploadErrors = append(uploadErrors, fmt.Sprintf("batch %d/%d: %s", batchIdx+1, len(spanBatches), resp.Message))
+				return
+			}
+
+			totalUploaded += len(batchSpans)
+		}(i, batch)
 	}
 
-	resp, err := client.ExportSpans(ctx, req, authOptions)
-	if err != nil {
-		return "", fmt.Errorf("failed to upload traces: %w", err)
-	}
+	wg.Wait()
 
-	if !resp.Success {
-		result := map[string]interface{}{
-			"success":         false,
-			"message":         resp.Message,
-			"traces_uploaded": 0,
-		}
-		data, _ := json.Marshal(result)
-		return string(data), nil
+	// Determine overall success
+	success := totalUploaded > 0
+	var message string
+	switch {
+	case len(uploadErrors) == 0:
+		message = "Traces uploaded successfully"
+	case totalUploaded > 0:
+		message = fmt.Sprintf("Partial upload: %d/%d spans uploaded. Errors: %v", totalUploaded, len(allSpans), uploadErrors)
+	default:
+		message = fmt.Sprintf("Upload failed: %v", uploadErrors)
 	}
 
 	result := map[string]interface{}{
-		"success":         true,
-		"message":         "Traces uploaded successfully",
+		"success":         success,
+		"message":         message,
 		"traces_uploaded": len(traceFiles),
-		"spans_uploaded":  len(allSpans),
+		"spans_uploaded":  totalUploaded,
+		"total_spans":     len(allSpans),
+	}
+	if len(uploadErrors) > 0 {
+		result["errors"] = uploadErrors
 	}
 	data, _ := json.Marshal(result)
 	return string(data), nil

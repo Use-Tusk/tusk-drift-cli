@@ -43,7 +43,14 @@ If traces were uploaded, run the validation:
 - Report success to user
 - Mention how many tests are now in the suite
 
-**If validation fails** (tests_in_suite == 0):
+**If validation finds no tests** (tests_in_suite == 0) **but traces were uploaded**:
+
+- Traces are processed asynchronously on the backend into test cases
+- If this is the first attempt, wait 5 seconds and retry validation once
+- Use `ask_user` with a message like: "No test cases found yet. Traces are being processed - waiting 5 seconds and retrying..."
+- After retry, if still no tests, continue to the suggestions below
+
+**If validation fails** (tests_in_suite == 0 after retry):
 
 - Warn user that no tests passed validation
 - Suggest they can:

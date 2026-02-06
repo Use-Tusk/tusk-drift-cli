@@ -137,7 +137,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ExportSpans = exportSpans
 					m.EnableEnvVarRecording = enableEnvVarRecording
 
-					if err := saveRecordingConfig(samplingRate, exportSpans, enableEnvVarRecording); err != nil {
+					if err := SaveRecordingConfig(samplingRate, exportSpans, enableEnvVarRecording); err != nil {
 						m.Err = fmt.Errorf("failed to save: %w", err)
 					} else {
 						return m, func() tea.Msg { return stepCompleteMsg{} }
