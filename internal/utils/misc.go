@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/atotto/clipboard"
 	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	"github.com/mattn/go-isatty"
 )
@@ -30,7 +31,35 @@ func CopyToClipboard(text string) error {
 		_, err := osc52.New(text).WriteTo(os.Stdout)
 		return err
 	}
-	return clipboard.WriteAll(text)
+	return WriteToSystemClipboard(text)
+}
+
+// WriteToSystemClipboard writes text to the OS clipboard with proper UTF-8 encoding.
+// On macOS, it sets __CF_USER_TEXT_ENCODING to force pbcopy to interpret input as UTF-8
+// (the default is Mac OS Roman, which garbles multi-byte Unicode characters).
+func WriteToSystemClipboard(text string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+		cmd.Env = append(os.Environ(),
+			fmt.Sprintf("__CF_USER_TEXT_ENCODING=0x%X:0:0x08000100", os.Getuid()),
+		)
+	case "linux":
+		if _, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		} else if _, err := exec.LookPath("xsel"); err == nil {
+			cmd = exec.Command("xsel", "--clipboard", "--input")
+		} else {
+			return fmt.Errorf("no clipboard utility found (install xclip or xsel)")
+		}
+	default:
+		return fmt.Errorf("clipboard not supported on %s", runtime.GOOS)
+	}
+
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }
 
 // PromptUserChoice displays a question with numbered options and returns the index of the selected option.

@@ -4,13 +4,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/ansi"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
 // SelectionPos represents a position in the content
@@ -627,7 +627,7 @@ func (cp *ContentPanel) copyToClipboard(text string) {
 		return
 	}
 
-	if err := clipboard.WriteAll(text); err == nil {
+	if err := utils.WriteToSystemClipboard(text); err == nil {
 		cp.showCopied = true
 	}
 }
