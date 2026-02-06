@@ -115,14 +115,16 @@ func (e *Executor) compareResponseBodies(expected, actual any, testID string) bo
 			"ignorePatterns", comp.IgnorePatterns,
 			"ignoreUUIDs", comp.IgnoreUUIDs,
 			"ignoreTimestamps", comp.IgnoreTimestamps,
-			"ignoreDates", comp.IgnoreDates)
+			"ignoreDates", comp.IgnoreDates,
+			"ignoreJWTFields", comp.IgnoreJWTFields)
 
 		// Check if any comparison config is specified
 		hasConfig := len(comp.IgnoreFields) > 0 ||
 			len(comp.IgnorePatterns) > 0 ||
 			comp.IgnoreUUIDs != nil ||
 			comp.IgnoreTimestamps != nil ||
-			comp.IgnoreDates != nil
+			comp.IgnoreDates != nil ||
+			comp.IgnoreJWTFields != nil
 
 		if hasConfig {
 			comparisonConfig = comp

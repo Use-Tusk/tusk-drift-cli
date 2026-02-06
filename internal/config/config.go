@@ -83,6 +83,7 @@ type ComparisonConfig struct {
 	IgnoreUUIDs      *bool    `koanf:"ignore_uuids"`
 	IgnoreTimestamps *bool    `koanf:"ignore_timestamps"`
 	IgnoreDates      *bool    `koanf:"ignore_dates"`
+	IgnoreJWTFields  *bool    `koanf:"ignore_jwt_fields"`
 }
 
 type RecordingConfig struct {

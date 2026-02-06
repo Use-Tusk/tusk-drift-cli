@@ -310,6 +310,74 @@ comparison:
 	require.True(t, ok, "extra field 'traceId' should be ignored via config.ignore_fields")
 }
 
+func TestCompareAndGenerateResult_PassesWithJWTTokenDifference(t *testing.T) {
+	config.Invalidate()
+	executor := &Executor{}
+
+	expected := jsonAny(t, `{
+		"access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzcwMzE2Mzc3LCJpYXQiOjE3NzAzMDkxNzcsImp0aSI6IjE5MWY4Y2Y0NjIwNjRkNmY5ZWYzYTJhZDMxZTEwNDJlIiwidXNlcl9pZCI6IjBjNzBmMDdjLWUwM2EtNDI4MC1iOWQwLTE2ZmExNjhhNjJkMSJ9.hO9f2F0-6ewAk7FaLCjEI9zTOxAB7N3xTvsmBHhcAe0",
+		"refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6MTc3MDM5NTU3NywiaWF0IjoxNzcwMzA5MTc3LCJqdGkiOiIyZjQzODVhYzdmZDk0ZGM3ODlmYTQ1OWUxMWEzN2Q2MSIsInVzZXJfaWQiOiIwYzcwZjA3Yy1lMDNhLTQyODAtYjlkMC0xNmZhMTY4YTYyZDEifQ.GTExDgK_QZD0GHEbIVOZLdiHMQJdN-58Z12ML-q3LMI"
+	}`)
+
+	actualBody := `{
+		"access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzcwMzE2Mzc3LCJpYXQiOjE3NzAzMDkxNzcsImp0aSI6IjYwOTY1YmQ2MTJhZjRkNTA5ZDc1Mjk0NDgxYTc2NDExIiwidXNlcl9pZCI6IjBjNzBmMDdjLWUwM2EtNDI4MC1iOWQwLTE2ZmExNjhhNjJkMSJ9._cHYQ8YcVfqQpWsuNUd38JYCjKOWXNglGocaWAiuodY",
+		"refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6MTc3MDM5NTU3NywiaWF0IjoxNzcwMzA5MTc3LCJqdGkiOiI0N2VkMDc2YmVhN2U0M2MxOGE0Mjk3MjY1OWU2OWU3NCIsInVzZXJfaWQiOiIwYzcwZjA3Yy1lMDNhLTQyODAtYjlkMC0xNmZhMTY4YTYyZDEifQ.iedWNUBUAxJXdFbJ6uYlAowQ28esXz9D3HHIkER_glg"
+	}`
+
+	test := Test{
+		TraceID: "t-jwt",
+		Response: Response{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Body:    expected,
+		},
+	}
+
+	resp := makeResponse(200, map[string]string{"Content-Type": "application/json"}, actualBody)
+
+	res, err := executor.compareAndGenerateResult(test, resp, 257)
+	require.NoError(t, err)
+	require.True(t, res.Passed, "JWT tokens differing only in jti should pass with ignore_jwt_fields (default: true)")
+	require.Empty(t, res.Deviations)
+}
+
+func TestCompareAndGenerateResult_FailsWithJWTTokenDifference_WhenDisabled(t *testing.T) {
+	config.Invalidate()
+
+	cfgPath := writeTempConfig(t, `
+comparison:
+  ignore_jwt_fields: false
+`)
+	require.NoError(t, config.Load(cfgPath))
+
+	executor := &Executor{}
+
+	expected := jsonAny(t, `{
+		"access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzcwMzE2Mzc3LCJpYXQiOjE3NzAzMDkxNzcsImp0aSI6IjE5MWY4Y2Y0NjIwNjRkNmY5ZWYzYTJhZDMxZTEwNDJlIiwidXNlcl9pZCI6IjBjNzBmMDdjLWUwM2EtNDI4MC1iOWQwLTE2ZmExNjhhNjJkMSJ9.hO9f2F0-6ewAk7FaLCjEI9zTOxAB7N3xTvsmBHhcAe0"
+	}`)
+
+	actualBody := `{
+		"access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzcwMzE2Mzc3LCJpYXQiOjE3NzAzMDkxNzcsImp0aSI6IjYwOTY1YmQ2MTJhZjRkNTA5ZDc1Mjk0NDgxYTc2NDExIiwidXNlcl9pZCI6IjBjNzBmMDdjLWUwM2EtNDI4MC1iOWQwLTE2ZmExNjhhNjJkMSJ9._cHYQ8YcVfqQpWsuNUd38JYCjKOWXNglGocaWAiuodY"
+	}`
+
+	test := Test{
+		TraceID: "t-jwt-disabled",
+		Response: Response{
+			Status:  200,
+			Headers: map[string]string{},
+			Body:    expected,
+		},
+	}
+
+	resp := makeResponse(200, nil, actualBody)
+
+	res, err := executor.compareAndGenerateResult(test, resp, 100)
+	require.NoError(t, err)
+	require.False(t, res.Passed, "JWT tokens should fail comparison when ignore_jwt_fields is disabled")
+	require.Len(t, res.Deviations, 1)
+	require.Equal(t, "response.body", res.Deviations[0].Field)
+}
+
 func TestCompareJSONValues_TypeMismatch(t *testing.T) {
 	executor := &Executor{}
 	m := NewDynamicFieldMatcher() // Default patterns
