@@ -109,7 +109,7 @@ func TestParseProtobufSpanFromJSON_Basic(t *testing.T) {
 	assert.Equal(t, "ovh", span.OutputValueHash)
 
 	// Enums and flags
-	assert.Equal(t, core.SpanKind(2), span.Kind)
+	assert.Equal(t, core.SpanKind_SPAN_KIND_SERVER, span.Kind)
 	require.NotNil(t, span.Status)
 	assert.Equal(t, core.StatusCode(2), span.Status.Code)
 	assert.Equal(t, "ok", span.Status.Message)
@@ -159,6 +159,47 @@ func TestParseSpansFromFile_ReturnsErrorOnMalformed(t *testing.T) {
 	spans, err := ParseSpansFromFile(filename, filter)
 	require.Error(t, err)
 	assert.Nil(t, spans)
+}
+
+func TestParseProtobufSpanFromJSON_SpanKind_NonRootIsClient(t *testing.T) {
+	input := map[string]any{
+		"traceId": "t1",
+		"spanId":  "s1",
+		"name":    "some-span",
+	}
+	data, err := json.Marshal(input)
+	require.NoError(t, err)
+
+	span, err := ParseProtobufSpanFromJSON(data)
+	require.NoError(t, err)
+	assert.Equal(t, core.SpanKind_SPAN_KIND_CLIENT, span.Kind)
+	assert.False(t, span.IsRootSpan)
+}
+
+func TestParseProtobufSpanFromJSON_SpanKind_EnvVarsSnapshotIsInternal(t *testing.T) {
+	tests := []struct {
+		name       string
+		isRootSpan bool
+	}{
+		{"with isRootSpan true", true},
+		{"with isRootSpan false", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := map[string]any{
+				"traceId":    "t1",
+				"spanId":     "s1",
+				"name":       "ENV_VARS_SNAPSHOT",
+				"isRootSpan": tt.isRootSpan,
+			}
+			data, err := json.Marshal(input)
+			require.NoError(t, err)
+
+			span, err := ParseProtobufSpanFromJSON(data)
+			require.NoError(t, err)
+			assert.Equal(t, core.SpanKind_SPAN_KIND_INTERNAL, span.Kind)
+		})
+	}
 }
 
 func TestParseSpansFromFile_NoFilterReturnsAllValid(t *testing.T) {

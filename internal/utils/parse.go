@@ -200,11 +200,26 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		environment = &env
 	}
 
+	// TODO: Remove once old locally-stored traces have aged out.
+	// Workaround for a bug (now fixed) in the Node SDK that didn't convert otel span kinds to protobuf span kinds during JSONL export.
+	// Derive SpanKind from the span name and isRootSpan flag instead.
+	name := getString("name")
+	isRootSpan := getBool("isRootSpan")
+	var spanKind core.SpanKind
+	switch {
+	case name == "ENV_VARS_SNAPSHOT":
+		spanKind = core.SpanKind_SPAN_KIND_INTERNAL
+	case isRootSpan:
+		spanKind = core.SpanKind_SPAN_KIND_SERVER
+	default:
+		spanKind = core.SpanKind_SPAN_KIND_CLIENT
+	}
+
 	return &core.Span{
 		TraceId:             getString("traceId"),
 		SpanId:              getString("spanId"),
 		ParentSpanId:        getString("parentSpanId"),
-		Name:                getString("name"),
+		Name:                name,
 		PackageName:         getString("packageName"),
 		InstrumentationName: getString("instrumentationName"),
 		// Prefer canonical proto JSON name ("submoduleName"), but accept legacy snake_case ("submodule_name")
@@ -223,12 +238,12 @@ func ParseProtobufSpanFromJSON(jsonData []byte) (*core.Span, error) {
 		OutputSchemaHash: getString("outputSchemaHash"),
 		InputValueHash:   getString("inputValueHash"),
 		OutputValueHash:  getString("outputValueHash"),
-		Kind:             core.SpanKind(getInt32("kind")),
+		Kind:             spanKind,
 		Status:           status,
 		Timestamp:        timestamp,
 		Duration:         duration,
 		IsPreAppStart:    getBool("isPreAppStart"),
-		IsRootSpan:       getBool("isRootSpan"),
+		IsRootSpan:       isRootSpan,
 		Metadata:         convertToStruct("metadata"),
 		PackageType:      core.PackageType(getInt32("packageType")),
 		Environment:      environment,
