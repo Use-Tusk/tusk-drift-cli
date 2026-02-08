@@ -410,3 +410,34 @@ func TestParseSpansFromFile_HandlesMixedOldNewTraces(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSpansFromFile_FixesEnvVarsSnapshotAloneInFile(t *testing.T) {
+	// Reproduces the real bug: ENV_VARS_SNAPSHOT is alone in its own trace file
+	// with no root span. The SDK bug (|| vs ??) wrote it as OTel CLIENT (2),
+	// which the CLI misinterprets as Proto SERVER (2), creating a bogus trace test.
+	tmp := t.TempDir()
+	filename := filepath.Join(tmp, "trace.jsonl")
+
+	envSpan := map[string]any{
+		"traceId":       "880d74306bf83ac8c15162456d819f8e",
+		"spanId":        "s1",
+		"name":          "ENV_VARS_SNAPSHOT",
+		"isRootSpan":    false,
+		"isPreAppStart": true,
+		"kind":          2, // OTel CLIENT (due to SDK || bug), but Proto SERVER
+		"packageName":   "process.env",
+	}
+
+	envBytes, err := json.Marshal(envSpan)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filename, append(envBytes, '\n'), 0o644))
+
+	spans, err := ParseSpansFromFile(filename, nil)
+	require.NoError(t, err)
+	require.Len(t, spans, 1)
+
+	assert.Equal(t, "ENV_VARS_SNAPSHOT", spans[0].Name)
+	assert.Equal(t, core.SpanKind_SPAN_KIND_INTERNAL, spans[0].Kind,
+		"ENV_VARS_SNAPSHOT alone in file should be fixed to INTERNAL, not left as SERVER")
+}

@@ -104,6 +104,20 @@ func maybeFixSpanKinds(spans []*core.Span) []*core.Span {
 	// Fix: Derive SpanKind from semantic info (name, isRootSpan) instead of trusting
 	// the numeric kind value. This is more robust than +1 mapping.
 
+	// Always fix ENV_VARS_SNAPSHOT spans to INTERNAL, regardless of whether
+	// root-span detection triggers. These spans live alone in their own trace
+	// files (no root span to detect mismatch), and a SDK bug (|| vs ??) caused
+	// them to be written as CLIENT (OTel 2) which the CLI misinterprets as
+	// Proto SERVER (2), creating bogus trace tests.
+	for _, span := range spans {
+		if span.Name == "ENV_VARS_SNAPSHOT" && span.Kind != core.SpanKind_SPAN_KIND_INTERNAL {
+			log.Debug("[SpanKind] Fixing ENV_VARS_SNAPSHOT span",
+				"oldKind", span.Kind,
+				"newKind", core.SpanKind_SPAN_KIND_INTERNAL)
+			span.Kind = core.SpanKind_SPAN_KIND_INTERNAL
+		}
+	}
+
 	needsFix := false
 	for _, span := range spans {
 		if span.IsRootSpan && span.Kind != core.SpanKind_SPAN_KIND_SERVER {
