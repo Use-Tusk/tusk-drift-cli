@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -1504,13 +1505,16 @@ func (m *TUIModel) renderFooter() string {
 	return components.Footer(m.width, m.applyDragHint(helpText))
 }
 
-// applyDragHint appends the "Hold Option to select text" hint to the right side of the footer text
+// applyDragHint appends a platform-appropriate text selection hint to the right side of the footer text
 func (m *TUIModel) applyDragHint(text string) string {
 	if !m.dragHintVisible {
 		return text
 	}
 
-	hint := "Hold Option to select text"
+	hint := "Hold Shift to select text"
+	if runtime.GOOS == "darwin" {
+		hint = "Hold Option to select text"
+	}
 	hintWidth := lipgloss.Width(hint)
 	textWidth := lipgloss.Width(text)
 	// Calculate padding to right-align hint flush to the right edge
