@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -237,6 +238,11 @@ type TUIModel struct {
 	lastTickTime time.Time
 	pulsePhase   int
 
+	// Mouse drag hint state
+	mouseDragging     bool      // True while user is dragging (left button held + motion)
+	dragHintVisible   bool      // True when hint should be shown
+	dragHintExpiresAt time.Time // When to hide the hint after release
+
 	// Context for cancellation
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -354,6 +360,23 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.viewport.AtBottom() {
 				m.autoScroll = true
 			}
+		case tea.MouseButtonLeft:
+			// Track drag state for showing "hold Option to select" hint
+			switch msg.Action {
+			case tea.MouseActionMotion:
+				// User is dragging with left button held
+				if !m.mouseDragging {
+					m.mouseDragging = true
+					m.dragHintVisible = true
+				}
+			case tea.MouseActionRelease:
+				// User released the mouse button
+				if m.mouseDragging {
+					m.mouseDragging = false
+					// Keep hint visible for 10 seconds after release
+					m.dragHintExpiresAt = time.Now().Add(10 * time.Second)
+				}
+			}
 		}
 		return m, nil
 
@@ -361,6 +384,11 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastTickTime = time.Time(msg)
 		m.pulsePhase = (m.pulsePhase + 1) % 20
 		cmds = append(cmds, m.tickAnimation())
+
+		// Check if drag hint should expire
+		if m.dragHintVisible && !m.mouseDragging && time.Now().After(m.dragHintExpiresAt) {
+			m.dragHintVisible = false
+		}
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -379,6 +407,7 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.shutdownRequested = true
 		m.addLog("spacing", "", "")
 		m.addLog("dim", "⏹  Shutting down gracefully...", "")
+		m.updateViewportSize()
 
 	case autoQuitMsg:
 		// Auto-quit after cleanup delay
@@ -1409,18 +1438,18 @@ func (m *TUIModel) renderFooter() string {
 	case m.userInputMode:
 		m.userInputTextarea.SetWidth(min(m.width-4, 120))
 		textareaView := m.userInputTextarea.View()
-		helpText = components.Footer(m.width, "Enter: submit • Shift+Enter/Ctrl+J: newline • Esc: cancel")
-		return textareaView + "\n" + helpText
+		helpText = m.applyDragHint("Enter: submit • Shift+Enter/Ctrl+J: newline • Esc: cancel")
+		return textareaView + "\n" + components.Footer(m.width, helpText)
 	case m.portConflictMode:
 		prompt := styles.WarningStyle.Render(fmt.Sprintf("Kill process on port %d? (y/n)", m.portConflictPort))
-		helpText = components.Footer(m.width, "y: yes • n: no • Ctrl+C: cancel")
-		return prompt + "\n" + helpText
+		helpText = m.applyDragHint("y: yes • n: no • Ctrl+C: cancel")
+		return prompt + "\n" + components.Footer(m.width, helpText)
 	case m.rerunConfirmMode:
-		helpText = components.Footer(m.width, "y: rerun setup • q/Esc: exit")
-		return helpText
+		helpText = m.applyDragHint("y: rerun setup • q/Esc: exit")
+		return components.Footer(m.width, helpText)
 	case m.cloudSetupPromptMode:
-		helpText = components.Footer(m.width, "y: continue with cloud setup • n: skip")
-		return helpText
+		helpText = m.applyDragHint("y: continue with cloud setup • n: skip")
+		return components.Footer(m.width, helpText)
 	case m.userSelectMode:
 		color := lipgloss.Color(styles.PrimaryColor)
 		headerStyle := lipgloss.NewStyle().
@@ -1441,16 +1470,16 @@ func (m *TUIModel) renderFooter() string {
 				optionLines = append(optionLines, normalStyle.Render("    "+opt.Label))
 			}
 		}
-		helpText = components.Footer(m.width, "↑/↓: navigate • Enter: select • Esc: cancel")
-		return strings.Join(optionLines, "\n") + "\n\n" + helpText
+		helpText = m.applyDragHint("↑/↓: navigate • Enter: select • Esc: cancel")
+		return strings.Join(optionLines, "\n") + "\n\n" + components.Footer(m.width, helpText)
 	case m.permissionDenyMode:
 		inputStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("86")).
 			Bold(true)
 		prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render("Suggest alternative: ")
 		inputLine := prompt + inputStyle.Render(m.permissionDenyBuffer+"▌")
-		helpText = components.Footer(m.width, "Enter: submit • Esc: back")
-		return inputLine + "\n" + helpText
+		helpText = m.applyDragHint("Enter: submit • Esc: back")
+		return inputLine + "\n" + components.Footer(m.width, helpText)
 	case m.permissionMode:
 		var tOption string
 		if len(m.permissionCommandPrefixes) > 0 {
@@ -1462,18 +1491,41 @@ func (m *TUIModel) renderFooter() string {
 		} else {
 			tOption = "t: allow all " + getToolDisplayNamePlural(m.permissionTool)
 		}
-		helpText = components.Footer(m.width, fmt.Sprintf("y: allow once • %s • a: allow all actions • n: deny & suggest", tOption))
-		return helpText
+		helpText = m.applyDragHint(fmt.Sprintf("y: allow once • %s • a: allow all actions • n: deny & suggest", tOption))
+		return components.Footer(m.width, helpText)
 	case m.completed:
-		helpText = components.Footer(m.width, "q/Esc: quit")
+		helpText = "q/Esc: quit"
 	case m.shutdownRequested:
-		helpText = components.Footer(m.width, "Exiting... (Ctrl+C to force)")
+		helpText = "Exiting... (Ctrl+C to force)"
 	default:
 		// When agent is active, only Ctrl-C can stop
-		helpText = components.Footer(m.width, "↑/↓: scroll • g/G: top/bottom • Ctrl+C: stop")
+		helpText = "↑/↓: scroll • g/G: top/bottom • Ctrl+C: stop"
 	}
 
-	return helpText
+	return components.Footer(m.width, m.applyDragHint(helpText))
+}
+
+// applyDragHint appends a platform-appropriate text selection hint to the right side of the footer text
+func (m *TUIModel) applyDragHint(text string) string {
+	if !m.dragHintVisible {
+		return text
+	}
+
+	hint := "Hold Shift to select text"
+	if runtime.GOOS == "darwin" {
+		hint = "Hold Option to select text"
+	}
+	hintWidth := lipgloss.Width(hint)
+	textWidth := lipgloss.Width(text)
+	// Calculate padding to right-align hint flush to the right edge
+	padding := m.width - textWidth - hintWidth
+	if padding >= 2 {
+		return text + strings.Repeat(" ", padding) + hint
+	} else if m.width > hintWidth {
+		// Not enough space for both, just show the hint right-aligned
+		return strings.Repeat(" ", m.width-hintWidth) + hint
+	}
+	return text
 }
 
 // Helper functions
