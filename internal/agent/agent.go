@@ -700,11 +700,10 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 
 		if err != nil {
 			apiErrorCount++
-			errMsg := err.Error()
 
-			// If error is recoverable, retry with backoff
-			// Log the error and let the agent try again
-			if apiErrorCount < MaxAPIRetries && isRecoverableAPIError(errMsg) {
+			// If error is a model-caused issue (bad tool input), let the agent retry
+			if apiErrorCount < MaxAPIRetries && isRecoverableAPIError(err) {
+				errMsg := err.Error()
 				a.ui.Error(fmt.Errorf("API error (retrying): %s", errMsg))
 				messages = append(messages, Message{
 					Role: "user",
@@ -716,6 +715,12 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 
 				time.Sleep(time.Duration(apiErrorCount) * time.Second)
 				continue
+			}
+
+			// Surface user-friendly message for retry-exhausted errors
+			var retryExhausted *LLMRetryExhaustedError
+			if errors.As(err, &retryExhausted) {
+				return fmt.Errorf("%s: %w", retryExhausted.UserFacingMessage(), err)
 			}
 
 			return fmt.Errorf("API error: %w", err)
@@ -810,17 +815,25 @@ func cleanupContent(content []Content) []Content {
 	return cleaned
 }
 
-// isRecoverableAPIError checks if an API error might be recoverable
-func isRecoverableAPIError(errMsg string) bool {
-	recoverablePatterns := []string{
-		"Field required",
-		"invalid_request_error",
-		"malformed",
-		"rate_limit",
-		"overloaded",
+// isRecoverableAPIError checks if an API error is a model-caused issue that
+// may succeed on retry with a simpler approach (e.g. bad tool input).
+// Network errors and rate limits are handled at the HTTP retry layer.
+func isRecoverableAPIError(err error) bool {
+	var apiErr *LLMAPIError
+	if !errors.As(err, &apiErr) {
+		return false
 	}
-	for _, pattern := range recoverablePatterns {
-		if strings.Contains(errMsg, pattern) {
+
+	if apiErr.APIErrorType == "invalid_request_error" {
+		return true
+	}
+
+	messagePatterns := []string{
+		"Field required",
+		"malformed",
+	}
+	for _, pattern := range messagePatterns {
+		if strings.Contains(apiErr.Message, pattern) {
 			return true
 		}
 	}
