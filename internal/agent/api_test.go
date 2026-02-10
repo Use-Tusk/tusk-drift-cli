@@ -55,7 +55,7 @@ func TestCreateMessageStreaming_SuccessFirstAttempt(t *testing.T) {
 		attempts.Add(1)
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, sseSuccessBody())
+		_, _ = fmt.Fprint(w, sseSuccessBody())
 	}))
 	defer srv.Close()
 
@@ -78,12 +78,12 @@ func TestCreateMessageStreaming_RetryOn502(t *testing.T) {
 		n := attempts.Add(1)
 		if n <= 2 {
 			w.WriteHeader(http.StatusBadGateway)
-			fmt.Fprint(w, "bad gateway")
+			_, _ = fmt.Fprint(w, "bad gateway")
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, sseSuccessBody())
+		_, _ = fmt.Fprint(w, sseSuccessBody())
 	}))
 	defer srv.Close()
 
@@ -111,7 +111,7 @@ func TestCreateMessageStreaming_RetryOn503(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, sseSuccessBody())
+		_, _ = fmt.Fprint(w, sseSuccessBody())
 	}))
 	defer srv.Close()
 
@@ -139,7 +139,7 @@ func TestCreateMessageStreaming_RetryOn504(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, sseSuccessBody())
+		_, _ = fmt.Fprint(w, sseSuccessBody())
 	}))
 	defer srv.Close()
 
@@ -167,7 +167,7 @@ func TestCreateMessageStreaming_RetryOn429(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, sseSuccessBody())
+		_, _ = fmt.Fprint(w, sseSuccessBody())
 	}))
 	defer srv.Close()
 
@@ -189,7 +189,7 @@ func TestCreateMessageStreaming_NoRetryOn400(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":"bad request"}}`)
+		_, _ = fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":"bad request"}}`)
 	}))
 	defer srv.Close()
 
@@ -215,7 +215,7 @@ func TestCreateMessageStreaming_NoRetryOn401(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, "unauthorized")
+		_, _ = fmt.Fprint(w, "unauthorized")
 	}))
 	defer srv.Close()
 
@@ -234,7 +234,7 @@ func TestCreateMessageStreaming_MaxRetriesExhausted(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
 		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprint(w, "bad gateway")
+		_, _ = fmt.Fprint(w, "bad gateway")
 	}))
 	defer srv.Close()
 
@@ -260,7 +260,7 @@ func TestCreateMessageStreaming_ContextCancellation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
 		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprint(w, "bad gateway")
+		_, _ = fmt.Fprint(w, "bad gateway")
 	}))
 	defer srv.Close()
 
@@ -305,7 +305,7 @@ func TestCreateMessageStreaming_TransportErrorRetry(t *testing.T) {
 func TestCreateMessageStreaming_StructuredErrorParsing(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":"Field required: messages"}}`)
+		_, _ = fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":"Field required: messages"}}`)
 	}))
 	defer srv.Close()
 
@@ -329,7 +329,7 @@ func TestCreateMessageStreaming_StructuredErrorParsing(t *testing.T) {
 func TestCreateMessageStreaming_ProxyErrorFormat(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"error":"CLI version not supported. Please upgrade or use your own API key.","code":"VERSION_NOT_SUPPORTED"}`)
+		_, _ = fmt.Fprint(w, `{"error":"CLI version not supported. Please upgrade or use your own API key.","code":"VERSION_NOT_SUPPORTED"}`)
 	}))
 	defer srv.Close()
 
@@ -360,7 +360,7 @@ func TestCreateMessageStreaming_MidStreamErrorNotRetried(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		// Write partial SSE then close connection abruptly (no message_stop)
-		fmt.Fprint(w, `event: message_start
+		_, _ = fmt.Fprint(w, `event: message_start
 data: {"type":"message_start","message":{"id":"msg_partial","model":"claude-test","role":"assistant"}}
 
 event: content_block_start

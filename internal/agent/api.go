@@ -217,7 +217,7 @@ func llmRetryBackoff(attempt int, cfg llmRetryConfig) time.Duration {
 	backoff := float64(cfg.BaseBackoff) * math.Pow(2, float64(attempt))
 	jitter := cfg.JitterMin
 	if cfg.JitterMax > cfg.JitterMin {
-		jitter = cfg.JitterMin + rand.Float64()*(cfg.JitterMax-cfg.JitterMin)
+		jitter = cfg.JitterMin + rand.Float64()*(cfg.JitterMax-cfg.JitterMin) //nolint:gosec // Jitter for backoff does not need crypto-strength randomness
 	}
 	backoff *= jitter
 	if backoff > float64(cfg.MaxBackoff) {
