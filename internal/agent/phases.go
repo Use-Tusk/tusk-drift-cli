@@ -200,6 +200,14 @@ func (pm *PhaseManager) UpdateState(results map[string]interface{}) {
 		pm.state.SuiteValidationAttempted = v
 	}
 
+	// CI workflow setup state
+	if v, ok := results["ci_workflow_configured"].(bool); ok {
+		pm.state.CIWorkflowConfigured = v
+	}
+	if v, ok := results["ci_workflow_path"].(string); ok {
+		pm.state.CIWorkflowPath = v
+	}
+
 	// Verify mode state
 	if v, ok := results["original_sampling_rate"].(float64); ok {
 		pm.state.OriginalSamplingRate = v
@@ -338,6 +346,7 @@ func (pm *PhaseManager) AddCloudPhases() {
 		cloudConfigureRecordingPhase(),
 		cloudUploadTracesPhase(),
 		cloudValidateSuitePhase(),
+		cloudSetupCiWorkflowPhase(),
 		cloudSummaryPhase(),
 	}
 	pm.phases = append(pm.phases, cloudPhases...)
@@ -354,6 +363,7 @@ func (pm *PhaseManager) SetCloudOnlyMode() {
 		cloudConfigureRecordingPhase(),
 		cloudUploadTracesPhase(),
 		cloudValidateSuitePhase(),
+		cloudSetupCiWorkflowPhase(),
 		cloudSummaryPhase(),
 	}
 	pm.currentIdx = 0
@@ -857,6 +867,27 @@ func cloudValidateSuitePhase() *Phase {
 		),
 		Required:      false,
 		MaxIterations: 15,
+	}
+}
+
+func cloudSetupCiWorkflowPhase() *Phase {
+	return &Phase{
+		ID:           "cloud_setup_ci_workflow",
+		Name:         "Setup CI Workflow",
+		Description:  "Create or update CI replay workflow with drift-action",
+		Instructions: PhaseCloudSetupCiWorkflowPrompt,
+		Tools: Tools(
+			ToolListDirectory,
+			ToolReadFile,
+			ToolHTTPRequest,
+			ToolGrep,
+			ToolWriteFile,
+			ToolPatchFile,
+			ToolAskUser,
+			ToolTransitionPhase,
+		),
+		Required:      false,
+		MaxIterations: 20,
 	}
 }
 

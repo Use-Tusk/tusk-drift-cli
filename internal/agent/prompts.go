@@ -77,6 +77,9 @@ var PhaseCloudUploadTracesPrompt string
 //go:embed prompts/phase_cloud_validate_suite.md
 var PhaseCloudValidateSuitePrompt string
 
+//go:embed prompts/phase_cloud_setup_ci_workflow.md
+var PhaseCloudSetupCiWorkflowPrompt string
+
 //go:embed prompts/phase_cloud_summary.md
 var PhaseCloudSummaryPrompt string
 

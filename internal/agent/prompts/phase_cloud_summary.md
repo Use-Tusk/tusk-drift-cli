@@ -30,7 +30,13 @@ Generate a final report documenting the cloud setup and list of next steps.
    - Created: Yes/No/Already existed
    - If created, remind to save it securely
 
-6. **Next Steps** (display this as a numbered checklist in the terminal output):
+6. **CI Workflow Status**:
+   - Configured: Yes/No
+   - Workflow Path: {path if available}
+   - If configured, confirm the workflow uses `Use-Tusk/drift-action@v1`
+   - If not configured, explain why and provide the exact recommended workflow path and minimal snippet
+
+7. **Next Steps** (display this as a numbered checklist in the terminal output):
 
    **Step 1: Update your TuskDrift initialization**
    Add the API key to your `TuskDrift.initialize()` call so the SDK can upload traces to Tusk Cloud.
@@ -65,7 +71,7 @@ Generate a final report documenting the cloud setup and list of next steps.
    - Commit the SDK instrumentation changes and `.tusk/` config files
    - Open a PR/MR, merge, and deploy to your recording environment
 
-7. **Useful Links**:
+8. **Useful Links**:
    - Dashboard: <https://app.usetusk.ai>
    - Documentation: <https://docs.usetusk.ai/api-tests/tusk-drift-cloud>
    - CI/CD Setup Guide: <https://docs.usetusk.ai/api-tests/ci-cd-setup>
@@ -77,7 +83,7 @@ Mention that they can view this checklist at any time in `.tusk/setup/CLOUD_SETU
 
 1. **Generate report**: Create a comprehensive markdown report with all the above sections.
 
-2. **Display report**: Output the full report content to the terminal so the user can read it. The Next Steps checklist (section 6) is especially important — make sure it is clearly displayed.
+2. **Display report**: Output the full report content to the terminal so the user can read it. The Next Steps checklist (section 7) is especially important — make sure it is clearly displayed.
 
 3. **Save report**: Use `write_file` to save the report to `.tusk/setup/CLOUD_SETUP_REPORT.md`
 
