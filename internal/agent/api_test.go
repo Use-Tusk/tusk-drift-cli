@@ -106,7 +106,7 @@ func TestCreateMessageStreaming_RetryOn503(t *testing.T) {
 		n := attempts.Add(1)
 		if n <= 1 {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, "service unavailable")
+			_, _ = fmt.Fprint(w, "service unavailable")
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -134,7 +134,7 @@ func TestCreateMessageStreaming_RetryOn504(t *testing.T) {
 		n := attempts.Add(1)
 		if n <= 1 {
 			w.WriteHeader(http.StatusGatewayTimeout)
-			fmt.Fprint(w, "gateway timeout")
+			_, _ = fmt.Fprint(w, "gateway timeout")
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -162,7 +162,7 @@ func TestCreateMessageStreaming_RetryOn429(t *testing.T) {
 		n := attempts.Add(1)
 		if n <= 1 {
 			w.WriteHeader(http.StatusTooManyRequests)
-			fmt.Fprint(w, `{"error":{"type":"rate_limit","message":"too many requests"}}`)
+			_, _ = fmt.Fprint(w, `{"error":{"type":"rate_limit","message":"too many requests"}}`)
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
