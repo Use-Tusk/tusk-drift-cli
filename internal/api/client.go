@@ -71,11 +71,11 @@ const (
 )
 
 // GetBaseURL returns the API base URL with the following priority:
-// 1. TUSK_CLOUD_API_URL environment variable
+// 1. TUSK_API_URL environment variable
 // 2. tusk_api.url from .tusk/config.yaml
 // 3. Default URL (https://api.usetusk.ai)
 func GetBaseURL() string {
-	if envURL := os.Getenv("TUSK_CLOUD_API_URL"); envURL != "" {
+	if envURL := os.Getenv("TUSK_API_URL"); envURL != "" {
 		return envURL
 	}
 

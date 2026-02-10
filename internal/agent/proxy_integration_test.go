@@ -22,7 +22,7 @@ import (
 //   - TUSK_PROXY_TEST_API_KEY: Tusk API key for authentication (does not expire)
 //
 // Optional environment variables:
-//   - TUSK_CLOUD_API_URL: Override the backend URL (defaults to https://api.usetusk.ai)
+//   - TUSK_API_URL: Override the backend URL (defaults to https://api.usetusk.ai)
 //
 // This test uses validate-only mode (x-tusk-validate-only header) to avoid
 // Anthropic API calls and associated costs. It only validates that the system
