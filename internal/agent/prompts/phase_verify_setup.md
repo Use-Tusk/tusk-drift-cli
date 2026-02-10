@@ -10,6 +10,7 @@ If validation fails, report the error and call transition_phase with failure not
 ### Step 2: Read Current Recording Config
 
 Read `.tusk/config.yaml` and extract the current values:
+
 - Under `recording`: `sampling_rate`, `export_spans`, `enable_env_var_recording`
 - Under `service`: `id` (if present)
 - Under `service`: `port`
@@ -21,6 +22,7 @@ Store the recording values as the originals to restore later.
 ### Step 3: Override Recording Config
 
 Use `cloud_save_config` to set:
+
 - `sampling_rate`: 1 (record everything for verification)
 - `export_spans`: false (keep traces local during verification)
 - `enable_env_var_recording`: keep whatever it currently is
@@ -34,10 +36,11 @@ This ensures we start with a clean slate for verification.
 
 ### Step 5: Check for Verify Cache
 
-Read `.tusk/verify-cache.json` if it exists. If found, this contains cached endpoint
+Read `.tusk/setup/verify-cache.json` if it exists. If found, this contains cached endpoint
 information from a previous successful verify or setup run.
 
 Call transition_phase with:
+
 ```json
 {
   "results": {

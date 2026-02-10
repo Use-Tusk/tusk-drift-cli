@@ -58,7 +58,7 @@ func ResetPhaseProgress(workDir string) func(json.RawMessage) (string, error) {
 			return "", err
 		}
 
-		progressPath := filepath.Clean(filepath.Join(workDir, ".tusk", "PROGRESS.md"))
+		progressPath := filepath.Clean(filepath.Join(workDir, ".tusk", "setup", "PROGRESS.md"))
 
 		content, err := os.ReadFile(progressPath)
 		if err != nil {
