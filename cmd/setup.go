@@ -118,12 +118,12 @@ func getAnthropicAPIConfig() (*APIConfig, error) {
 		if err := authenticator.Login(ctx); err != nil {
 			return nil, fmt.Errorf("login failed: %w\n\nAlternatively, provide your own API key with --api-key or ANTHROPIC_API_KEY", err)
 		}
-		if err := cacheAuthInfo(authenticator.AccessToken); err != nil {
-			log.Debug("Failed to cache auth info after login in setup", "error", err)
+		if err := persistUserIdentity(authenticator.AccessToken); err != nil {
+			log.Debug("Failed to persist user identity after login in setup", "error", err)
 		}
 	} else if cliconfig.CLIConfig.UserID == "" {
-		if err := cacheAuthInfo(authenticator.AccessToken); err != nil {
-			log.Debug("Failed to cache auth info for existing auth in setup", "error", err)
+		if err := persistUserIdentity(authenticator.AccessToken); err != nil {
+			log.Debug("Failed to persist user identity for existing auth in setup", "error", err)
 		}
 	}
 
