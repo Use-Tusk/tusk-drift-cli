@@ -1,6 +1,11 @@
 package agent
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+)
 
 // Message represents a conversation message
 type Message struct {
@@ -52,6 +57,49 @@ type Usage struct {
 type APIError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+}
+
+// LLMAPIError represents a structured HTTP error from the LLM API.
+// It replaces the previous fmt.Errorf("API error (%d): %s", ...) pattern.
+type LLMAPIError struct {
+	StatusCode   int
+	APIErrorType string // parsed from JSON body "type" field, if available
+	Message      string
+}
+
+func (e *LLMAPIError) Error() string {
+	if e.APIErrorType != "" {
+		return fmt.Sprintf("API error (%d, %s): %s", e.StatusCode, e.APIErrorType, e.Message)
+	}
+	return fmt.Sprintf("API error (%d): %s", e.StatusCode, e.Message)
+}
+
+// LLMRetryExhaustedError is returned when all HTTP-level retries have been exhausted.
+type LLMRetryExhaustedError struct {
+	Attempts int
+	Err      error // last error
+}
+
+func (e *LLMRetryExhaustedError) Error() string {
+	return fmt.Sprintf("LLM request failed after %d attempts: %v", e.Attempts, e.Err)
+}
+
+func (e *LLMRetryExhaustedError) Unwrap() error {
+	return e.Err
+}
+
+// UserFacingMessage returns a clean, user-friendly description of the failure.
+func (e *LLMRetryExhaustedError) UserFacingMessage() string {
+	var apiErr *LLMAPIError
+	if errors.As(e.Err, &apiErr) {
+		switch {
+		case apiErr.StatusCode == http.StatusTooManyRequests:
+			return "The AI service is currently rate-limited. Please wait a moment and try again."
+		case apiErr.StatusCode >= 500:
+			return "The AI service is temporarily unavailable. Please try again in a few minutes."
+		}
+	}
+	return "Unable to reach the AI service. Check your network connection and try again."
 }
 
 // State tracks what the agent has learned and done

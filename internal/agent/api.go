@@ -5,8 +5,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/rand/v2"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -33,6 +37,35 @@ type ClaudeClientConfig struct {
 	BaseURL     string // Custom base URL (for proxy mode)
 }
 
+// llmRetryConfig controls HTTP-level retry behaviour for LLM API calls.
+type llmRetryConfig struct {
+	MaxRetries  int // number of retries (total attempts = MaxRetries + 1)
+	BaseBackoff time.Duration
+	MaxBackoff  time.Duration
+	JitterMin   float64 // lower multiplier bound (inclusive)
+	JitterMax   float64 // upper multiplier bound (exclusive)
+}
+
+func defaultLLMRetryConfig() llmRetryConfig {
+	return llmRetryConfig{
+		MaxRetries:  3,
+		BaseBackoff: 2 * time.Second,
+		MaxBackoff:  15 * time.Second,
+		JitterMin:   1.0,
+		JitterMax:   2.0,
+	}
+}
+
+func fastLLMRetryConfig() llmRetryConfig {
+	return llmRetryConfig{
+		MaxRetries:  3,
+		BaseBackoff: 10 * time.Millisecond,
+		MaxBackoff:  50 * time.Millisecond,
+		JitterMin:   1.0,
+		JitterMax:   1.0, // no jitter in tests
+	}
+}
+
 // ClaudeClient handles communication with the Claude API
 type ClaudeClient struct {
 	mode        APIMode
@@ -42,6 +75,7 @@ type ClaudeClient struct {
 	httpClient  *http.Client
 	baseURL     string
 	sessionID   string
+	retryConfig llmRetryConfig
 }
 
 // SetSessionID sets the session ID for request correlation
@@ -64,7 +98,8 @@ func NewClaudeClient(apiKey, model string) (*ClaudeClient, error) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Minute, // Long timeout for complex tool use
 		},
-		baseURL: "https://api.anthropic.com/v1",
+		baseURL:     "https://api.anthropic.com/v1",
+		retryConfig: defaultLLMRetryConfig(),
 	}, nil
 }
 
@@ -105,7 +140,8 @@ func NewClaudeClientWithConfig(cfg ClaudeClientConfig) (*ClaudeClient, error) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Minute,
 		},
-		baseURL: cfg.BaseURL,
+		baseURL:     cfg.BaseURL,
+		retryConfig: defaultLLMRetryConfig(),
 	}, nil
 }
 
@@ -153,7 +189,103 @@ type StreamEvent struct {
 	StopReason string
 }
 
-// CreateMessageStreaming sends a message to Claude and streams the response
+// isRetryableError returns true if the error represents a transient failure
+// that should be retried (network errors, 429, 502, 503, 504).
+func isRetryableError(err error) bool {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	var apiErr *LLMAPIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.StatusCode {
+		case http.StatusTooManyRequests,
+			http.StatusInternalServerError,
+			http.StatusBadGateway,
+			http.StatusServiceUnavailable,
+			http.StatusGatewayTimeout:
+			return true
+		}
+	}
+
+	return false
+}
+
+// llmRetryBackoff computes the backoff duration for a given retry attempt.
+func llmRetryBackoff(attempt int, cfg llmRetryConfig) time.Duration {
+	backoff := float64(cfg.BaseBackoff) * math.Pow(2, float64(attempt))
+	jitter := cfg.JitterMin
+	if cfg.JitterMax > cfg.JitterMin {
+		jitter = cfg.JitterMin + rand.Float64()*(cfg.JitterMax-cfg.JitterMin)
+	}
+	backoff *= jitter
+	if backoff > float64(cfg.MaxBackoff) {
+		backoff = float64(cfg.MaxBackoff)
+	}
+	return time.Duration(backoff)
+}
+
+// doStreamingRequest performs a single HTTP request and returns either
+// a successful *http.Response (status 200, body still open) or a typed error.
+// The caller is responsible for closing the response body on success.
+func (c *ClaudeClient) doStreamingRequest(ctx context.Context, bodyBytes []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"POST",
+		c.getEndpoint(),
+		bytes.NewReader(bodyBytes),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	c.setAuthHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err // transport error — caller checks retryability
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer func() { _ = resp.Body.Close() }()
+		body, _ := io.ReadAll(resp.Body)
+
+		llmErr := &LLMAPIError{
+			StatusCode: resp.StatusCode,
+			Message:    string(body),
+		}
+
+		// Try to parse structured error from JSON body.
+		// Anthropic format: {"error": {"type": "...", "message": "..."}}
+		var anthropicErr struct {
+			Error APIError `json:"error"`
+		}
+		if json.Unmarshal(body, &anthropicErr) == nil && anthropicErr.Error.Message != "" {
+			llmErr.APIErrorType = anthropicErr.Error.Type
+			llmErr.Message = anthropicErr.Error.Message
+		} else {
+			// Proxy format: {"error": "string", "code": "string"}
+			var proxyErr struct {
+				Error string `json:"error"`
+				Code  string `json:"code"`
+			}
+			if json.Unmarshal(body, &proxyErr) == nil && proxyErr.Error != "" {
+				llmErr.APIErrorType = proxyErr.Code
+				llmErr.Message = proxyErr.Error
+			}
+		}
+
+		return nil, llmErr
+	}
+
+	return resp, nil
+}
+
+// CreateMessageStreaming sends a message to Claude and streams the response.
+// Transient HTTP errors (network failures, 429, 5xx) are retried with exponential backoff.
+// Mid-stream errors are NOT retried — they bubble up directly.
 func (c *ClaudeClient) CreateMessageStreaming(
 	ctx context.Context,
 	system string,
@@ -175,38 +307,45 @@ func (c *ClaudeClient) CreateMessageStreaming(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		"POST",
-		c.getEndpoint(),
-		bytes.NewReader(bodyBytes),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+	cfg := c.retryConfig
+	var lastErr error
 
-	req.Header.Set("Content-Type", "application/json")
-	c.setAuthHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		var apiErr struct {
-			Error APIError `json:"error"`
+	for attempt := 0; attempt <= cfg.MaxRetries; attempt++ {
+		// Backoff before retries (not before the first attempt)
+		if attempt > 0 {
+			backoff := llmRetryBackoff(attempt-1, cfg)
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
 		}
-		if json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != "" {
-			return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, apiErr.Error.Message)
+
+		resp, err := c.doStreamingRequest(ctx, bodyBytes)
+		if err != nil {
+			lastErr = err
+			if isRetryableError(err) && attempt < cfg.MaxRetries {
+				continue
+			}
+			// Non-retryable or out of retries
+			if attempt > 0 {
+				return nil, &LLMRetryExhaustedError{Attempts: attempt + 1, Err: lastErr}
+			}
+			return nil, err
 		}
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
+
+		// Success — parse SSE stream (mid-stream errors are not retried).
+		// Close body after parsing; not deferred inside the loop to avoid
+		// accumulating deferred closers across retry iterations.
+		apiResp, parseErr := c.parseStreamResponse(resp.Body, callback)
+		_ = resp.Body.Close()
+		return apiResp, parseErr
 	}
 
-	// Parse SSE stream
-	return c.parseStreamResponse(resp.Body, callback)
+	// Should not be reached, but handle just in case
+	return nil, &LLMRetryExhaustedError{Attempts: cfg.MaxRetries + 1, Err: lastErr}
 }
 
 func (c *ClaudeClient) parseStreamResponse(body io.Reader, callback StreamCallback) (*APIResponse, error) {
