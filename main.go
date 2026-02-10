@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/Use-Tusk/tusk-drift-cli/cmd"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 )
 
 func main() {
@@ -11,10 +12,8 @@ func main() {
 
 	// Track command result and close tracker
 	// Must happen after Execute but before exit
-	if tracker := cmd.GetTracker(); tracker != nil {
-		tracker.TrackResult(err)
-		tracker.Close()
-	}
+	analytics.GlobalTracker.TrackResult(err)
+	analytics.GlobalTracker.Close()
 
 	if err != nil {
 		os.Exit(1)

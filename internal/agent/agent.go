@@ -85,7 +85,6 @@ type Agent struct {
 	finalError  error
 
 	// Analytics
-	tracker   *analytics.Tracker
 	startTime time.Time
 	sessionID string
 }
@@ -170,21 +169,13 @@ func New(cfg Config) (*Agent, error) {
 	return a, nil
 }
 
-// SetTracker sets the analytics tracker for the agent
-func (a *Agent) SetTracker(tracker *analytics.Tracker) {
-	a.tracker = tracker
-}
-
 // trackEvent sends an analytics event if tracking is enabled
 func (a *Agent) trackEvent(event string, props map[string]any) {
-	if a.tracker == nil {
-		return
-	}
 	if props == nil {
 		props = make(map[string]any)
 	}
 	props["session_id"] = a.sessionID
-	a.tracker.Track(event, props)
+	analytics.GlobalTracker.Track(event, props)
 }
 
 // trackInterrupted tracks an interruption event with standard context

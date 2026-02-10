@@ -8,6 +8,11 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// GlobalTracker is the analytics tracker for the current process.
+// Initialized once per command via InitTracker. Nil-safe — all methods
+// are no-ops on a nil receiver.
+var GlobalTracker *Tracker
+
 // Tracker handles analytics for a single command execution
 type Tracker struct {
 	client    *Client
@@ -16,9 +21,9 @@ type Tracker struct {
 	flags     []string
 }
 
-// NewTracker creates a tracker for the given command
-// Returns nil if analytics is disabled
-func NewTracker(cmd *cobra.Command) *Tracker {
+// InitTracker creates the global tracker for the given command.
+// Returns nil if analytics is disabled.
+func InitTracker(cmd *cobra.Command) *Tracker {
 	if !cliconfig.IsAnalyticsEnabled() {
 		return nil
 	}
@@ -36,12 +41,13 @@ func NewTracker(cmd *cobra.Command) *Tracker {
 		client.Track("drift_cli:first_run", nil)
 	}
 
-	return &Tracker{
+	GlobalTracker = &Tracker{
 		client:    client,
 		startTime: time.Now(),
 		command:   getCommandPath(cmd),
 		flags:     getUsedFlags(cmd),
 	}
+	return GlobalTracker
 }
 
 // TrackResult records the command result (call after Execute returns)

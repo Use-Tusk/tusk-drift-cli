@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
@@ -64,16 +65,16 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 	}
 
 	m.UserId = resp.User.GetId()
-	m.UserEmail = ""
-	if resp.User != nil {
-		if resp.User.CodeHostingUsername != nil {
-			m.UserEmail = *resp.User.CodeHostingUsername
-		} else if resp.User.Email != nil {
-			m.UserEmail = *resp.User.Email
-		}
-	}
+	m.UserEmail = api.UserEmail(resp.User)
 	m.IsLoggedIn = true
 	m.BearerToken = authenticator.AccessToken
+
+	if cliconfig.CLIConfig.UserID == "" {
+		cfg := cliconfig.CLIConfig
+		cfg.SetAuthInfo(m.UserId, resp.User.GetName(), m.UserEmail, cfg.SelectedClientID, cfg.SelectedClientName)
+		_ = cfg.Save()
+		analytics.GlobalTracker.Alias(m.UserId)
+	}
 
 	m.AvailableClients = make([]ClientInfo, len(resp.Clients))
 	for i, c := range resp.Clients {

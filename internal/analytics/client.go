@@ -6,8 +6,10 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
@@ -34,6 +36,9 @@ type Client struct {
 	// Cached identity from backend fetch (API key auth only)
 	authInfo     *backend.GetAuthInfoResponse
 	authInfoOnce sync.Once
+
+	// JWT backfill: ensures at most one network call per process
+	jwtBackfillOnce sync.Once
 }
 
 // NewClient creates a new analytics client.
@@ -75,7 +80,6 @@ func (c *Client) Track(event string, properties map[string]any) {
 		return
 	}
 
-	// Resolve identity for API key auth (no-op for JWT/anonymous)
 	c.resolveIdentity()
 
 	props := c.baseProperties()
@@ -132,14 +136,14 @@ func (c *Client) Close() error {
 }
 
 // resolveIdentity fetches auth info from backend if needed.
-// Only fetches for API key auth - JWT auth uses cached cliconfig data.
 func (c *Client) resolveIdentity() {
-	// Only fetch for API key auth
-	if c.getAuthType() != string(cliconfig.AuthMethodAPIKey) {
+	if c.getAuthType() == string(cliconfig.AuthMethodAPIKey) {
+		c.fetchAuthInfo()
 		return
 	}
-
-	c.fetchAuthInfo()
+	// Temporary backfill: resolve identity for JWT users whose cli.json was
+	// never populated. See backfillJWTIdentity comment for details.
+	c.backfillJWTIdentity()
 }
 
 // fetchAuthInfo fetches auth info from the backend (called once, cached)
@@ -163,6 +167,63 @@ func (c *Client) fetchAuthInfo() {
 		log.Debug("Successfully fetched auth info for analytics",
 			"userId", resp.User.GetId(),
 			"clientCount", len(resp.Clients))
+	})
+}
+
+// backfillJWTIdentity is a temporary backfill for users who logged in before
+// the forward-fixes were added. Those login paths (setup.go, cloud.go,
+// onboard-cloud/run.go) saved the auth token to auth.json but never wrote
+// user_id to cli.json. The sync.Once block fetches identity from the API and
+// persists it. Safe to remove once all active users have updated past this
+// version — the forward-fixes in those files now handle both SetAuthInfo and
+// Alias directly.
+func (c *Client) backfillJWTIdentity() {
+	if c.config != nil && c.config.UserID != "" {
+		return // already resolved
+	}
+
+	c.jwtBackfillOnce.Do(func() {
+		authenticator, err := auth.NewAuthenticator()
+		if err != nil {
+			log.Debug("JWT backfill: failed to create authenticator", "error", err)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := authenticator.TryExistingAuth(ctx); err != nil {
+			log.Debug("JWT backfill: no valid JWT on disk", "error", err)
+			return
+		}
+
+		client := api.NewClient(api.GetBaseURL(), "")
+		authOpts := api.AuthOptions{BearerToken: authenticator.AccessToken}
+
+		resp, err := client.GetAuthInfo(ctx, &backend.GetAuthInfoRequest{}, authOpts)
+		if err != nil {
+			log.Debug("JWT backfill: failed to fetch auth info", "error", err)
+			return
+		}
+
+		userID := resp.User.GetId()
+		if userID == "" {
+			log.Debug("JWT backfill: empty user ID in response")
+			return
+		}
+
+		userName := resp.User.GetName()
+		userEmail := api.UserEmail(resp.User)
+
+		cfg := cliconfig.CLIConfig
+		cfg.SetAuthInfo(userID, userName, userEmail, cfg.SelectedClientID, cfg.SelectedClientName)
+		if err := cfg.Save(); err != nil {
+			log.Debug("JWT backfill: failed to save config", "error", err)
+			return
+		}
+
+		c.Alias(userID)
+		log.Debug("JWT backfill: resolved identity", "userId", userID)
 	})
 }
 

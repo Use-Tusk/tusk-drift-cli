@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	onboardcloud "github.com/Use-Tusk/tusk-drift-cli/internal/tui/onboard-cloud"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
@@ -42,6 +44,32 @@ type CloudTools struct {
 // NewCloudTools creates a new CloudTools instance
 func NewCloudTools() *CloudTools {
 	return &CloudTools{}
+}
+
+// updateCLIConfigIdentity persists user identity from an auth info response
+// to cli.json so that analytics can use the real user ID instead of anonymous.
+func updateCLIConfigIdentity(resp *backend.GetAuthInfoResponse) {
+	if resp == nil || resp.User == nil {
+		return
+	}
+	userID := resp.User.GetId()
+	if userID == "" {
+		return
+	}
+
+	cfg := cliconfig.CLIConfig
+	if cfg.UserID != "" {
+		return // already set
+	}
+
+	userName := resp.User.GetName()
+	userEmail := api.UserEmail(resp.User)
+
+	cfg.SetAuthInfo(userID, userName, userEmail, cfg.SelectedClientID, cfg.SelectedClientName)
+	if err := cfg.Save(); err != nil {
+		log.Debug("Failed to persist user identity to cli.json", "error", err)
+	}
+	analytics.GlobalTracker.Alias(userID)
 }
 
 // CloudLoginResult contains the result of a cloud login operation
@@ -104,6 +132,7 @@ func (ct *CloudTools) CheckAuth(input json.RawMessage) (string, error) {
 	}
 
 	ct.userId = resp.User.GetId()
+	updateCLIConfigIdentity(resp)
 
 	result := CloudLoginResult{
 		Success:    true,
@@ -152,6 +181,7 @@ func (ct *CloudTools) Login(input json.RawMessage) (string, error) {
 		}
 
 		ct.userId = resp.User.GetId()
+		updateCLIConfigIdentity(resp)
 
 		result := CloudLoginResult{
 			Success: true,
@@ -258,6 +288,7 @@ func (ct *CloudTools) WaitForLogin(input json.RawMessage) (string, error) {
 	}
 
 	ct.userId = authResp.User.GetId()
+	updateCLIConfigIdentity(authResp)
 	if ct.userEmail == "" && authResp.User.GetEmail() != "" {
 		ct.userEmail = authResp.User.GetEmail()
 	}
@@ -807,6 +838,16 @@ func (ct *CloudTools) WaitForAuth(input json.RawMessage) (string, error) {
 				ct.authenticator = authenticator
 				ct.bearerToken = authenticator.AccessToken
 				ct.userEmail = authenticator.Email
+
+				// Persist identity to cli.json if not already set
+				if cliconfig.CLIConfig.UserID == "" {
+					if client, authOptions, _, err := api.SetupCloud(ctx, false); err == nil {
+						if resp, err := client.GetAuthInfo(ctx, &backend.GetAuthInfoRequest{}, authOptions); err == nil {
+							ct.userId = resp.User.GetId()
+							updateCLIConfigIdentity(resp)
+						}
+					}
+				}
 
 				result := CloudLoginResult{
 					Success: true,

@@ -31,6 +31,21 @@ type AuthOptions struct {
 	TuskClientID string
 }
 
+// UserEmail extracts the best email/username from an AuthInfoUser.
+// Prefers CodeHostingUsername (GitHub/GitLab handle) over email.
+func UserEmail(user *backend.UserAuthInfo) string {
+	if user == nil {
+		return ""
+	}
+	if user.CodeHostingUsername != nil {
+		return *user.CodeHostingUsername
+	}
+	if user.Email != nil {
+		return *user.Email
+	}
+	return ""
+}
+
 type RetryConfig struct {
 	MaxRetries  int
 	BaseBackoff time.Duration

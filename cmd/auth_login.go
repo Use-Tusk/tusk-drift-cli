@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
@@ -69,14 +70,7 @@ func cacheAuthInfo(bearerToken string) error {
 	// Extract user info
 	userID := resp.User.GetId()
 	userName := resp.User.GetName()
-	userEmail := ""
-	if resp.User != nil {
-		if resp.User.CodeHostingUsername != nil {
-			userEmail = *resp.User.CodeHostingUsername
-		} else if resp.User.Email != nil {
-			userEmail = *resp.User.Email
-		}
-	}
+	userEmail := api.UserEmail(resp.User)
 
 	// Handle client selection
 	var selectedClientID, selectedClientName string
@@ -121,9 +115,7 @@ func cacheAuthInfo(bearerToken string) error {
 	}
 
 	// Alias anonymous ID to user ID in PostHog (only happens once per user)
-	if tracker := GetTracker(); tracker != nil && userID != "" {
-		tracker.Alias(userID)
-	}
+	analytics.GlobalTracker.Alias(userID)
 
 	return nil
 }
