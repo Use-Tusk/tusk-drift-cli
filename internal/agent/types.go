@@ -163,6 +163,10 @@ type State struct {
 	TestsInSuite             int  `json:"tests_in_suite"`
 	SuiteValidationAttempted bool `json:"suite_validation_attempted"`
 
+	// CI workflow setup state
+	CIWorkflowConfigured bool   `json:"ci_workflow_configured"`
+	CIWorkflowPath       string `json:"ci_workflow_path"`
+
 	// Verify mode state
 	OriginalSamplingRate          float64 `json:"original_sampling_rate,omitempty"`
 	OriginalExportSpans           bool    `json:"original_export_spans"`
