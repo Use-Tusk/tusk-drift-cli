@@ -64,11 +64,11 @@ Add CI configuration that:
 
          ```yaml
          - name: Run Tusk Drift trace tests
-         uses: Use-Tusk/drift-action@v1
-         with:
-            cache-key: ${{ runner.os }}-tusk-drift-${{ hashFiles('.tusk/config.yaml') }}
-            api-key: ${{ secrets.TUSK_API_KEY }}
-            ```
+           uses: Use-Tusk/drift-action@v1
+           with:
+             cache-key: ${{ runner.os }}-tusk-drift-${{ hashFiles('.tusk/config.yaml') }}
+             api-key: ${{ secrets.TUSK_API_KEY }}
+         ```
 
 6. **Important behavior requirements**
    - For GitHub Actions:
