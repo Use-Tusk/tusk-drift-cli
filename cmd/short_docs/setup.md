@@ -33,7 +33,7 @@ To use your own Anthropic API key instead:
 
 ## Progress & Resumption
 
-The agent saves progress to `PROGRESS.md` by default. If setup is interrupted, running `tusk setup` again will resume from where it left off. Use `--disable-progress-state` to start fresh.
+The agent saves progress to `.tusk/setup/PROGRESS.md` by default. If setup is interrupted, running `tusk setup` again will resume from where it left off. Use `--disable-progress-state` to start fresh.
 
 ## Cloud Setup
 

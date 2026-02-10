@@ -164,7 +164,7 @@ func (u *HeadlessUI) FatalError(err error) {
 func (u *HeadlessUI) Completed(workDir string) {
 	fmt.Println()
 	fmt.Println(headlessSuccessStyle.Render("🎉 Setup complete!"))
-	fmt.Println(headlessDimStyle.Render("   Check .tusk/SETUP_REPORT.md for details."))
+	fmt.Println(headlessDimStyle.Render("   Check .tusk/setup/SETUP_REPORT.md for details."))
 }
 
 // EligibilityCompleted displays eligibility check completion message

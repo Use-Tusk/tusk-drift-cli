@@ -671,7 +671,7 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentTool = ""
 		m.addLog("spacing", "", "")
 		m.addLog("success", "🎉 Setup complete!", "")
-		m.addLog("dim", "   Check .tusk/SETUP_REPORT.md for details.", "")
+		m.addLog("dim", "   Check .tusk/setup/SETUP_REPORT.md for details.", "")
 		m.addLog("spacing", "", "")
 		m.addLog("plain", "───────────────────────────────────────────────────────────", "")
 		m.addLog("spacing", "", "")
@@ -1757,20 +1757,10 @@ func (m *TUIModel) SendCompleted(program *tea.Program, workDir string) {
 	// Check which cleanup files exist
 	var removableFiles []string
 
-	filesToCheck := []struct {
-		filename    string
-		description string
-	}{
-		{"PROGRESS.md", "PROGRESS.md - Setup progress tracking"},
-		{"SETUP_REPORT.md", "SETUP_REPORT.md - Setup summary and test results"},
-		{"CLOUD_SETUP_REPORT.md", "CLOUD_SETUP_REPORT.md - Cloud setup summary"},
-	}
-
-	tuskDir := filepath.Join(workDir, ".tusk")
-	for _, f := range filesToCheck {
-		if _, err := os.Stat(filepath.Join(tuskDir, f.filename)); err == nil {
-			removableFiles = append(removableFiles, f.description)
-		}
+	// Check if the entire .tusk/setup/ directory exists and has files
+	setupDir := filepath.Join(workDir, ".tusk", "setup")
+	if _, err := os.Stat(setupDir); err == nil {
+		removableFiles = append(removableFiles, ".tusk/setup/ - Setup progress, reports, and cache")
 	}
 
 	program.Send(completedMsg{removableFiles: removableFiles})

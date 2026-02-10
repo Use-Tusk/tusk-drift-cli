@@ -29,11 +29,11 @@ This phase is optional - if you can't test a complex endpoint, that's okay.
 
 ### Step 3: Save to Verify Cache
 
-If the test passed, save the endpoint info used to `.tusk/verify-cache.json` so that
+If the test passed, save the endpoint info used to `.tusk/setup/verify-cache.json` so that
 future `tusk setup --verify` runs can reuse it. Read the existing file first (if it
 exists) to preserve other entries (like `simple_test`).
 
-If `.tusk/verify-cache.json` does not exist, create it.
+If `.tusk/setup/verify-cache.json` does not exist, create it.
 
 Format:
 
@@ -48,7 +48,7 @@ Format:
 }
 ```
 
-Write the updated JSON back to `.tusk/verify-cache.json`.
+Write the updated JSON back to `.tusk/setup/verify-cache.json`.
 
 Call transition_phase with:
 

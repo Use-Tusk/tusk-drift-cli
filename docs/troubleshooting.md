@@ -7,7 +7,7 @@ If `tusk setup` (AI-powered setup) fails or doesn't support your project:
 - **Missing API key**: The agent requires an Anthropic API key. Set it via `export ANTHROPIC_API_KEY=your-key` or pass `--api-key your-key`.
 - **Unsupported language/framework**: The AI agent currently supports Python (FastAPI, Flask, Django, Starlette) and Node.js (Express, Fastify, Koa, Hapi).
 - **Agent errors or timeouts**: Try running with `--print` for headless mode to see detailed output. You can also use `--output-logs` to save logs to `.tusk/logs/`.
-- **Resume interrupted setup**: The agent saves progress to `PROGRESS.md`. Run `tusk setup` again to resume, or use `--disable-progress-state` to start fresh.
+- **Resume interrupted setup**: The agent saves progress to `.tusk/setup/PROGRESS.md`. Run `tusk setup` again to resume, or use `--disable-progress-state` to start fresh.
 - **Fallback options**: If you prefer not to use the AI agent, you may also use `tusk init` for local setup and `tusk init-cloud` for cloud configuration.
 
 ## Connection Issues

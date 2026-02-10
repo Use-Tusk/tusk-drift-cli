@@ -4,7 +4,7 @@ Test an endpoint with external calls if one was previously cached or can be foun
 
 ### Step 1: Determine Endpoint
 
-Read `.tusk/verify-cache.json`. If a `complex_test` entry exists, use that endpoint's
+Read `.tusk/setup/verify-cache.json`. If a `complex_test` entry exists, use that endpoint's
 URL, method, headers, and body.
 
 If no cache entry exists, look through the codebase (using grep) for an endpoint that
@@ -22,6 +22,7 @@ The Tusk Drift SDK excludes "text/html" traces.
 ### Step 2: Record and Replay
 
 Follow the same process as the simple test:
+
 1. Start service with env: {"TUSK_DRIFT_MODE": "RECORD"}
 2. Wait for the service to be ready
 3. Make the HTTP request to the endpoint
@@ -32,7 +33,7 @@ Follow the same process as the simple test:
 
 ### Step 3: Save to Cache
 
-If the test passed, update `.tusk/verify-cache.json` with the `complex_test` entry.
+If the test passed, update `.tusk/setup/verify-cache.json` with the `complex_test` entry.
 Read the existing file first to preserve the `simple_test` entry.
 
 ### Transition
@@ -40,6 +41,7 @@ Read the existing file first to preserve the `simple_test` entry.
 This phase is optional - if it fails but simple test passed, that is acceptable.
 
 Call transition_phase with:
+
 ```json
 {
   "results": {

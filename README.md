@@ -224,6 +224,7 @@ We recommend adding to your `.gitignore`:
 
 - `.tusk/results`
 - `.tusk/logs`
+- `.tusk/setup`
 - `.tusk/traces` (if you primarily intend to use Tusk Drift Cloud)
 
 ## Resources

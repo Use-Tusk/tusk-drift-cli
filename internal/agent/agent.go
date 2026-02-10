@@ -25,7 +25,10 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
-const progressFileName = "PROGRESS.md"
+const (
+	progressFileName  = "PROGRESS.md"
+	setupArtifactsDir = "setup"
+)
 
 // Timeouts
 const (
@@ -45,7 +48,7 @@ const (
 
 // RecoveryGuidance returns a message explaining how to resume after a failure
 func RecoveryGuidance() string {
-	return `Progress has been saved to .tusk/PROGRESS.md
+	return `Progress has been saved to .tusk/setup/PROGRESS.md
 Run 'tusk setup' again to continue where you left off.
 
 If issues persist, contact support@usetusk.ai`
@@ -319,7 +322,7 @@ func (a *Agent) runAgent() error {
 					if rerun {
 						// Start fresh - delete progress and report files
 						a.deleteProgress()
-						_ = os.Remove(filepath.Join(a.workDir, ".tusk", "SETUP_REPORT.md"))
+						_ = os.Remove(filepath.Join(a.workDir, ".tusk", setupArtifactsDir, "SETUP_REPORT.md"))
 						completedPhases = nil
 						a.phaseManager = NewPhaseManager()
 						a.ui.AgentText("Starting fresh setup...\n", false)
@@ -1452,7 +1455,7 @@ func generateSessionID() string {
 // Progress file management
 
 func (a *Agent) progressFilePath() string {
-	return filepath.Join(a.workDir, ".tusk", progressFileName)
+	return filepath.Join(a.workDir, ".tusk", setupArtifactsDir, progressFileName)
 }
 
 // readProgress reads the existing progress file if it exists
@@ -1605,8 +1608,8 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 		return nil
 	}
 
-	tuskDir := filepath.Join(a.workDir, ".tusk")
-	if err := os.MkdirAll(tuskDir, 0o750); err != nil {
+	setupDir := filepath.Join(a.workDir, ".tusk", setupArtifactsDir)
+	if err := os.MkdirAll(setupDir, 0o750); err != nil {
 		return err
 	}
 

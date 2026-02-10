@@ -76,13 +76,14 @@ Common config mistakes to avoid:
 After creating the config file, update the project's `.gitignore` to exclude Tusk artifacts that shouldn't be committed:
 
 1. Use `read_file` to check if `.gitignore` exists and read its contents
-2. Check if Tusk entries (`.tusk/results`, `.tusk/logs`) are already present
+2. Check if Tusk entries (`.tusk/results`, `.tusk/logs`, `.tusk/setup`) are already present
 3. If missing, append the following block to `.gitignore`:
 
 ```text
 # Tusk Drift
 .tusk/results
 .tusk/logs
+.tusk/setup
 ```
 
 - If `.gitignore` doesn't exist, create it with just the Tusk entries
