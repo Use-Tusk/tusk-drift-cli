@@ -36,6 +36,16 @@ data: {"type":"message_stop"}
 `
 }
 
+func fastLLMRetryConfig() llmRetryConfig {
+	return llmRetryConfig{
+		MaxRetries:  3,
+		BaseBackoff: 10 * time.Millisecond,
+		MaxBackoff:  50 * time.Millisecond,
+		JitterMin:   1.0,
+		JitterMax:   1.0, // no jitter in tests
+	}
+}
+
 // newTestClient creates a ClaudeClient pointing at the given test server URL
 // with fast retry config.
 func newTestClient(url string) *ClaudeClient {
@@ -163,6 +173,34 @@ func TestCreateMessageStreaming_RetryOn429(t *testing.T) {
 		if n <= 1 {
 			w.WriteHeader(http.StatusTooManyRequests)
 			_, _ = fmt.Fprint(w, `{"error":{"type":"rate_limit","message":"too many requests"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, sseSuccessBody())
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv.URL)
+	resp, err := client.CreateMessageStreaming(context.Background(), "system", nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ID != "msg_test" {
+		t.Errorf("expected ID msg_test, got %s", resp.ID)
+	}
+	if attempts.Load() != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts.Load())
+	}
+}
+
+func TestCreateMessageStreaming_RetryOn529(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+		if n <= 1 {
+			w.WriteHeader(529)
+			_, _ = fmt.Fprint(w, `{"error":{"type":"overloaded","message":"overloaded"}}`)
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -443,6 +481,11 @@ func TestIsRetryableError(t *testing.T) {
 		{
 			name:     "LLMAPIError 500",
 			err:      &LLMAPIError{StatusCode: 500, Message: "internal server error"},
+			expected: true,
+		},
+		{
+			name:     "LLMAPIError 529 (Anthropic overloaded)",
+			err:      &LLMAPIError{StatusCode: 529, Message: "overloaded"},
 			expected: true,
 		},
 		{

@@ -56,16 +56,6 @@ func defaultLLMRetryConfig() llmRetryConfig {
 	}
 }
 
-func fastLLMRetryConfig() llmRetryConfig {
-	return llmRetryConfig{
-		MaxRetries:  3,
-		BaseBackoff: 10 * time.Millisecond,
-		MaxBackoff:  50 * time.Millisecond,
-		JitterMin:   1.0,
-		JitterMax:   1.0, // no jitter in tests
-	}
-}
-
 // ClaudeClient handles communication with the Claude API
 type ClaudeClient struct {
 	mode        APIMode
@@ -204,7 +194,8 @@ func isRetryableError(err error) bool {
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
 			http.StatusServiceUnavailable,
-			http.StatusGatewayTimeout:
+			http.StatusGatewayTimeout,
+			529: // Anthropic "overloaded"
 			return true
 		}
 	}
