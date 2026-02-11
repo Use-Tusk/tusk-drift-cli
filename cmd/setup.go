@@ -10,6 +10,8 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/agent"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -116,6 +118,13 @@ func getAnthropicAPIConfig() (*APIConfig, error) {
 		if err := authenticator.Login(ctx); err != nil {
 			return nil, fmt.Errorf("login failed: %w\n\nAlternatively, provide your own API key with --api-key or ANTHROPIC_API_KEY", err)
 		}
+		if err := persistUserIdentity(authenticator.AccessToken); err != nil {
+			log.Debug("Failed to persist user identity after login in setup", "error", err)
+		}
+	} else if cliconfig.CLIConfig.UserID == "" {
+		if err := persistUserIdentity(authenticator.AccessToken); err != nil {
+			log.Debug("Failed to persist user identity for existing auth in setup", "error", err)
+		}
 	}
 
 	return &APIConfig{
@@ -205,8 +214,6 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create agent: %w", err)
 	}
-
-	a.SetTracker(tracker)
 
 	ctx := context.Background()
 	if err := a.Run(ctx); err != nil {

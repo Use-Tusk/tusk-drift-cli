@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
@@ -52,7 +53,47 @@ func login(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// cacheAuthInfo fetches user/client info from the backend and caches it locally
+// persistUserIdentity fetches auth info and persists user identity to cli.json.
+// Does not print anything or prompt for org selection. Preserves existing org
+// selection; auto-selects if exactly one org is available.
+func persistUserIdentity(bearerToken string) error {
+	client := api.NewClient(api.GetBaseURL(), "")
+	authOpts := api.AuthOptions{BearerToken: bearerToken}
+
+	resp, err := client.GetAuthInfo(context.Background(), &backend.GetAuthInfoRequest{}, authOpts)
+	if err != nil {
+		return fmt.Errorf("failed to get auth info: %w", err)
+	}
+
+	cfg := cliconfig.CLIConfig
+	userID := resp.User.GetId()
+	userName := resp.User.GetName()
+	userEmail := api.UserEmail(resp.User)
+
+	// Preserve existing org selection; auto-select if exactly one org
+	selectedClientID := cfg.SelectedClientID
+	selectedClientName := cfg.SelectedClientName
+	if selectedClientID == "" && len(resp.Clients) == 1 {
+		selectedClientID = resp.Clients[0].Id
+		selectedClientName = "Unnamed"
+		if resp.Clients[0].Name != nil {
+			selectedClientName = *resp.Clients[0].Name
+		}
+	}
+
+	cfg.SetAuthInfo(userID, userName, userEmail, selectedClientID, selectedClientName)
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("failed to save CLI config: %w", err)
+	}
+
+	analytics.GlobalTracker.Alias(userID)
+	return nil
+}
+
+// cacheAuthInfo fetches user/client info from the backend, handles org
+// selection with user-facing output, and caches everything locally.
+// Used by `tusk auth login` which prints a "Fetching organization info..."
+// prefix before calling this.
 func cacheAuthInfo(bearerToken string) error {
 	client := api.NewClient(api.GetBaseURL(), "")
 	authOpts := api.AuthOptions{
@@ -69,16 +110,9 @@ func cacheAuthInfo(bearerToken string) error {
 	// Extract user info
 	userID := resp.User.GetId()
 	userName := resp.User.GetName()
-	userEmail := ""
-	if resp.User != nil {
-		if resp.User.CodeHostingUsername != nil {
-			userEmail = *resp.User.CodeHostingUsername
-		} else if resp.User.Email != nil {
-			userEmail = *resp.User.Email
-		}
-	}
+	userEmail := api.UserEmail(resp.User)
 
-	// Handle client selection
+	// Handle client selection with user-facing output
 	var selectedClientID, selectedClientName string
 	switch len(resp.Clients) {
 	case 1:
@@ -121,9 +155,7 @@ func cacheAuthInfo(bearerToken string) error {
 	}
 
 	// Alias anonymous ID to user ID in PostHog (only happens once per user)
-	if tracker := GetTracker(); tracker != nil && userID != "" {
-		tracker.Alias(userID)
-	}
+	analytics.GlobalTracker.Alias(userID)
 
 	return nil
 }

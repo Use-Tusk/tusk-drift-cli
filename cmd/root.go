@@ -27,9 +27,6 @@ var (
 	cleanupFuncs []func()
 	cleanupMutex sync.Mutex
 	signalSetup  sync.Once
-
-	// Analytics tracker for the current command
-	tracker *analytics.Tracker
 )
 
 //go:embed short_docs/overview.md
@@ -50,7 +47,7 @@ var rootCmd = &cobra.Command{
 		setupLogger()
 
 		// Initialize analytics tracker
-		tracker = analytics.NewTracker(cmd)
+		analytics.InitTracker(cmd)
 
 		return nil
 	},
@@ -61,12 +58,6 @@ var rootCmd = &cobra.Command{
 
 func Execute() error {
 	return rootCmd.Execute()
-}
-
-// GetTracker returns the analytics tracker for the current command
-// Used by main.go to track the command result
-func GetTracker() *analytics.Tracker {
-	return tracker
 }
 
 func showASCIIArt() {

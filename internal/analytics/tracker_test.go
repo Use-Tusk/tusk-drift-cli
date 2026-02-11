@@ -112,15 +112,15 @@ func TestTrackerNilSafety(t *testing.T) {
 	tracker.Close()
 }
 
-func TestNewTrackerWhenDisabled(t *testing.T) {
+func TestInitTrackerWhenDisabled(t *testing.T) {
 	// Disable analytics via env var
 	t.Setenv("TUSK_ANALYTICS_DISABLED", "1")
 
 	cmd := &cobra.Command{Use: "test"}
-	tracker := NewTracker(cmd)
+	tracker := InitTracker(cmd)
 
 	if tracker != nil {
-		t.Error("NewTracker() should return nil when analytics is disabled")
+		t.Error("InitTracker() should return nil when analytics is disabled")
 		tracker.Close()
 	}
 }
