@@ -178,8 +178,8 @@ func (c *Client) fetchAuthInfo() {
 // version — the forward-fixes in those files now handle both SetAuthInfo and
 // Alias directly.
 func (c *Client) backfillJWTIdentity() {
-	if c.config != nil && c.config.UserID != "" {
-		return // already resolved
+	if c.config == nil || c.config.UserID != "" {
+		return // already resolved or no config to backfill
 	}
 
 	c.jwtBackfillOnce.Do(func() {
