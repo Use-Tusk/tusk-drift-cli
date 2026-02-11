@@ -69,7 +69,7 @@ func fetchUserClients(m *Model, authenticator *auth.Authenticator) error {
 	m.IsLoggedIn = true
 	m.BearerToken = authenticator.AccessToken
 
-	if cliconfig.CLIConfig.UserID == "" {
+	if cliconfig.CLIConfig.UserID == "" && m.UserId != "" {
 		cfg := cliconfig.CLIConfig
 		cfg.SetAuthInfo(m.UserId, resp.User.GetName(), m.UserEmail, cfg.SelectedClientID, cfg.SelectedClientName)
 		_ = cfg.Save()
