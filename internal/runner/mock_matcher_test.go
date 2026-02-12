@@ -644,6 +644,56 @@ func TestFindBestMatchWithTracePriority_PgQuery_DoesNotUseSchemaFallback(t *test
 	assert.Nil(t, match)
 }
 
+func TestFindBestMatchWithTracePriority_SqlAlchemyQuery_DoesNotUseSchemaFallback(t *testing.T) {
+	cfg, _ := config.Get()
+	server, err := NewServer("svc", &cfg.Service)
+	require.NoError(t, err)
+	mm := NewMockMatcher(server)
+
+	traceID := "trace-sqlalchemy-no-schema-fallback"
+	pkg := "sqlalchemy"
+
+	// Generic SQL schema (high collision risk)
+	inputSchema := &core.JsonSchema{
+		Properties: map[string]*core.JsonSchema{
+			"query":      {},
+			"parameters": {},
+		},
+	}
+
+	// Two recorded spans with same schema, different queries
+	span1 := makeSpan(
+		t,
+		traceID,
+		"span-1",
+		pkg,
+		map[string]any{"query": "SELECT 1", "parameters": []any{}},
+		inputSchema,
+		1000,
+	)
+	span2 := makeSpan(
+		t,
+		traceID,
+		"span-2",
+		pkg,
+		map[string]any{"query": "SELECT 2", "parameters": []any{}},
+		inputSchema,
+		2000,
+	)
+
+	server.LoadSpansForTrace(traceID, []*core.Span{span1, span2})
+
+	// Request that doesn't match either span by value hash, but shares the schema.
+	req := makeMockRequest(t, pkg, map[string]any{"query": "SELECT 3", "parameters": []any{}}, inputSchema)
+	req.OutboundSpan.SubmoduleName = "query"
+	req.OutboundSpan.Name = "sqlalchemy.query"
+	req.OutboundSpan.IsPreAppStart = false
+
+	match, _, err := mm.FindBestMatchWithTracePriority(req, traceID)
+	require.Error(t, err)
+	assert.Nil(t, match)
+}
+
 // TestFindBestMatchWithTracePriority_SimilarityScoring_TiebreakByTimestamp tests that when similarity
 // scores are identical, the oldest span is picked
 func TestFindBestMatchWithTracePriority_SimilarityScoring_TiebreakByTimestamp(t *testing.T) {
