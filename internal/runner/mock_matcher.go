@@ -66,7 +66,7 @@ func NewMockMatcher(server *Server) *MockMatcher {
 }
 
 func shouldSkipSchemaFallbackMatching(req *core.GetMockRequest) bool {
-	// Guardrail: for DB spans like psycopg2.query, schema-based matching (priorities 7-10)
+	// Guardrail: for DB query spans like psycopg2.query/sqlalchemy.query, schema-based matching (priorities 7-10)
 	// is extremely high collision risk because many different SQL statements share the same schema:
 	// {"query": string, "parameters": array}. Similarity scoring can then pick an incorrect span
 	// and return a wrong row shape/value, which is worse than "no mock found".
@@ -82,7 +82,7 @@ func shouldSkipSchemaFallbackMatching(req *core.GetMockRequest) bool {
 	}
 
 	pkg := strings.ToLower(req.OutboundSpan.PackageName)
-	if pkg != "psycopg2" && pkg != "psycopg" {
+	if pkg != "psycopg2" && pkg != "psycopg" && pkg != "sqlalchemy" {
 		return false
 	}
 
