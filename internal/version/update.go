@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	latestVersionURL = "https://use-tusk.github.io/tusk-drift-cli/latest.json"
-	releaseURLFormat = "https://github.com/Use-Tusk/tusk-drift-cli/releases/download/%s/tusk-drift-cli_%s_%s_%s.%s"
+	latestVersionURL   = "https://use-tusk.github.io/tusk-drift-cli/latest.json"
+	releaseURLFormat   = "https://github.com/Use-Tusk/tusk-drift-cli/releases/download/%s/tusk-drift-cli_%s_%s_%s.%s"
+	homebrewUpgradeCmd = "brew upgrade use-tusk/tap/tusk"
 )
 
 // LatestRelease represents the response from the version check endpoint.
@@ -91,6 +92,13 @@ func PromptAndUpdate(release *LatestRelease) bool {
 
 	log.UserInfo(fmt.Sprintf("\nA new version of Tusk CLI is available: %s (current: %s)", release.Version, Version))
 	log.UserInfo(fmt.Sprintf("Release notes: %s", release.URL))
+
+	if installedViaHomebrew() {
+		log.UserInfo("\nTusk CLI was installed via Homebrew.")
+		log.UserInfo(fmt.Sprintf("Please update with: %s", homebrewUpgradeCmd))
+		return false
+	}
+
 	log.Print("\nWould you like to update now? [y/N]: ")
 
 	reader := bufio.NewReader(os.Stdin)
@@ -117,6 +125,13 @@ func AutoUpdate(release *LatestRelease) bool {
 
 	log.UserInfo(fmt.Sprintf("\nA new version of Tusk CLI is available: %s (current: %s)", release.Version, Version))
 	log.UserInfo(fmt.Sprintf("Release notes: %s", release.URL))
+
+	if installedViaHomebrew() {
+		log.UserInfo("\nTusk CLI was installed via Homebrew.")
+		log.UserInfo(fmt.Sprintf("Please update with: %s", homebrewUpgradeCmd))
+		return false
+	}
+
 	log.UserInfo("\nAuto-updating...")
 
 	return performUpdate(release)
@@ -139,12 +154,7 @@ func performUpdate(release *LatestRelease) bool {
 // SelfUpdate downloads and installs the specified release.
 func SelfUpdate(release *LatestRelease) error {
 	// Get the current executable path
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
-	}
-
-	execPath, err = filepath.EvalSymlinks(execPath)
+	execPath, err := getResolvedExecutablePath()
 	if err != nil {
 		return fmt.Errorf("failed to resolve executable path: %w", err)
 	}
@@ -213,6 +223,27 @@ func SelfUpdate(release *LatestRelease) error {
 	}
 
 	return nil
+}
+
+func getResolvedExecutablePath() (string, error) {
+	execPath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(execPath)
+}
+
+func installedViaHomebrew() bool {
+	execPath, err := getResolvedExecutablePath()
+	if err != nil {
+		return false
+	}
+	return isHomebrewPath(execPath)
+}
+
+func isHomebrewPath(execPath string) bool {
+	path := filepath.ToSlash(execPath)
+	return strings.Contains(path, "/Cellar/tusk/") || strings.Contains(path, "/Homebrew/Cellar/tusk/")
 }
 
 // getDownloadURL builds the download URL for the current platform.
