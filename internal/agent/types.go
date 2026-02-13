@@ -21,7 +21,7 @@ type Content struct {
 	Name      string          `json:"name,omitempty"`        // For tool_use
 	Input     json.RawMessage `json:"input,omitempty"`       // For tool_use
 	ToolUseID string          `json:"tool_use_id,omitempty"` // For tool_result
-	Content   string          `json:"content,omitempty"`     // For tool_result (as string)
+	Content   *string         `json:"content,omitempty"`     // For tool_result (as string)
 	IsError   bool            `json:"is_error,omitempty"`    // For tool_result
 }
 
