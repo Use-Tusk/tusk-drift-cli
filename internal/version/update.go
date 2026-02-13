@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	latestVersionURL = "https://use-tusk.github.io/tusk-drift-cli/latest.json"
-	releaseURLFormat = "https://github.com/Use-Tusk/tusk-drift-cli/releases/download/%s/tusk-drift-cli_%s_%s_%s.%s"
+	latestVersionURL   = "https://use-tusk.github.io/tusk-drift-cli/latest.json"
+	releaseURLFormat   = "https://github.com/Use-Tusk/tusk-drift-cli/releases/download/%s/tusk-drift-cli_%s_%s_%s.%s"
 	homebrewUpgradeCmd = "brew upgrade use-tusk/tap/tusk"
 )
 
