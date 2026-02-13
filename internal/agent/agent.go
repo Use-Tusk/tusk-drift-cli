@@ -47,6 +47,8 @@ const (
 )
 
 // RecoveryGuidance returns a message explaining how to resume after a failure
+func strPtr(s string) *string { return &s }
+
 func RecoveryGuidance() string {
 	return `Progress has been saved to .tusk/setup/PROGRESS.md
 Run 'tusk setup' again to continue where you left off.
@@ -906,7 +908,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 				results = append(results, Content{
 					Type:      "tool_result",
 					ToolUseID: c.ID,
-					Content:   fmt.Sprintf("Error: %s", err.Error()),
+					Content:   strPtr(fmt.Sprintf("Error: %s", err.Error())),
 					IsError:   true,
 				})
 				continue
@@ -965,7 +967,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 						results = append(results, Content{
 							Type:      "tool_result",
 							ToolUseID: c.ID,
-							Content:   "Error: User denied permission for this action. Please try a different approach.",
+							Content:   strPtr("Error: User denied permission for this action. Please try a different approach."),
 							IsError:   true,
 						})
 						continue
@@ -975,7 +977,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 						results = append(results, Content{
 							Type:      "tool_result",
 							ToolUseID: c.ID,
-							Content:   fmt.Sprintf("User denied this action and suggested: %s\n\nPlease follow the user's suggestion instead.", alternative),
+							Content:   strPtr(fmt.Sprintf("User denied this action and suggested: %s\n\nPlease follow the user's suggestion instead.", alternative)),
 							IsError:   true,
 						})
 						continue
@@ -993,7 +995,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 			results = append(results, Content{
 				Type:      "tool_result",
 				ToolUseID: c.ID,
-				Content:   fmt.Sprintf("Unknown tool: %s", c.Name),
+				Content:   strPtr(fmt.Sprintf("Unknown tool: %s", c.Name)),
 				IsError:   true,
 			})
 			continue
@@ -1024,7 +1026,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 			results = append(results, Content{
 				Type:      "tool_result",
 				ToolUseID: c.ID,
-				Content:   fmt.Sprintf("Error: tool execution timed out after %v", ToolTimeout),
+				Content:   strPtr(fmt.Sprintf("Error: tool execution timed out after %v", ToolTimeout)),
 				IsError:   true,
 			})
 		case res := <-resultCh:
@@ -1046,7 +1048,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 				results = append(results, Content{
 					Type:      "tool_result",
 					ToolUseID: c.ID,
-					Content:   fmt.Sprintf("Error: %s", res.err.Error()),
+					Content:   strPtr(fmt.Sprintf("Error: %s", res.err.Error())),
 					IsError:   true,
 				})
 			} else {
@@ -1057,7 +1059,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 				results = append(results, Content{
 					Type:      "tool_result",
 					ToolUseID: c.ID,
-					Content:   res.result,
+					Content:   strPtr(res.result),
 				})
 
 				// After successful transition_phase, update sidebar from confirmed state
@@ -1079,7 +1081,7 @@ func (a *Agent) handleAskUser(c Content) Content {
 		return Content{
 			Type:      "tool_result",
 			ToolUseID: c.ID,
-			Content:   fmt.Sprintf("Error: invalid input: %v", err),
+			Content:   strPtr(fmt.Sprintf("Error: invalid input: %v", err)),
 			IsError:   true,
 		}
 	}
@@ -1093,7 +1095,7 @@ func (a *Agent) handleAskUser(c Content) Content {
 		return Content{
 			Type:      "tool_result",
 			ToolUseID: c.ID,
-			Content:   "User cancelled input",
+			Content:   strPtr("User cancelled input"),
 			IsError:   true,
 		}
 	}
@@ -1105,7 +1107,7 @@ func (a *Agent) handleAskUser(c Content) Content {
 	return Content{
 		Type:      "tool_result",
 		ToolUseID: c.ID,
-		Content:   response,
+		Content:   strPtr(response),
 	}
 }
 
@@ -1118,7 +1120,7 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 		return Content{
 			Type:      "tool_result",
 			ToolUseID: c.ID,
-			Content:   fmt.Sprintf("Error: invalid input: %v", err),
+			Content:   strPtr(fmt.Sprintf("Error: invalid input: %v", err)),
 			IsError:   true,
 		}
 	}
@@ -1127,7 +1129,7 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 		return Content{
 			Type:      "tool_result",
 			ToolUseID: c.ID,
-			Content:   "Error: no options provided",
+			Content:   strPtr("Error: no options provided"),
 			IsError:   true,
 		}
 	}
@@ -1141,7 +1143,7 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 		return Content{
 			Type:      "tool_result",
 			ToolUseID: c.ID,
-			Content:   "User cancelled selection",
+			Content:   strPtr("User cancelled selection"),
 			IsError:   true,
 		}
 	}
@@ -1159,7 +1161,7 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 	return Content{
 		Type:      "tool_result",
 		ToolUseID: c.ID,
-		Content:   string(resultJSON),
+		Content:   strPtr(string(resultJSON)),
 	}
 }
 
