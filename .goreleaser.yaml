@@ -87,3 +87,19 @@ release:
     name: tusk-drift-cli
   draft: false
   prerelease: auto
+
+brews:
+  - name: tusk
+    repository:
+      owner: Use-Tusk
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/Use-Tusk/tusk-drift-cli
+    description: "CLI for recording and replaying API traffic tests with Tusk Drift"
+    license: Apache-2.0
+    commit_author:
+      name: github-actions[bot]
+      email: github-actions[bot]@users.noreply.github.com
+    test: |
+      system "#{bin}/tusk", "--version"

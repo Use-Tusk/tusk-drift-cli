@@ -64,7 +64,16 @@ Without these, sandboxing is disabled and replays run without network isolation.
 
 **Homebrew:**
 
-Coming soon.
+```bash
+brew tap use-tusk/tap
+brew install use-tusk/tap/tusk
+```
+
+To update:
+
+```bash
+brew upgrade use-tusk/tap/tusk
+```
 
 **Windows:**
 
