@@ -46,9 +46,9 @@ const (
 	ErrMaxTokens     = "exceeded maximum token usage"
 )
 
-// RecoveryGuidance returns a message explaining how to resume after a failure
 func strPtr(s string) *string { return &s }
 
+// RecoveryGuidance returns a message explaining how to resume after a failure
 func RecoveryGuidance() string {
 	return `Progress has been saved to .tusk/setup/PROGRESS.md
 Run 'tusk setup' again to continue where you left off.
