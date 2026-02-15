@@ -877,6 +877,68 @@ func BenchmarkExecutor_RunTestsConcurrently(b *testing.B) {
 	}
 }
 
+// TestExecutor_CancelTests_NoDataRace is a minimal repro for the data race that
+// existed between RunTestsConcurrently (which writes e.cancelTests) and CancelTests
+// (which reads and invokes e.cancelTests). The two operations ran in separate
+// goroutines without synchronisation, triggering the Go race detector.
+//
+// Run with: go test -race ./internal/runner/ -run TestExecutor_CancelTests_NoDataRace
+//
+// Before the fix (cancelTestsMu added in commit 3d1d0c8) this test would be
+// flagged as a DATA RACE by the race detector. After the fix it passes cleanly.
+func TestExecutor_CancelTests_NoDataRace(t *testing.T) {
+	// A fast server so the writer goroutine actually enters RunTestsConcurrently
+	// and stores the cancel function before the test finishes.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Tiny sleep so the two goroutines overlap in time.
+		time.Sleep(5 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Run many iterations: each one races a write (RunTestsConcurrently stores
+	// cancelTests) against a read (CancelTests loads cancelTests).
+	const iterations = 50
+	for i := 0; i < iterations; i++ {
+		executor := NewExecutor()
+		executor.serviceURL = server.URL
+		executor.SetTestTimeout(500 * time.Millisecond)
+
+		tests := []Test{
+			{TraceID: "race-t1", Request: Request{Method: "GET", Path: "/"}},
+			{TraceID: "race-t2", Request: Request{Method: "GET", Path: "/"}},
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Goroutine A: writes e.cancelTests inside RunTestsConcurrently.
+		go func() {
+			defer wg.Done()
+			_, _ = executor.RunTestsConcurrently(tests, 2)
+		}()
+
+		// Goroutine B: reads and invokes e.cancelTests inside CancelTests.
+		// Without the mutex these two goroutines race on the same field.
+		go func() {
+			defer wg.Done()
+			executor.CancelTests()
+		}()
+
+		wg.Wait()
+	}
+}
+
+// TestExecutor_CancelTests_BeforeRunIsNoop verifies that CancelTests is safe to
+// call before any test run has started (e.cancelTests is nil).
+func TestExecutor_CancelTests_BeforeRunIsNoop(t *testing.T) {
+	executor := NewExecutor()
+	// Must not panic when cancelTests has never been set.
+	assert.NotPanics(t, func() {
+		executor.CancelTests()
+	})
+}
+
 func BenchmarkCountPassedTests(b *testing.B) {
 	// Create test data
 	results := make([]TestResult, 1000)

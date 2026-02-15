@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Use-Tusk/fence/pkg/fence"
@@ -37,6 +38,7 @@ type Executor struct {
 	globalSpans            []*core.Span // Explicitly marked global spans for cross-trace matching
 	allowSuiteWideMatching bool         // When true, allows cross-trace matching from any suite span
 	cancelTests            context.CancelFunc
+	cancelTestsMu          sync.Mutex
 	disableSandbox         bool
 	debug                  bool
 	fenceManager           *fence.Manager
@@ -162,7 +164,9 @@ func (e *Executor) RunTestsConcurrently(tests []Test, maxConcurrency int) ([]Tes
 	defer cancel()
 
 	// Store cancel function so signal handler can call it
+	e.cancelTestsMu.Lock()
 	e.cancelTests = cancel
+	e.cancelTestsMu.Unlock()
 
 	testChan := make(chan Test, len(tests))
 	resultChan := make(chan TestResult, len(tests))
@@ -387,8 +391,11 @@ func (e *Executor) SetAllowSuiteWideMatching(enabled bool) {
 }
 
 func (e *Executor) CancelTests() {
-	if e.cancelTests != nil {
-		e.cancelTests()
+	e.cancelTestsMu.Lock()
+	cancel := e.cancelTests
+	e.cancelTestsMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 

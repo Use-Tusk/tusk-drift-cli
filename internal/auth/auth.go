@@ -45,7 +45,10 @@ type Authenticator struct {
 }
 
 func NewAuthenticator() (*Authenticator, error) {
-	cfgDir, _ := os.UserConfigDir()
+	cfgDir, err := os.UserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine user config directory: %w", err)
+	}
 	authPath := filepath.Join(cfgDir, "tusk", "auth.json")
 
 	cfg, err := config.Get()
@@ -279,7 +282,10 @@ func (a *Authenticator) RequestDeviceCode(ctx context.Context) (DeviceCodeRespon
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return dcr, fmt.Errorf("error reading device code response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return dcr, fmt.Errorf(
 			"error returned by device code endpoint %d: %s",
@@ -318,8 +324,11 @@ func (a *Authenticator) PollForToken(ctx context.Context, dcr DeviceCodeResponse
 		if err != nil {
 			return fmt.Errorf("error making request for token: %w", err)
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("error reading token response body: %w", err)
+		}
 
 		var tr tokenResp
 		if err := json.Unmarshal(body, &tr); err != nil {
@@ -372,7 +381,10 @@ func (a *Authenticator) FetchUserEmail(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	b, _ := io.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading userinfo response body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("userinfo http %d: %s", resp.StatusCode, string(b))
@@ -408,8 +420,11 @@ func (a *Authenticator) refreshAccessToken(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error requesting refresh token endpoint %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil {
+		return fmt.Errorf("error reading refresh token response body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("refresh http %d: %s", resp.StatusCode, string(body))
