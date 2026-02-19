@@ -1,0 +1,260 @@
+{
+  "examples": [
+    {
+      "id": "pre_app_start_value_hash_via_suite_p12",
+      "description": "Pre-app-start request with matching value hash in suite mocks — found at P12 via FindBestMatchAcrossTraces (allowSuiteWideMatching=false so P5 misses it)",
+      "tags": ["pre_app_start", "P12", "suite_scope"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-trace-unrelated",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {"method": "GET", "path": "/health"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite-preapp",
+          "traceId": "trace-init",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT version()"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "isPreAppStart": true,
+          "timestamp": "2025-01-01T00:00:00Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT version()"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            },
+            "isPreAppStart": true,
+            "traceId": "trace-1"
+          },
+          "expected": {
+            "matchedSpanId": "span-suite-preapp",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "GLOBAL"
+          }
+        }
+      ]
+    },
+    {
+      "id": "pre_app_start_schema_hash_via_suite_p14",
+      "description": "Pre-app-start request with no value match but schema match in suite mocks — found at P14 via FindBestMatchAcrossTraces",
+      "tags": ["pre_app_start", "P14", "suite_scope", "schema_match"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-trace-unrelated",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {"method": "GET", "path": "/health"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite-schema",
+          "traceId": "trace-init",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT table_name FROM information_schema.tables WHERE table_schema = $1",
+            "parameters": ["public"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "isPreAppStart": true,
+          "timestamp": "2025-01-01T00:00:00Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT table_name FROM information_schema.tables WHERE table_schema = $1",
+              "parameters": ["app_schema"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            },
+            "isPreAppStart": true,
+            "traceId": "trace-1"
+          },
+          "expected": {
+            "matchedSpanId": "span-suite-schema",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "GLOBAL"
+          }
+        }
+      ]
+    },
+    {
+      "id": "pre_app_start_runtime_request_rejects_preapp_mock",
+      "description": "Non-pre-app-start request does NOT match pre-app-start suite mock — filterByPreAppStart rejects",
+      "tags": ["pre_app_start", "filtering", "no_match"],
+      "config": {
+        "allowSuiteWideMatching": true
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-trace-unrelated",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {"method": "GET", "path": "/health"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite-preapp",
+          "traceId": "trace-init",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "isPreAppStart": true,
+          "timestamp": "2025-01-01T00:00:00Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            },
+            "isPreAppStart": false,
+            "traceId": "trace-1"
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "pre_app_start_preapp_request_rejects_runtime_mock",
+      "description": "Pre-app-start request does NOT match non-pre-app-start suite mock — filterByPreAppStart rejects in both P5 and P12-P15",
+      "tags": ["pre_app_start", "filtering", "no_match"],
+      "config": {
+        "allowSuiteWideMatching": true
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-trace-unrelated",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {"method": "GET", "path": "/health"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite-runtime",
+          "traceId": "trace-other",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "isPreAppStart": false,
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            },
+            "isPreAppStart": true,
+            "traceId": "trace-1"
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    }
+  ]
+}

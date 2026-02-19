@@ -1,0 +1,306 @@
+{
+  "examples": [
+    {
+      "id": "graphql_whitespace_normalization_matched",
+      "description": "Same GraphQL query with different brace/whitespace formatting — matched after GQL normalization (P7)",
+      "tags": ["graphql", "P7", "normalization"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-gql",
+          "traceId": "trace-1",
+          "packageName": "https",
+          "inputValue": {
+            "method": "POST",
+            "hostname": "api.example.com",
+            "path": "/graphql",
+            "body": {
+              "query": "query{user(id: $id){id name email}}",
+              "variables": {"id": 1}
+            }
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"},
+              "body": {
+                "type": "OBJECT",
+                "properties": {
+                  "query": {"type": "STRING"},
+                  "variables": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "id": {"type": "NUMBER"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "https",
+            "inputValue": {
+              "method": "POST",
+              "hostname": "api.example.com",
+              "path": "/graphql",
+              "body": {
+                "query": "query { user(id: $id) { id name email } }",
+                "variables": {"id": 2}
+              }
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"},
+                "body": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "query": {"type": "STRING"},
+                    "variables": {
+                      "type": "OBJECT",
+                      "properties": {
+                        "id": {"type": "NUMBER"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-gql",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "graphql_different_queries_rejected",
+      "description": "Same schema hash but different GraphQL queries — rejected by GQL normalization guard, no match",
+      "tags": ["graphql", "P7", "guard"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-user-query",
+          "traceId": "trace-1",
+          "packageName": "https",
+          "inputValue": {
+            "method": "POST",
+            "hostname": "api.example.com",
+            "path": "/graphql",
+            "body": {
+              "query": "query { user(id: $id) { id name } }",
+              "variables": {"id": 1}
+            }
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"},
+              "body": {
+                "type": "OBJECT",
+                "properties": {
+                  "query": {"type": "STRING"},
+                  "variables": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "id": {"type": "NUMBER"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "https",
+            "inputValue": {
+              "method": "POST",
+              "hostname": "api.example.com",
+              "path": "/graphql",
+              "body": {
+                "query": "query { order(id: $id) { id total status } }",
+                "variables": {"id": 1}
+              }
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"},
+                "body": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "query": {"type": "STRING"},
+                    "variables": {
+                      "type": "OBJECT",
+                      "properties": {
+                        "id": {"type": "NUMBER"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "graphql_same_query_different_variables_similarity",
+      "description": "Two mocks with same GQL query but different variables — GQL guard passes, similarity picks closest by string distance (P7)",
+      "tags": ["graphql", "P7", "similarity"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-alice",
+          "traceId": "trace-1",
+          "packageName": "https",
+          "inputValue": {
+            "method": "POST",
+            "hostname": "api.example.com",
+            "path": "/graphql",
+            "body": {
+              "query": "query { user(id: $id) { id name } }",
+              "variables": {"username": "alice_smith", "role": "admin"}
+            }
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"},
+              "body": {
+                "type": "OBJECT",
+                "properties": {
+                  "query": {"type": "STRING"},
+                  "variables": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "username": {"type": "STRING"},
+                      "role": {"type": "STRING"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-bob",
+          "traceId": "trace-1",
+          "packageName": "https",
+          "inputValue": {
+            "method": "POST",
+            "hostname": "api.example.com",
+            "path": "/graphql",
+            "body": {
+              "query": "query { user(id: $id) { id name } }",
+              "variables": {"username": "bob_jones", "role": "viewer"}
+            }
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"},
+              "body": {
+                "type": "OBJECT",
+                "properties": {
+                  "query": {"type": "STRING"},
+                  "variables": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "username": {"type": "STRING"},
+                      "role": {"type": "STRING"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "https",
+            "inputValue": {
+              "method": "POST",
+              "hostname": "api.example.com",
+              "path": "/graphql",
+              "body": {
+                "query": "query { user(id: $id) { id name } }",
+                "variables": {"username": "bob_jones_jr", "role": "viewer"}
+              }
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"},
+                "body": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "query": {"type": "STRING"},
+                    "variables": {
+                      "type": "OBJECT",
+                      "properties": {
+                        "username": {"type": "STRING"},
+                        "role": {"type": "STRING"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-bob",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    }
+  ]
+}

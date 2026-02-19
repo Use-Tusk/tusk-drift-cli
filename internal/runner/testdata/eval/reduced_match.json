@@ -1,0 +1,269 @@
+{
+  "examples": [
+    {
+      "id": "reduced_match_importance_zero_field_differs",
+      "description": "Exact hash differs due to matchImportance=0 field (requestId), but reduced hash matches after stripping it — P3",
+      "tags": ["reduced_match", "P3", "matchImportance"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM users WHERE id = $1",
+            "parameters": ["user-100"],
+            "requestId": "req-abc-original"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+              "requestId": {"type": "STRING", "matchImportance": 0}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM users WHERE id = $1",
+              "parameters": ["user-100"],
+              "requestId": "req-xyz-different"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+                "requestId": {"type": "STRING", "matchImportance": 0}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_VALUE_HASH_REDUCED_SCHEMA",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reduced_match_unused_then_used",
+      "description": "Two mocks with same reduced hash (differ in matchImportance=0 field) — first two requests get unused (P3), third falls to used (P4)",
+      "tags": ["reduced_match", "P3", "P4", "consumption"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-a",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "INSERT INTO logs (msg) VALUES ($1)",
+            "parameters": ["hello"],
+            "timestamp": "2025-01-01T10:00:00Z"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+              "timestamp": {"type": "STRING", "matchImportance": 0}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-b",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "INSERT INTO logs (msg) VALUES ($1)",
+            "parameters": ["hello"],
+            "timestamp": "2025-01-01T10:05:00Z"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+              "timestamp": {"type": "STRING", "matchImportance": 0}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "INSERT INTO logs (msg) VALUES ($1)",
+              "parameters": ["hello"],
+              "timestamp": "2025-01-01T11:00:00Z"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+                "timestamp": {"type": "STRING", "matchImportance": 0}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-a",
+            "matchType": "INPUT_VALUE_HASH_REDUCED_SCHEMA",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "INSERT INTO logs (msg) VALUES ($1)",
+              "parameters": ["hello"],
+              "timestamp": "2025-01-01T12:00:00Z"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+                "timestamp": {"type": "STRING", "matchImportance": 0}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-b",
+            "matchType": "INPUT_VALUE_HASH_REDUCED_SCHEMA",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "INSERT INTO logs (msg) VALUES ($1)",
+              "parameters": ["hello"],
+              "timestamp": "2025-01-01T13:00:00Z"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+                "timestamp": {"type": "STRING", "matchImportance": 0}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-a",
+            "matchType": "INPUT_VALUE_HASH_REDUCED_SCHEMA",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reduced_match_nested_importance_zero",
+      "description": "Nested object with inner field at matchImportance=0 — reduced hash strips it recursively (P3)",
+      "tags": ["reduced_match", "P3", "matchImportance", "nested"],
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {
+            "method": "POST",
+            "path": "/api/events",
+            "body": {
+              "eventType": "click",
+              "metadata": {
+                "sessionId": "sess-abc-original"
+              }
+            }
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "path": {"type": "STRING"},
+              "body": {
+                "type": "OBJECT",
+                "properties": {
+                  "eventType": {"type": "STRING"},
+                  "metadata": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "sessionId": {"type": "STRING", "matchImportance": 0}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "http",
+            "inputValue": {
+              "method": "POST",
+              "path": "/api/events",
+              "body": {
+                "eventType": "click",
+                "metadata": {
+                  "sessionId": "sess-xyz-different"
+                }
+              }
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "path": {"type": "STRING"},
+                "body": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "eventType": {"type": "STRING"},
+                    "metadata": {
+                      "type": "OBJECT",
+                      "properties": {
+                        "sessionId": {"type": "STRING", "matchImportance": 0}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_VALUE_HASH_REDUCED_SCHEMA",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    }
+  ]
+}
