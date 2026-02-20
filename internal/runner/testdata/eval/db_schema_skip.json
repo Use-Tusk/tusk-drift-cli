@@ -3,7 +3,6 @@
     {
       "id": "db_schema_skip_psycopg2_query",
       "description": "psycopg2 query span with no exact/reduced match — skips P7-P10 schema fallback (high collision risk), returns no match",
-      "tags": ["db_schema_skip", "psycopg2", "no_match"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -57,7 +56,6 @@
     {
       "id": "db_schema_skip_sqlalchemy_query",
       "description": "sqlalchemy query span with no exact/reduced match — skips P7-P10 schema fallback, returns no match",
-      "tags": ["db_schema_skip", "sqlalchemy", "no_match"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -111,7 +109,6 @@
     {
       "id": "db_schema_skip_psycopg2_preapp_exemption",
       "description": "psycopg2 pre-app-start request — guardrail disabled, schema fallback proceeds and matches at P7",
-      "tags": ["db_schema_skip", "psycopg2", "pre_app_start", "P7", "exemption"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -167,7 +164,6 @@
     {
       "id": "db_schema_skip_non_psycopg_not_skipped",
       "description": "Non-psycopg package (pg) with no exact match — does NOT skip schema fallback, matches at P7",
-      "tags": ["db_schema_skip", "pg", "P7"],
       "config": {
         "allowSuiteWideMatching": false
       },

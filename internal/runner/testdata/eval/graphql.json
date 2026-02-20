@@ -3,7 +3,6 @@
     {
       "id": "graphql_whitespace_normalization_matched",
       "description": "Same GraphQL query with different brace/whitespace formatting — matched after GQL normalization (P7)",
-      "tags": ["graphql", "P7", "normalization"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -91,7 +90,6 @@
     {
       "id": "graphql_different_queries_rejected",
       "description": "Same schema hash but different GraphQL queries — rejected by GQL normalization guard, no match",
-      "tags": ["graphql", "P7", "guard"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -179,7 +177,6 @@
     {
       "id": "graphql_same_query_different_variables_similarity",
       "description": "Two mocks with same GQL query but different variables — GQL guard passes, similarity picks closest by string distance (P7)",
-      "tags": ["graphql", "P7", "similarity"],
       "config": {
         "allowSuiteWideMatching": false
       },

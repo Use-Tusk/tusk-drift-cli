@@ -3,7 +3,6 @@
     {
       "id": "suite_exact_value_hash_match",
       "description": "No match in trace mocks, but exact value hash match in suite mocks — P5 (validation mode)",
-      "tags": ["suite_scope", "P5"],
       "config": {
         "allowSuiteWideMatching": true
       },
@@ -64,7 +63,6 @@
     {
       "id": "suite_reduced_value_hash_match",
       "description": "No match in trace, reduced value hash match in suite mocks (matchImportance=0 field differs) — P6",
-      "tags": ["suite_scope", "P6", "matchImportance"],
       "config": {
         "allowSuiteWideMatching": true
       },
@@ -135,7 +133,6 @@
     {
       "id": "suite_trace_preferred_over_suite",
       "description": "Matching mock exists in both trace and suite — trace match (P1) preferred over suite (P5)",
-      "tags": ["suite_scope", "P1", "priority_ordering"],
       "config": {
         "allowSuiteWideMatching": true
       },
@@ -193,7 +190,6 @@
     {
       "id": "suite_pre_app_start_filtering_rejects_mismatch",
       "description": "Non-pre-app-start request does NOT match pre-app-start suite mock (filterByPreAppStart rejects)",
-      "tags": ["suite_scope", "P5", "pre_app_start", "filtering"],
       "config": {
         "allowSuiteWideMatching": true
       },

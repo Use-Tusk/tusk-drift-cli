@@ -51,7 +51,7 @@ func convertEvalSpan(t *testing.T, es EvalSpan) *core.Span {
 
 	protoSchema := convertJsonSchemaEval(es.InputSchema)
 
-	var inputValueStruct = toStruct(t, es.InputValue)
+	inputValueStruct := toStruct(t, es.InputValue)
 
 	inputValueHash := es.InputValueHash
 	if inputValueHash == "" && es.InputValue != nil {
@@ -90,7 +90,7 @@ func convertEvalRequest(t *testing.T, er EvalRequestData) *core.GetMockRequest {
 
 	protoSchema := convertJsonSchemaEval(er.InputSchema)
 
-	var inputValueStruct = toStruct(t, er.InputValue)
+	inputValueStruct := toStruct(t, er.InputValue)
 
 	inputValueHash := er.InputValueHash
 	if inputValueHash == "" && er.InputValue != nil {
@@ -167,7 +167,7 @@ func TestMockMatcherEval(t *testing.T) {
 
 	var allExamples []EvalExample
 	for _, f := range files {
-		data, err := os.ReadFile(f)
+		data, err := os.ReadFile(f) //nolint:gosec // test-only: path from filepath.Glob on static dir
 		require.NoError(t, err, "failed to read %s", f)
 
 		var evalFile EvalFile
@@ -182,7 +182,6 @@ func TestMockMatcherEval(t *testing.T) {
 	// Track results for summary
 	type evalResult struct {
 		id     string
-		tags   []string
 		passed bool
 	}
 	var results []evalResult
@@ -270,7 +269,6 @@ func TestMockMatcherEval(t *testing.T) {
 
 		results = append(results, evalResult{
 			id:     example.ID,
-			tags:   example.Tags,
 			passed: passed,
 		})
 	}
@@ -278,32 +276,16 @@ func TestMockMatcherEval(t *testing.T) {
 	// Print summary
 	passCount := 0
 	failCount := 0
-	tagStats := make(map[string][2]int) // [pass, fail]
 	for _, r := range results {
 		if r.passed {
 			passCount++
 		} else {
 			failCount++
 		}
-		for _, tag := range r.tags {
-			stats := tagStats[tag]
-			if r.passed {
-				stats[0]++
-			} else {
-				stats[1]++
-			}
-			tagStats[tag] = stats
-		}
 	}
 
 	t.Log("=== EVAL SUMMARY ===")
 	t.Logf("Total: %d passed, %d failed, %d examples", passCount, failCount, len(results))
-	if len(tagStats) > 0 {
-		t.Log("By tag:")
-		for tag, stats := range tagStats {
-			t.Logf("  %s: %d passed, %d failed", tag, stats[0], stats[1])
-		}
-	}
 	if failCount > 0 {
 		t.Log("Failed examples:")
 		for _, r := range results {

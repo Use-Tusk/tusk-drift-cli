@@ -3,7 +3,6 @@
     {
       "id": "schema_match_similarity_picks_best",
       "description": "Two mocks share schema hash but different values — similarity scoring picks the mock with the more similar query (P7)",
-      "tags": ["schema_match", "P7", "similarity"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -72,7 +71,6 @@
     {
       "id": "schema_match_tiebreaker_oldest_timestamp",
       "description": "Two mocks with identical values (equal similarity to request) — tiebreaker picks oldest by timestamp (P7)",
-      "tags": ["schema_match", "P7", "tiebreaker", "timestamp_ordering"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -141,7 +139,6 @@
     {
       "id": "schema_match_unused_then_used",
       "description": "Single mock with matching schema — first request consumes at P7 (unused), second request matches at P8 (used)",
-      "tags": ["schema_match", "P7", "P8", "consumption"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -214,7 +211,6 @@
     {
       "id": "schema_match_single_candidate_no_similarity",
       "description": "Only one mock with matching schema hash — matched directly at P7 without similarity scoring",
-      "tags": ["schema_match", "P7"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -283,7 +279,6 @@
     {
       "id": "schema_match_low_similarity_still_picks",
       "description": "Single schema match candidate with low similarity — still matched because it is the only candidate at P7",
-      "tags": ["schema_match", "P7", "low_similarity"],
       "config": {
         "allowSuiteWideMatching": false
       },

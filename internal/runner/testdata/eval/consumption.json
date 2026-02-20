@@ -3,7 +3,6 @@
     {
       "id": "consumption_three_identical_in_timestamp_order",
       "description": "Three identical requests consume three identical mocks in timestamp order (P1)",
-      "tags": ["consumption", "P1", "timestamp_ordering"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -107,7 +106,6 @@
     {
       "id": "consumption_two_requests_one_mock",
       "description": "Two identical requests but only one mock — first gets unused (P1), second gets used (P2)",
-      "tags": ["consumption", "P1", "P2"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -168,7 +166,6 @@
     {
       "id": "consumption_exact_then_schema_not_starved",
       "description": "First request matches exact (P1), second has no exact match and falls to schema (P7) — exact consumption doesn't starve schema",
-      "tags": ["consumption", "P1", "P7", "cross_priority"],
       "config": {
         "allowSuiteWideMatching": false
       },

@@ -3,7 +3,6 @@
     {
       "id": "exact_match_single_mock",
       "description": "Request hash matches a single mock exactly at Priority 1 (unused span by input value hash)",
-      "tags": ["exact_match", "P1"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -49,7 +48,6 @@
     {
       "id": "exact_match_picks_oldest_unused",
       "description": "Two mocks with same input value hash but different timestamps — matcher picks the oldest unused span (P1)",
-      "tags": ["exact_match", "P1", "timestamp_ordering"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -106,7 +104,6 @@
     {
       "id": "exact_match_consumption_then_used_fallback",
       "description": "Two mocks with same hash — first two requests consume unused (P1), third falls back to used (P2)",
-      "tags": ["exact_match", "P1", "P2", "consumption"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -197,7 +194,6 @@
     {
       "id": "exact_match_picks_correct_among_many",
       "description": "Multiple mocks with different hashes — matcher picks the one with the matching hash (P1)",
-      "tags": ["exact_match", "P1"],
       "config": {
         "allowSuiteWideMatching": false
       },

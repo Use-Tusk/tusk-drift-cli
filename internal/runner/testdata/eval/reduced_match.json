@@ -3,7 +3,6 @@
     {
       "id": "reduced_match_importance_zero_field_differs",
       "description": "Exact hash differs due to matchImportance=0 field (requestId), but reduced hash matches after stripping it — P3",
-      "tags": ["reduced_match", "P3", "matchImportance"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -59,7 +58,6 @@
     {
       "id": "reduced_match_unused_then_used",
       "description": "Two mocks with same reduced hash (differ in matchImportance=0 field) — first two requests get unused (P3), third falls to used (P4)",
-      "tags": ["reduced_match", "P3", "P4", "consumption"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -180,7 +178,6 @@
     {
       "id": "reduced_match_nested_importance_zero",
       "description": "Nested object with inner field at matchImportance=0 — reduced hash strips it recursively (P3)",
-      "tags": ["reduced_match", "P3", "matchImportance", "nested"],
       "config": {
         "allowSuiteWideMatching": false
       },

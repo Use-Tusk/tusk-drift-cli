@@ -3,7 +3,6 @@
     {
       "id": "no_match_empty_mocks",
       "description": "No mocks loaded at all — no match possible",
-      "tags": ["no_match"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -33,7 +32,6 @@
     {
       "id": "no_match_different_value_and_schema",
       "description": "Mocks exist with same package but completely different value hash AND schema hash — no match",
-      "tags": ["no_match"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -81,7 +79,6 @@
     {
       "id": "no_match_http_method_mismatch_sole_candidate",
       "description": "Single HTTP mock exists but method mismatch — HTTP shape rejects it, no other candidates, no match",
-      "tags": ["no_match", "http_shape"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -137,7 +134,6 @@
     {
       "id": "no_match_cross_protocol_no_interference",
       "description": "Mocks exist for different packages (http, redis) — request for pg has no match despite mocks existing",
-      "tags": ["no_match", "cross_protocol"],
       "config": {
         "allowSuiteWideMatching": false
       },

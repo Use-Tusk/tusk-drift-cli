@@ -9,7 +9,6 @@ type EvalFile struct {
 type EvalExample struct {
 	ID          string        `json:"id"`
 	Description string        `json:"description"`
-	Tags        []string      `json:"tags"`
 	Config      EvalConfig    `json:"config"`
 	TraceMocks  []EvalSpan    `json:"traceMocks"`
 	SuiteMocks  []EvalSpan    `json:"suiteMocks"`

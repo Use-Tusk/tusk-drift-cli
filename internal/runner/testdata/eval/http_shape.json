@@ -3,7 +3,6 @@
     {
       "id": "http_shape_method_mismatch_rejected",
       "description": "Same schema hash but different HTTP method — schema match rejected by HTTP shape validation, no match",
-      "tags": ["http_shape", "P7", "method"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -59,7 +58,6 @@
     {
       "id": "http_shape_path_mismatch_rejected",
       "description": "Same schema hash, same method, but different path — rejected by HTTP shape validation, no match",
-      "tags": ["http_shape", "P7", "path"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -115,7 +113,6 @@
     {
       "id": "http_shape_host_mismatch_rejected",
       "description": "Same schema hash, same method and path, but different hostname — rejected by HTTP shape validation",
-      "tags": ["http_shape", "P7", "hostname"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -171,7 +168,6 @@
     {
       "id": "http_shape_same_query_keys_different_values_matched",
       "description": "Same method/path/host, same query parameter keys but different values — matched at P7 (only keys matter)",
-      "tags": ["http_shape", "P7", "query_params"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -227,7 +223,6 @@
     {
       "id": "http_shape_different_query_keys_rejected",
       "description": "Same method/path/host but different query parameter key sets — rejected by HTTP shape validation",
-      "tags": ["http_shape", "P7", "query_params"],
       "config": {
         "allowSuiteWideMatching": false
       },

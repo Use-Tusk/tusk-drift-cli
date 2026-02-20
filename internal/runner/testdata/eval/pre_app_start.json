@@ -3,7 +3,6 @@
     {
       "id": "pre_app_start_value_hash_via_suite_p12",
       "description": "Pre-app-start request with matching value hash in suite mocks — found at P12 via FindBestMatchAcrossTraces (allowSuiteWideMatching=false so P5 misses it)",
-      "tags": ["pre_app_start", "P12", "suite_scope"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -65,7 +64,6 @@
     {
       "id": "pre_app_start_schema_hash_via_suite_p14",
       "description": "Pre-app-start request with no value match but schema match in suite mocks — found at P14 via FindBestMatchAcrossTraces",
-      "tags": ["pre_app_start", "P14", "suite_scope", "schema_match"],
       "config": {
         "allowSuiteWideMatching": false
       },
@@ -135,7 +133,6 @@
     {
       "id": "pre_app_start_runtime_request_rejects_preapp_mock",
       "description": "Non-pre-app-start request does NOT match pre-app-start suite mock — filterByPreAppStart rejects",
-      "tags": ["pre_app_start", "filtering", "no_match"],
       "config": {
         "allowSuiteWideMatching": true
       },
@@ -197,7 +194,6 @@
     {
       "id": "pre_app_start_preapp_request_rejects_runtime_mock",
       "description": "Pre-app-start request does NOT match non-pre-app-start suite mock — filterByPreAppStart rejects in both P5 and P12-P15",
-      "tags": ["pre_app_start", "filtering", "no_match"],
       "config": {
         "allowSuiteWideMatching": true
       },
