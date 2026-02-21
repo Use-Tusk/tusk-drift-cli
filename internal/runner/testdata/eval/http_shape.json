@@ -1,0 +1,279 @@
+{
+  "examples": [
+    {
+      "id": "http_shape_method_mismatch_rejected",
+      "description": "Same schema hash but different HTTP method — schema match rejected by HTTP shape validation, no match",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-post",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {
+            "method": "POST",
+            "hostname": "api.example.com",
+            "path": "/api/users"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "http",
+            "inputValue": {
+              "method": "GET",
+              "hostname": "api.example.com",
+              "path": "/api/users"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "http_shape_path_mismatch_rejected",
+      "description": "Same schema hash, same method, but different path — rejected by HTTP shape validation, no match",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-orders",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {
+            "method": "GET",
+            "hostname": "api.example.com",
+            "path": "/api/orders"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "http",
+            "inputValue": {
+              "method": "GET",
+              "hostname": "api.example.com",
+              "path": "/api/users"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "http_shape_host_mismatch_rejected",
+      "description": "Same schema hash, same method and path, but different hostname — rejected by HTTP shape validation",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-staging",
+          "traceId": "trace-1",
+          "packageName": "https",
+          "inputValue": {
+            "method": "GET",
+            "hostname": "staging.example.com",
+            "path": "/api/users"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "https",
+            "inputValue": {
+              "method": "GET",
+              "hostname": "production.example.com",
+              "path": "/api/users"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "http_shape_same_query_keys_different_values_matched",
+      "description": "Same method/path/host, same query parameter keys but different values — matched at P7 (only keys matter)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {
+            "method": "GET",
+            "hostname": "api.example.com",
+            "path": "/api/users?page=1&limit=10"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "http",
+            "inputValue": {
+              "method": "GET",
+              "hostname": "api.example.com",
+              "path": "/api/users?page=3&limit=25"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "http_shape_different_query_keys_rejected",
+      "description": "Same method/path/host but different query parameter key sets — rejected by HTTP shape validation",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {
+            "method": "GET",
+            "hostname": "api.example.com",
+            "path": "/api/users?page=1&limit=10"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "http",
+            "inputValue": {
+              "method": "GET",
+              "hostname": "api.example.com",
+              "path": "/api/users?page=1&sort=name"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    }
+  ]
+}

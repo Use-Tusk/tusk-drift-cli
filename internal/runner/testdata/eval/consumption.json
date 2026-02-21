@@ -1,0 +1,256 @@
+{
+  "examples": [
+    {
+      "id": "consumption_three_identical_in_timestamp_order",
+      "description": "Three identical requests consume three identical mocks in timestamp order (P1)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-t1",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-t2",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        },
+        {
+          "spanId": "span-t3",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:03Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-t1",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-t2",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-t3",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "consumption_two_requests_one_mock",
+      "description": "Two identical requests but only one mock — first gets unused (P1), second gets used (P2)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-only",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT NOW()"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT NOW()"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-only",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT NOW()"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-only",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "consumption_exact_then_schema_not_starved",
+      "description": "First request matches exact (P1), second has no exact match and falls to schema (P7) — exact consumption doesn't starve schema",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-exact",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM users WHERE id = $1",
+            "parameters": ["user-100"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-schema-only",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM orders WHERE user_id = $1",
+            "parameters": ["user-100"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM users WHERE id = $1",
+              "parameters": ["user-100"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-exact",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM orders WHERE user_id = $1",
+              "parameters": ["user-200"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-schema-only",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    }
+  ]
+}

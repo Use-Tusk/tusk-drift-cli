@@ -1,0 +1,236 @@
+{
+  "examples": [
+    {
+      "id": "suite_exact_value_hash_match",
+      "description": "No match in trace mocks, but exact value hash match in suite mocks — P5 (validation mode)",
+      "config": {
+        "allowSuiteWideMatching": true
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-trace-different",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM products WHERE id = $1", "parameters": ["prod-1"]},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite-match",
+          "traceId": "trace-other",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM users WHERE id = $1", "parameters": ["user-100"]},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT * FROM users WHERE id = $1", "parameters": ["user-100"]},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-suite-match",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "GLOBAL"
+          }
+        }
+      ]
+    },
+    {
+      "id": "suite_reduced_value_hash_match",
+      "description": "No match in trace, reduced value hash match in suite mocks (matchImportance=0 field differs) — P6",
+      "config": {
+        "allowSuiteWideMatching": true
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-trace-unrelated",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM products", "parameters": []},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite-reduced",
+          "traceId": "trace-other",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM users WHERE id = $1",
+            "parameters": ["user-100"],
+            "requestId": "req-original"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+              "requestId": {"type": "STRING", "matchImportance": 0}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM users WHERE id = $1",
+              "parameters": ["user-100"],
+              "requestId": "req-different"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}},
+                "requestId": {"type": "STRING", "matchImportance": 0}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-suite-reduced",
+            "matchType": "INPUT_VALUE_HASH_REDUCED_SCHEMA",
+            "matchScope": "GLOBAL"
+          }
+        }
+      ]
+    },
+    {
+      "id": "suite_trace_preferred_over_suite",
+      "description": "Matching mock exists in both trace and suite — trace match (P1) preferred over suite (P5)",
+      "config": {
+        "allowSuiteWideMatching": true
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-trace",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite",
+          "traceId": "trace-other",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-trace",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "suite_pre_app_start_filtering_rejects_mismatch",
+      "description": "Non-pre-app-start request does NOT match pre-app-start suite mock (filterByPreAppStart rejects)",
+      "config": {
+        "allowSuiteWideMatching": true
+      },
+      "traceMocks": [],
+      "suiteMocks": [
+        {
+          "spanId": "span-suite-preapp",
+          "traceId": "trace-other",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "isPreAppStart": true,
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            },
+            "isPreAppStart": false
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    }
+  ]
+}

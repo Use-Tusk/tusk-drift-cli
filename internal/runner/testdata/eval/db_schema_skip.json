@@ -1,0 +1,216 @@
+{
+  "examples": [
+    {
+      "id": "db_schema_skip_psycopg2_query",
+      "description": "psycopg2 query span with no exact/reduced match — skips P7-P10 schema fallback (high collision risk), returns no match",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "psycopg2",
+          "submoduleName": "query",
+          "inputValue": {
+            "query": "SELECT * FROM users WHERE id = %s",
+            "parameters": ["user-100"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "psycopg2",
+            "submoduleName": "query",
+            "inputValue": {
+              "query": "SELECT * FROM orders WHERE user_id = %s",
+              "parameters": ["user-200"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "db_schema_skip_sqlalchemy_query",
+      "description": "sqlalchemy query span with no exact/reduced match — skips P7-P10 schema fallback, returns no match",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "sqlalchemy",
+          "name": "sqlalchemy.query",
+          "inputValue": {
+            "query": "SELECT users.id, users.name FROM users WHERE users.active = :1",
+            "parameters": ["true"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "sqlalchemy",
+            "name": "sqlalchemy.query",
+            "inputValue": {
+              "query": "SELECT orders.id, orders.total FROM orders WHERE orders.status = :1",
+              "parameters": ["pending"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "db_schema_skip_psycopg2_preapp_exemption",
+      "description": "psycopg2 pre-app-start request — guardrail disabled, schema fallback proceeds and matches at P7",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "psycopg2",
+          "submoduleName": "query",
+          "inputValue": {
+            "query": "SELECT version()",
+            "parameters": []
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "isPreAppStart": true,
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "psycopg2",
+            "submoduleName": "query",
+            "inputValue": {
+              "query": "SELECT current_database()",
+              "parameters": []
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            },
+            "isPreAppStart": true
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "db_schema_skip_non_psycopg_not_skipped",
+      "description": "Non-psycopg package (pg) with no exact match — does NOT skip schema fallback, matches at P7",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM users WHERE id = $1",
+            "parameters": ["user-100"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM users WHERE id = $1",
+              "parameters": ["user-999"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    }
+  ]
+}

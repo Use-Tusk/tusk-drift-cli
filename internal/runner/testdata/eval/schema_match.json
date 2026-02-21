@@ -1,0 +1,331 @@
+{
+  "examples": [
+    {
+      "id": "schema_match_similarity_picks_best",
+      "description": "Two mocks share schema hash but different values — similarity scoring picks the mock with the more similar query (P7)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-users",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT name, email FROM users WHERE id = $1",
+            "parameters": ["user-100"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-orders",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT id, total FROM orders WHERE user_id = $1",
+            "parameters": ["user-100"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT id, total FROM orders WHERE user_id = $1",
+              "parameters": ["user-200"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-orders",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "schema_match_tiebreaker_oldest_timestamp",
+      "description": "Two mocks with identical values (equal similarity to request) — tiebreaker picks oldest by timestamp (P7)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-newer",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM items WHERE category = $1",
+            "parameters": ["books"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:05Z"
+        },
+        {
+          "spanId": "span-older",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM items WHERE category = $1",
+            "parameters": ["books"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM items WHERE category = $1",
+              "parameters": ["electronics"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-older",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "schema_match_unused_then_used",
+      "description": "Single mock with matching schema — first request consumes at P7 (unused), second request matches at P8 (used)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT * FROM sessions WHERE token = $1",
+            "parameters": ["tok-original"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM sessions WHERE token = $1",
+              "parameters": ["tok-replay-1"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT * FROM sessions WHERE token = $1",
+              "parameters": ["tok-replay-2"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "schema_match_single_candidate_no_similarity",
+      "description": "Only one mock with matching schema hash — matched directly at P7 without similarity scoring",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-pg",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "UPDATE users SET last_login = NOW() WHERE id = $1",
+            "parameters": ["user-100"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-http",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {
+            "method": "GET",
+            "path": "/health"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "UPDATE users SET last_login = NOW() WHERE id = $1",
+              "parameters": ["user-999"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-pg",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "schema_match_low_similarity_still_picks",
+      "description": "Single schema match candidate with low similarity — still matched because it is the only candidate at P7",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {
+            "query": "SELECT a, b, c, d, e FROM very_long_table_name WHERE complex_condition = $1 AND another = $2",
+            "parameters": ["value-1", "value-2"]
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "SELECT x, y, z FROM completely_different_table WHERE id = $1",
+              "parameters": ["other-value"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_SCHEMA_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    }
+  ]
+}

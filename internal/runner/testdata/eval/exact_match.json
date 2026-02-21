@@ -1,0 +1,268 @@
+{
+  "examples": [
+    {
+      "id": "exact_match_single_mock",
+      "description": "Request hash matches a single mock exactly at Priority 1 (unused span by input value hash)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM users WHERE id = $1", "parameters": ["user-100"]},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT * FROM users WHERE id = $1", "parameters": ["user-100"]},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-1",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "exact_match_picks_oldest_unused",
+      "description": "Two mocks with same input value hash but different timestamps — matcher picks the oldest unused span (P1)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-newer",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:05Z"
+        },
+        {
+          "spanId": "span-older",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-older",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "exact_match_consumption_then_used_fallback",
+      "description": "Two mocks with same hash — first two requests consume unused (P1), third falls back to used (P2)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-a",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-b",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT 1"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-a",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-b",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        },
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-a",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "exact_match_picks_correct_among_many",
+      "description": "Multiple mocks with different hashes — matcher picks the one with the matching hash (P1)",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-users",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM users WHERE id = $1", "parameters": ["1"]},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-orders",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM orders WHERE user_id = $1", "parameters": ["1"]},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        },
+        {
+          "spanId": "span-products",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM products WHERE category = $1", "parameters": ["electronics"]},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"},
+              "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:03Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT * FROM orders WHERE user_id = $1", "parameters": ["1"]},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": "span-orders",
+            "matchType": "INPUT_VALUE_HASH",
+            "matchScope": "TRACE"
+          }
+        }
+      ]
+    }
+  ]
+}

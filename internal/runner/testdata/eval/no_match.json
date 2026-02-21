@@ -1,0 +1,193 @@
+{
+  "examples": [
+    {
+      "id": "no_match_empty_mocks",
+      "description": "No mocks loaded at all — no match possible",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "no_match_different_value_and_schema",
+      "description": "Mocks exist with same package but completely different value hash AND schema hash — no match",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-1",
+          "traceId": "trace-1",
+          "packageName": "pg",
+          "inputValue": {"query": "SELECT * FROM users"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "query": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {
+              "query": "INSERT INTO events (type, payload) VALUES ($1, $2)",
+              "parameters": ["click", "{\"x\": 100}"]
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"},
+                "parameters": {"type": "ORDERED_LIST", "items": {"type": "STRING"}}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "no_match_http_method_mismatch_sole_candidate",
+      "description": "Single HTTP mock exists but method mismatch — HTTP shape rejects it, no other candidates, no match",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-delete",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {
+            "method": "DELETE",
+            "hostname": "api.example.com",
+            "path": "/api/users/123"
+          },
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "hostname": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "http",
+            "inputValue": {
+              "method": "PUT",
+              "hostname": "api.example.com",
+              "path": "/api/users/123"
+            },
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "method": {"type": "STRING"},
+                "hostname": {"type": "STRING"},
+                "path": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "no_match_cross_protocol_no_interference",
+      "description": "Mocks exist for different packages (http, redis) — request for pg has no match despite mocks existing",
+      "config": {
+        "allowSuiteWideMatching": false
+      },
+      "traceMocks": [
+        {
+          "spanId": "span-http",
+          "traceId": "trace-1",
+          "packageName": "http",
+          "inputValue": {"method": "GET", "path": "/api/users"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "method": {"type": "STRING"},
+              "path": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:01Z"
+        },
+        {
+          "spanId": "span-redis",
+          "traceId": "trace-1",
+          "packageName": "redis",
+          "inputValue": {"command": "GET", "key": "user:100"},
+          "inputSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "command": {"type": "STRING"},
+              "key": {"type": "STRING"}
+            }
+          },
+          "timestamp": "2025-01-01T00:00:02Z"
+        }
+      ],
+      "suiteMocks": [],
+      "globalMocks": [],
+      "requests": [
+        {
+          "request": {
+            "packageName": "pg",
+            "inputValue": {"query": "SELECT 1"},
+            "inputSchema": {
+              "type": "OBJECT",
+              "properties": {
+                "query": {"type": "STRING"}
+              }
+            }
+          },
+          "expected": {
+            "matchedSpanId": null,
+            "matchType": "",
+            "matchScope": ""
+          }
+        }
+      ]
+    }
+  ]
+}
