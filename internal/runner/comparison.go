@@ -55,19 +55,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 		})
 	}
 
-	// Compare response headers (check important ones)
-	for expectedKey, expectedValue := range test.Response.Headers {
-		actualValue := actualResp.Header.Get(expectedKey)
-		if actualValue != expectedValue {
-			log.Debug("Header mismatch", "traceID", test.TraceID, "header", expectedKey, "expected", expectedValue, "actual", actualValue)
-			deviations = append(deviations, Deviation{
-				Field:       fmt.Sprintf("response.headers.%s", strings.ToLower(expectedKey)),
-				Expected:    expectedValue,
-				Actual:      actualValue,
-				Description: fmt.Sprintf("Header %s mismatch", expectedKey),
-			})
-		}
-	}
+	// Note: response headers are not compared. They can be too dynamic to compare reliably.
 
 	if !e.compareResponseBodies(test.Response.Body, actualBody, test.TraceID) {
 		log.Debug("Body mismatch detected", "traceID", test.TraceID, "expected", test.Response.Body, "actual", actualBody)
