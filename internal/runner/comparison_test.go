@@ -30,9 +30,8 @@ func TestCompareAndGenerateResult_PassesWithIgnoredDynamicFields(t *testing.T) {
 	test := Test{
 		TraceID: "t-1",
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{"Content-Type": "application/json"},
-			Body:    expected,
+			Status: 200,
+			Body:   expected,
 		},
 	}
 
@@ -52,9 +51,8 @@ func TestCompareAndGenerateResult_StatusMismatch(t *testing.T) {
 	test := Test{
 		TraceID: "t-2",
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    jsonAny(t, `{"ok": true}`),
+			Status: 200,
+			Body:   jsonAny(t, `{"ok": true}`),
 		},
 	}
 	resp := makeResponse(500, nil, `{"ok": true}`)
@@ -66,28 +64,6 @@ func TestCompareAndGenerateResult_StatusMismatch(t *testing.T) {
 	require.Equal(t, "response.status", res.Deviations[0].Field)
 	require.Equal(t, 200, res.Deviations[0].Expected)
 	require.Equal(t, 500, res.Deviations[0].Actual)
-}
-
-func TestCompareAndGenerateResult_HeaderMismatch(t *testing.T) {
-	executor := &Executor{}
-
-	test := Test{
-		TraceID: "t-3",
-		Response: Response{
-			Status:  200,
-			Headers: map[string]string{"X-RateLimit-Remaining": "43"},
-			Body:    jsonAny(t, `{"ok": true}`),
-		},
-	}
-	resp := makeResponse(200, map[string]string{"X-RateLimit-Remaining": "42"}, `{"ok": true}`)
-
-	res, err := executor.compareAndGenerateResult(test, resp, 5)
-	require.NoError(t, err)
-	require.False(t, res.Passed)
-	require.Len(t, res.Deviations, 1)
-	require.Equal(t, "response.headers.x-ratelimit-remaining", res.Deviations[0].Field)
-	require.Equal(t, "43", res.Deviations[0].Expected)
-	require.Equal(t, "42", res.Deviations[0].Actual)
 }
 
 func TestCompareAndGenerateResult_BodyMismatchDueToExtraActualKey(t *testing.T) {
@@ -107,9 +83,8 @@ comparison:
 	test := Test{
 		TraceID: "t-4",
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    map[string]any{}, // Expect empty object
+			Status: 200,
+			Body:   map[string]any{}, // Expect empty object
 		},
 	}
 	// Actual contains an extra field not present in expected.
@@ -135,9 +110,8 @@ func TestCompareAndGenerateResult_PlainTextDecodedType(t *testing.T) {
 			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_PLAIN_TEXT),
 		},
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    expectedBody,
+			Status: 200,
+			Body:   expectedBody,
 		},
 	}
 
@@ -163,9 +137,8 @@ func TestCompareAndGenerateResult_PlainTextDecodedType_JSONLikeContent(t *testin
 			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_PLAIN_TEXT),
 		},
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    expectedBody,
+			Status: 200,
+			Body:   expectedBody,
 		},
 	}
 
@@ -190,9 +163,8 @@ func TestCompareAndGenerateResult_JSONDecodedType(t *testing.T) {
 			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_JSON),
 		},
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    expectedBody,
+			Status: 200,
+			Body:   expectedBody,
 		},
 	}
 
@@ -218,9 +190,8 @@ func TestCompareAndGenerateResult_UnspecifiedDecodedType(t *testing.T) {
 			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_UNSPECIFIED),
 		},
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    expectedBody,
+			Status: 200,
+			Body:   expectedBody,
 		},
 	}
 
@@ -245,9 +216,8 @@ func TestCompareAndGenerateResult_UnspecifiedDecodedType_FallbackToString(t *tes
 			makeSpanWithOutputSchema(core.DecodedType_DECODED_TYPE_UNSPECIFIED),
 		},
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    expectedBody,
+			Status: 200,
+			Body:   expectedBody,
 		},
 	}
 
@@ -270,9 +240,8 @@ func TestCompareAndGenerateResult_NoSpans_DefaultsToUnspecified(t *testing.T) {
 		TraceID: "t-no-spans",
 		Spans:   []*core.Span{}, // Empty spans
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    expectedBody,
+			Status: 200,
+			Body:   expectedBody,
 		},
 	}
 
@@ -327,9 +296,8 @@ func TestCompareAndGenerateResult_PassesWithJWTTokenDifference(t *testing.T) {
 	test := Test{
 		TraceID: "t-jwt",
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{"Content-Type": "application/json"},
-			Body:    expected,
+			Status: 200,
+			Body:   expected,
 		},
 	}
 
@@ -363,9 +331,8 @@ comparison:
 	test := Test{
 		TraceID: "t-jwt-disabled",
 		Response: Response{
-			Status:  200,
-			Headers: map[string]string{},
-			Body:    expected,
+			Status: 200,
+			Body:   expected,
 		},
 	}
 
