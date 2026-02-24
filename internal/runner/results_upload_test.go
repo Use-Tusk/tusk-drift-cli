@@ -253,7 +253,7 @@ func TestUploadSingleTestResult(t *testing.T) {
 	})
 }
 
-func TestUpdateDriftRunCIStatusWrapper(t *testing.T) {
+func TestReportDriftRunSuccess(t *testing.T) {
 	t.Parallel()
 
 	t.Run("determine correct status for all passing tests", func(t *testing.T) {

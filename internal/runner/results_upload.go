@@ -104,7 +104,7 @@ func UploadSingleTestResult(
 	return client.UploadTraceTestResults(ctx, req, auth)
 }
 
-func UpdateDriftRunCIStatusWrapper(
+func ReportDriftRunSuccess(
 	ctx context.Context,
 	client *api.TuskClient,
 	driftRunID string,
