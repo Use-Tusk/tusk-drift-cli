@@ -666,7 +666,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 						passed, failed := countPassedFailed(results)
 						statusMessage = fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)
 					}
-					if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
+					if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
 						log.Warn("Interactive: cloud finalize failed", "error", err)
 					}
 					mu.Lock()
@@ -708,8 +708,13 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			// Update CI status to FAILURE if in cloud mode
 			if cloud && client != nil && (ci || isValidation) {
-				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
-					log.Warn("Headless: cloud finalize failed", "error", err)
+				statusReq := &backend.UpdateDriftRunCIStatusRequest{
+					DriftRunId:      driftRunID,
+					CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
+					CiStatusMessage: stringPtr(fmt.Sprintf("Environment-based test execution failed: %v", err)),
+				}
+				if updateErr := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); updateErr != nil {
+					log.Warn("Failed to update CI status to FAILURE", "error", updateErr)
 				}
 				mu.Lock()
 				log.Stderr(fmt.Sprintf("Successfully uploaded %d/%d test results", uploadedCount, attemptedCount))
@@ -762,8 +767,13 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			// Update CI status to FAILURE if in cloud mode
 			if cloud && client != nil && (ci || isValidation) {
-				if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results); err != nil {
-					log.Warn("Headless: cloud finalize failed", "error", err)
+				statusReq := &backend.UpdateDriftRunCIStatusRequest{
+					DriftRunId:      driftRunID,
+					CiStatus:        backend.DriftRunCIStatus_DRIFT_RUN_CI_STATUS_FAILURE,
+					CiStatusMessage: stringPtr(fmt.Sprintf("Test execution failed: %v", err)),
+				}
+				if updateErr := client.UpdateDriftRunCIStatus(context.Background(), statusReq, authOptions); updateErr != nil {
+					log.Warn("Failed to update CI status to FAILURE", "error", updateErr)
 				}
 				mu.Lock()
 				log.Stderr(fmt.Sprintf("Successfully uploaded %d/%d test results", uploadedCount, attemptedCount))
@@ -797,7 +807,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		// streamed is always true here so this only updates the CI status
 		// Does NOT upload results to the backend as they are already uploaded via UploadSingleTestResult during the callback
-		if err := runner.UpdateDriftRunCIStatusWrapper(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
+		if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
 			log.Warn("Headless: cloud finalize failed", "error", err)
 		}
 		if isValidation {
