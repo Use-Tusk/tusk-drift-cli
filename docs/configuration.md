@@ -103,6 +103,15 @@ Runtime environment variables set by the CLI for your service:
 - `TUSK_MOCK_PORT`: Mock server port for TCP mode (Docker)
 - `TUSK_DRIFT_MODE=REPLAY`: Signals the SDK to run in replay mode
 
+<details>
+<summary>Internal (optional) CLI behavior environment variables:</summary>
+
+**For internal use - users generally do not need to set these.**
+
+- `TUSK_REQUIRE_INBOUND_REPLAY_SPAN=1`: Fails a replay test when the SDK does not send the inbound replay span to the CLI. Useful for internal CI/e2e hardening to catch silent telemetry regressions. Truthy values include `1`, `true`, `yes`, and `on`.
+
+</details>
+
 ## Docker Support
 
 When using Docker or Docker Compose, the CLI automatically detects Docker commands and switches to TCP communication.
