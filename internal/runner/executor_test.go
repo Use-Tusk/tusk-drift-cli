@@ -33,6 +33,35 @@ func TestNewExecutor(t *testing.T) {
 	assert.Empty(t, executor.ResultsFile)
 	assert.Nil(t, executor.OnTestCompleted)
 	assert.Nil(t, executor.suiteSpans)
+	assert.False(t, executor.requireInboundReplay)
+}
+
+func TestIsTruthyEnv(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]bool{
+		"":      false,
+		"0":     false,
+		"no":    false,
+		"false": false,
+		"off":   false,
+		"1":     true,
+		"yes":   true,
+		"true":  true,
+		"on":    true,
+		"Y":     true,
+		"TrUe":  true,
+	}
+
+	for value, expected := range cases {
+		assert.Equal(t, expected, isTruthyEnv(value), "value=%q", value)
+	}
+}
+
+func TestNewExecutor_RequireInboundReplayFromEnv(t *testing.T) {
+	t.Setenv(requireInboundReplaySpanEnvVar, "1")
+	executor := NewExecutor()
+	assert.True(t, executor.requireInboundReplay)
 }
 
 func TestExecutor_SetResultsOutput(t *testing.T) {
@@ -837,6 +866,100 @@ func TestExecutor_RunSingleTest_WithServer(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, "test-with-server", result.TestID)
+}
+
+func TestExecutor_RunSingleTest_StrictInboundReplaySpanMissingFails(t *testing.T) {
+	executor := NewExecutor()
+	executor.requireInboundReplay = true
+
+	mockServer := &Server{
+		spans:                        make(map[string][]*core.Span),
+		matchEvents:                  make(map[string][]MatchEvent),
+		spanUsage:                    make(map[string]map[string]bool),
+		spansByPackage:               make(map[string]map[string][]*core.Span),
+		suiteSpansByPackage:          make(map[string][]*core.Span),
+		spansByReducedValueHash:      make(map[string]map[string][]*core.Span),
+		suiteSpansByReducedValueHash: make(map[string][]*core.Span),
+		spansByValueHash:             make(map[string]map[string][]*core.Span),
+		suiteSpansByValueHash:        make(map[string][]*core.Span),
+		mockNotFoundEvents:           make(map[string][]MockNotFoundEvent),
+		replayInbound:                make(map[string]*core.Span),
+		mu:                           sync.RWMutex{},
+	}
+	executor.server = mockServer
+
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer httpServer.Close()
+	executor.serviceURL = httpServer.URL
+
+	test := Test{
+		TraceID: "strict-missing-inbound",
+		Request: Request{Method: "GET", Path: "/api/test"},
+		Response: Response{
+			Status: 200,
+			Body:   map[string]any{"ok": true},
+		},
+	}
+
+	result, err := executor.RunSingleTest(test)
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
+	assert.NotEmpty(t, result.Deviations)
+	assert.Equal(t, inboundSpanDeviationField, result.Deviations[len(result.Deviations)-1].Field)
+}
+
+func TestExecutor_RunSingleTest_StrictInboundReplaySpanPresentPasses(t *testing.T) {
+	executor := NewExecutor()
+	executor.requireInboundReplay = true
+
+	mockServer := &Server{
+		spans:                        make(map[string][]*core.Span),
+		matchEvents:                  make(map[string][]MatchEvent),
+		spanUsage:                    make(map[string]map[string]bool),
+		spansByPackage:               make(map[string]map[string][]*core.Span),
+		suiteSpansByPackage:          make(map[string][]*core.Span),
+		spansByReducedValueHash:      make(map[string]map[string][]*core.Span),
+		suiteSpansByReducedValueHash: make(map[string][]*core.Span),
+		spansByValueHash:             make(map[string]map[string][]*core.Span),
+		suiteSpansByValueHash:        make(map[string][]*core.Span),
+		mockNotFoundEvents:           make(map[string][]MockNotFoundEvent),
+		replayInbound:                make(map[string]*core.Span),
+		mu:                           sync.RWMutex{},
+	}
+	executor.server = mockServer
+
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceID := r.Header.Get("x-td-trace-id")
+		mockServer.mu.Lock()
+		mockServer.replayInbound[traceID] = &core.Span{TraceId: traceID, SpanId: "inbound-span-1"}
+		mockServer.mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer httpServer.Close()
+	executor.serviceURL = httpServer.URL
+
+	test := Test{
+		TraceID: "strict-present-inbound",
+		Request: Request{Method: "GET", Path: "/api/test"},
+		Response: Response{
+			Status: 200,
+			Body:   map[string]any{"ok": true},
+		},
+	}
+
+	result, err := executor.RunSingleTest(test)
+	assert.NoError(t, err)
+	assert.True(t, result.Passed)
+	for _, d := range result.Deviations {
+		assert.NotEqual(t, inboundSpanDeviationField, d.Field)
+	}
 }
 
 // Benchmark tests for performance validation

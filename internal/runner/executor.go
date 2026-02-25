@@ -21,6 +21,12 @@ import (
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )
 
+const (
+	requireInboundReplaySpanEnvVar = "TUSK_REQUIRE_INBOUND_REPLAY_SPAN"
+	inboundSpanCheckTimeout        = 3 * time.Second
+	inboundSpanDeviationField      = "replay.inbound_span"
+)
+
 type Executor struct {
 	serviceURL             string
 	parallel               int
@@ -40,13 +46,15 @@ type Executor struct {
 	disableSandbox         bool
 	debug                  bool
 	fenceManager           *fence.Manager
+	requireInboundReplay   bool
 }
 
 func NewExecutor() *Executor {
 	return &Executor{
-		serviceURL:  "http://localhost:3000",
-		parallel:    5,
-		testTimeout: 30 * time.Second,
+		serviceURL:            "http://localhost:3000",
+		parallel:              5,
+		testTimeout:           30 * time.Second,
+		requireInboundReplay:  isTruthyEnv(os.Getenv(requireInboundReplaySpanEnvVar)),
 	}
 }
 
@@ -564,8 +572,44 @@ func (e *Executor) RunSingleTest(test Test) (TestResult, error) {
 	}()
 
 	result, _ := e.compareAndGenerateResult(test, resp, duration)
+	e.enforceInboundReplaySpanIfRequired(test.TraceID, &result)
 
 	return result, nil
+}
+
+func (e *Executor) enforceInboundReplaySpanIfRequired(traceID string, result *TestResult) {
+	if !e.requireInboundReplay || e.server == nil || result == nil {
+		return
+	}
+
+	e.server.WaitForInboundSpan(traceID, inboundSpanCheckTimeout)
+	if e.server.GetInboundReplaySpan(traceID) != nil {
+		return
+	}
+
+	description := "Inbound replay span missing; SDK did not send replay span to CLI"
+	log.Warn(description, "traceID", traceID)
+
+	result.Passed = false
+	for _, deviation := range result.Deviations {
+		if deviation.Field == inboundSpanDeviationField {
+			return
+		}
+	}
+
+	result.Deviations = append(result.Deviations, Deviation{
+		Field:       inboundSpanDeviationField,
+		Description: description,
+	})
+}
+
+func isTruthyEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func OutputSingleResult(result TestResult, test Test, format string, quiet bool, verbose bool) {
