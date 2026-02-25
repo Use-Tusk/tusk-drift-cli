@@ -51,10 +51,10 @@ type Executor struct {
 
 func NewExecutor() *Executor {
 	return &Executor{
-		serviceURL:            "http://localhost:3000",
-		parallel:              5,
-		testTimeout:           30 * time.Second,
-		requireInboundReplay:  isTruthyEnv(os.Getenv(requireInboundReplaySpanEnvVar)),
+		serviceURL:           "http://localhost:3000",
+		parallel:             5,
+		testTimeout:          30 * time.Second,
+		requireInboundReplay: isTruthyEnv(os.Getenv(requireInboundReplaySpanEnvVar)),
 	}
 }
 
