@@ -208,7 +208,7 @@ func (e *Executor) RestartServerWithRetry(attempt int) error {
 }
 
 func checkTCPPortAvailable(port int) (bool, error) {
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	addr := fmt.Sprintf("0.0.0.0:%d", port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		// Port is in use
