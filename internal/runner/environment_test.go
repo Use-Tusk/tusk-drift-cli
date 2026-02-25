@@ -492,7 +492,7 @@ service:
 func TestStartServerWithTCPPortCheck(t *testing.T) {
 	config.Invalidate()
 
-	// Start a listener on port 9005 to simulate it being in use
+	// Start a listener on port 9005 (loopback only) to simulate it being in use
 	listener, err := net.Listen("tcp", "127.0.0.1:9005")
 	require.NoError(t, err)
 	defer func() { _ = listener.Close() }()

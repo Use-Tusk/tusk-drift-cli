@@ -226,7 +226,7 @@ func (ms *Server) startUnix() error {
 }
 
 func (ms *Server) startTCP() error {
-	addr := fmt.Sprintf("127.0.0.1:%d", ms.tcpPort)
+	addr := fmt.Sprintf("0.0.0.0:%d", ms.tcpPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to create TCP listener: %w", err)

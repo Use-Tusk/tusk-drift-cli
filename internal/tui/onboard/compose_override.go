@@ -63,9 +63,9 @@ func (m *Model) createDockerComposeOverrideFile() error {
 	buf.WriteString("      TUSK_MOCK_HOST: ${TUSK_MOCK_HOST:-host.docker.internal}\n")
 	buf.WriteString("      TUSK_MOCK_PORT: ${TUSK_MOCK_PORT:-9001}\n")
 	buf.WriteString("\n")
-	buf.WriteString("    # Uncomment this if you are running on Linux\n")
-	buf.WriteString("    # extra_hosts:\n")
-	buf.WriteString("    #   - \"host.docker.internal:host-gateway\"\n")
+	buf.WriteString("    # Required on Linux (including CI). No-op on macOS Docker Desktop.\n")
+	buf.WriteString("    extra_hosts:\n")
+	buf.WriteString("      - \"host.docker.internal:host-gateway\"\n")
 
 	if err := os.WriteFile(overridePath, []byte(buf.String()), 0o600); err != nil {
 		return fmt.Errorf("failed to write %s: %w", overridePath, err)

@@ -130,9 +130,9 @@ services:
       TUSK_MOCK_HOST: ${TUSK_MOCK_HOST:-host.docker.internal}
       TUSK_MOCK_PORT: ${TUSK_MOCK_PORT:-9001}
 
-    # Uncomment this if you are running it on Linux
-    # extra_hosts:
-    #   - "host.docker.internal:host-gateway"
+    # Required on Linux (including CI). No-op on macOS Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
 
 Then, your start command will be something like:

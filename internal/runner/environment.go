@@ -207,13 +207,17 @@ func (e *Executor) RestartServerWithRetry(attempt int) error {
 	return nil
 }
 
+// checkTCPPortAvailable probes both 0.0.0.0 and 127.0.0.1 because the mock
+// server binds to 0.0.0.0 but another process may hold the port on loopback
+// only. Checking both ensures we catch conflicts on either interface.
 func checkTCPPortAvailable(port int) (bool, error) {
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		// Port is in use
-		return true, nil
+	for _, host := range []string{"0.0.0.0", "127.0.0.1"} {
+		addr := fmt.Sprintf("%s:%d", host, port)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return true, nil
+		}
+		_ = ln.Close()
 	}
-	_ = ln.Close()
 	return false, nil
 }
