@@ -1104,18 +1104,16 @@ func (m *testExecutorModel) hasAnyDeviations() bool {
 }
 
 func (m *testExecutorModel) cleanup() {
-	if m.serviceStarted || m.serverStarted {
-		m.addServiceLog("Stopping environment...")
-		if err := m.executor.StopEnvironment(); err != nil {
-			m.addServiceLog(fmt.Sprintf("Warning: Failed to stop environment: %v", err))
-		}
-		m.serviceStarted = false
-		m.serverStarted = false
+	m.addServiceLog("Stopping environment...")
+	if err := m.executor.StopEnvironment(); err != nil {
+		m.addServiceLog(fmt.Sprintf("Warning: Failed to stop environment: %v", err))
+	}
+	m.serviceStarted = false
+	m.serverStarted = false
 
-		if (m.opts == nil || !m.opts.IsCloudMode) && m.hasAnyDeviations() {
-			for _, line := range formatDriftCloudCTA() {
-				m.addServiceLog(line)
-			}
+	if (m.opts == nil || !m.opts.IsCloudMode) && m.hasAnyDeviations() {
+		for _, line := range formatDriftCloudCTA() {
+			m.addServiceLog(line)
 		}
 	}
 }

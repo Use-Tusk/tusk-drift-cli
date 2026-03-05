@@ -46,11 +46,17 @@ func init() {
 }
 
 func listTests(cmd *cobra.Command, args []string) error {
+	setupSignalHandling()
+
 	_ = config.Load(cfgFile)
 	cfg, getConfigErr := config.Get()
 
 	executor := runner.NewExecutor()
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
+
+	RegisterCleanup(func() {
+		_ = executor.StopEnvironment()
+	})
 
 	if getConfigErr == nil && cfg.TestExecution.Concurrency > 0 {
 		executor.SetConcurrency(cfg.TestExecution.Concurrency)
