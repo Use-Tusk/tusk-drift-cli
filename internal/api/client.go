@@ -215,34 +215,21 @@ func (c *TuskClient) makeClientServiceRequest(ctx context.Context, endpoint stri
 	return c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, endpoint, req, resp, auth, DefaultRetryConfig(0))
 }
 
-// NoSeatError is returned when the PR creator doesn't have a Tusk Cloud seat
-type NoSeatError struct {
+// SkippableError is returned for errors that should be treated as a no-op in CI mode
+// (e.g. feature disabled after trial expiry, repo disabled, repo not found)
+type SkippableError struct {
+	Code    string
 	Message string
 }
 
-func (e *NoSeatError) Error() string {
+func (e *SkippableError) Error() string {
 	return e.Message
 }
 
-// IsNoSeatError checks if an error is a NoSeatError
-func IsNoSeatError(err error) bool {
-	var noSeatErr *NoSeatError
-	return errors.As(err, &noSeatErr)
-}
-
-// PausedByLabelError is returned when the PR has the "Tusk - Pause For Current PR" label
-type PausedByLabelError struct {
-	Message string
-}
-
-func (e *PausedByLabelError) Error() string {
-	return e.Message
-}
-
-// IsPausedByLabelError checks if an error is a PausedByLabelError
-func IsPausedByLabelError(err error) bool {
-	var pausedErr *PausedByLabelError
-	return errors.As(err, &pausedErr)
+// IsSkippableError checks if an error is a SkippableError
+func IsSkippableError(err error) bool {
+	var skippableErr *SkippableError
+	return errors.As(err, &skippableErr)
 }
 
 func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDriftRunRequest, auth AuthOptions) (string, error) {
@@ -255,11 +242,18 @@ func (c *TuskClient) CreateDriftRun(ctx context.Context, in *backend.CreateDrift
 		return s.DriftRunId, nil
 	}
 	if e := out.GetError(); e != nil {
-		if e.Code == "NO_SEAT" {
-			return "", &NoSeatError{Message: e.Message}
+		// Errors that should be skippable in CI mode (not actionable by the CI runner)
+		skippableCodes := map[string]bool{
+			"NO_SEAT":            true,
+			"PAUSED_BY_LABEL":    true,
+			"FEATURE_DISABLED":   true,
+			"REPO_DISABLED":      true,
+			"REPO_NOT_FOUND":     true,
+			"RESOURCE_NOT_FOUND": true,
+			"CLIENT_NOT_FOUND":   true,
 		}
-		if e.Code == "PAUSED_BY_LABEL" {
-			return "", &PausedByLabelError{Message: e.Message}
+		if skippableCodes[e.Code] {
+			return "", &SkippableError{Code: e.Code, Message: e.Message}
 		}
 		return "", fmt.Errorf("%s: %s", e.Code, e.Message)
 	}
