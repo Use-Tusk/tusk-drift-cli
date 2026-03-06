@@ -45,39 +45,47 @@ func (e *Executor) StartService() error {
 
 	// Wrap command with fence sandboxing (if supported and enabled)
 	command := cfg.Service.Start.Command
-	if e.GetSandboxMode() == SandboxModeOff || e.disableSandbox {
+	if e.GetSandboxMode() == SandboxModeOff || e.sandboxBypass {
 		log.ServiceLog("⚠️  Replay sandbox disabled (real outbound connections allowed)")
 	}
 	requireSandbox := e.GetSandboxMode() == SandboxModeStrict
-	if e.GetSandboxMode() != SandboxModeOff && !e.disableSandbox && fence.IsSupported() {
-		fenceCfg := createReplayFenceConfig()
-		e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
-		e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
-
-		if err := e.fenceManager.Initialize(); err != nil {
+	if e.GetSandboxMode() != SandboxModeOff && !e.sandboxBypass {
+		if !fence.IsSupported() {
 			if requireSandbox {
-				e.fenceManager = nil
-				return fmt.Errorf("failed to initialize replay sandbox in strict mode: %s", friendlySandboxError(err))
+				return fmt.Errorf("failed to initialize replay sandbox in strict mode: sandbox not supported on this platform")
 			}
-			log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
+			log.UserWarn("⚠️  Sandbox unavailable: sandbox not supported on this platform")
 			log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
-			e.fenceManager = nil
 		} else {
-			wrappedCmd, err := e.fenceManager.WrapCommand(command)
-			if err != nil {
+			fenceCfg := createReplayFenceConfig()
+			e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
+			e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
+
+			if err := e.fenceManager.Initialize(); err != nil {
 				if requireSandbox {
-					e.fenceManager.Cleanup()
 					e.fenceManager = nil
-					return fmt.Errorf("failed to apply replay sandbox in strict mode: %s", friendlySandboxError(err))
+					return fmt.Errorf("failed to initialize replay sandbox in strict mode: %s", friendlySandboxError(err))
 				}
 				log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
 				log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
-				e.fenceManager.Cleanup()
 				e.fenceManager = nil
 			} else {
-				command = wrappedCmd
-				e.lastServiceSandboxed = true
-				log.ServiceLog("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
+				wrappedCmd, err := e.fenceManager.WrapCommand(command)
+				if err != nil {
+					if requireSandbox {
+						e.fenceManager.Cleanup()
+						e.fenceManager = nil
+						return fmt.Errorf("failed to apply replay sandbox in strict mode: %s", friendlySandboxError(err))
+					}
+					log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
+					log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
+					e.fenceManager.Cleanup()
+					e.fenceManager = nil
+				} else {
+					command = wrappedCmd
+					e.lastServiceSandboxed = true
+					log.ServiceLog("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
+				}
 			}
 		}
 	}

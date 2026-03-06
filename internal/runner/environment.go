@@ -25,7 +25,7 @@ func (e *Executor) StartEnvironment() error {
 		if e.GetSandboxMode() == SandboxModeAuto && e.lastServiceSandboxed {
 			log.ServiceLog("⚠️  Service failed to start in sandbox; retrying once without sandbox...")
 			_ = e.StopService()
-			e.disableSandbox = true
+			e.sandboxBypass = true
 			e.lastServiceSandboxed = false
 
 			if retryErr := e.StartService(); retryErr == nil {

@@ -49,7 +49,7 @@ type Executor struct {
 	globalSpans            []*core.Span // Explicitly marked global spans for cross-trace matching
 	allowSuiteWideMatching bool         // When true, allows cross-trace matching from any suite span
 	cancelTests            context.CancelFunc
-	disableSandbox         bool
+	sandboxBypass          bool // Internal runtime bypass used by auto-mode fallback retry
 	sandboxMode            string
 	lastServiceSandboxed   bool
 	debug                  bool
@@ -67,26 +67,12 @@ func NewExecutor() *Executor {
 	}
 }
 
-// SetDisableSandbox sets whether to disable fence sandboxing for the service process
-func (e *Executor) SetDisableSandbox(disable bool) {
-	e.disableSandbox = disable
-	if disable {
-		e.sandboxMode = SandboxModeOff
-	}
-}
-
-// IsSandboxDisabled returns true if fence sandboxing is disabled
-func (e *Executor) IsSandboxDisabled() bool {
-	return e.disableSandbox
-}
-
 // SetSandboxMode configures replay sandbox behavior.
 // Supported values: auto, strict, off.
 func (e *Executor) SetSandboxMode(mode string) error {
 	switch mode {
 	case SandboxModeAuto, SandboxModeStrict, SandboxModeOff:
 		e.sandboxMode = mode
-		e.disableSandbox = mode == SandboxModeOff
 		return nil
 	default:
 		return fmt.Errorf("invalid sandbox mode %q (expected one of: auto, strict, off)", mode)
