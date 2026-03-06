@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -23,6 +24,8 @@ type replayComposeService struct {
 }
 
 const replayComposeServiceSourceFile = "docker-compose.tusk-override.yml"
+
+var composeFileFlagPattern = regexp.MustCompile(`(?i)(-f|--file)(=|\s+)('([^']*)'|"([^"]*)"|([^\s;&|]+))`)
 
 func (e *Executor) setReplayComposeOverride(path string) {
 	e.replayComposeOverride = path
@@ -100,17 +103,69 @@ func createReplayComposeOverrideFile(envVars map[string]string, groupName string
 	return overridePath, nil
 }
 
-// extractComposeServiceNames reads service names exclusively from
-// docker-compose.tusk-override.yml in the tusk root.
+// resolveComposeServiceSourceFile resolves docker-compose.tusk-override.yml,
+// preferring the tusk root path and falling back to a recursive search under
+// the tusk root when the root-level file is absent.
+func resolveComposeServiceSourceFile() (string, error) {
+	tuskRoot := utils.GetTuskRoot()
+	rootComposeFile := filepath.Join(tuskRoot, replayComposeServiceSourceFile)
+
+	if _, err := os.Stat(rootComposeFile); err == nil {
+		return rootComposeFile, nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to stat compose service source file %s: %w", rootComposeFile, err)
+	}
+
+	matches := make([]string, 0, 1)
+	walkErr := filepath.WalkDir(tuskRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == replayComposeServiceSourceFile {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", fmt.Errorf("failed to recursively search for compose service source file under %s: %w", tuskRoot, walkErr)
+	}
+
+	if len(matches) == 0 {
+		return "", nil
+	}
+	sort.Strings(matches)
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple %s files found under %s; unable to choose one: %s",
+			replayComposeServiceSourceFile,
+			tuskRoot,
+			strings.Join(matches, ", "))
+	}
+	return matches[0], nil
+}
+
+// extractComposeServiceNames reads service names from the resolved
+// docker-compose.tusk-override.yml location.
 func extractComposeServiceNames() ([]string, error) {
-	composeFile := filepath.Join(utils.GetTuskRoot(), replayComposeServiceSourceFile)
+	composeFile, pathErr := resolveComposeServiceSourceFile()
+	if pathErr != nil {
+		return nil, pathErr
+	}
+	if composeFile == "" {
+		log.Debug("Replay compose service source file not found; skipping replay env override",
+			"filename", replayComposeServiceSourceFile,
+			"search_root", utils.GetTuskRoot())
+		return nil, nil
+	}
+
 	data, err := os.ReadFile(composeFile) // #nosec G304
 	if err != nil {
-		if os.IsNotExist(err) {
-			log.Debug("Replay compose service source file not found; skipping replay env override",
-				"path", composeFile)
-			return nil, nil
-		}
 		return nil, fmt.Errorf("failed to read compose service source file %s: %w", composeFile, err)
 	}
 
@@ -139,156 +194,103 @@ func isComposeBasedStartCommand(command string) bool {
 	return strings.Contains(command, replayComposeServiceSourceFile)
 }
 
-// injectComposeOverrideFile inserts an extra "-f <override>" before the compose
-// subcommand (up/run/etc.) so compose treats it as a merged config file.
-// This preserves existing flags and subcommand arguments.
+// injectComposeOverrideFile appends the replay override file as an additional
+// "-f/--file" flag immediately after an existing
+// "docker-compose.tusk-override.yml" compose file flag.
 //
 // The returned injected flag indicates whether override args were actually
-// injected. A nil error with injected=false means the command was parsed but did
-// not match the supported single-statement compose call shape.
+// appended. A nil error with injected=false means no matching -f/--file value
+// for docker-compose.tusk-override.yml was found.
 func injectComposeOverrideFile(command, overridePath string) (string, bool, error) {
-	parser := syntax.NewParser(syntax.Variant(syntax.LangBash))
-	file, err := parser.Parse(strings.NewReader(command), "compose-start-command")
-	if err != nil {
-		return "", false, fmt.Errorf("failed to parse compose command: %w", err)
-	}
-	if len(file.Stmts) != 1 {
-		return command, false, nil
-	}
-	stmt := file.Stmts[0]
-	call, ok := stmt.Cmd.(*syntax.CallExpr)
-	if !ok {
-		return command, false, nil
-	}
-	if len(call.Args) == 0 {
+	if strings.TrimSpace(command) == "" {
 		return command, false, nil
 	}
 
-	callTokens := make([]string, 0, len(call.Args))
-	for _, arg := range call.Args {
-		callTokens = append(callTokens, arg.Lit())
-	}
-
-	_, composeArgsStart, ok := findComposeInvocation(callTokens)
-	if !ok {
+	matches := composeFileFlagPattern.FindAllStringSubmatchIndex(command, -1)
+	if len(matches) == 0 {
 		return command, false, nil
 	}
-
-	subcommandIdx, _, err := findComposeSubcommandAndFiles(callTokens, composeArgsStart)
-	if err != nil {
-		return "", false, err
-	}
-	if subcommandIdx == -1 {
-		subcommandIdx = len(call.Args)
-	}
-
-	overrideFlagWord, err := shellLiteralWord("-f")
-	if err != nil {
-		return "", false, fmt.Errorf("failed to build compose override flag: %w", err)
-	}
-	overridePathWord, err := shellLiteralWord(overridePath)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to build compose override path: %w", err)
-	}
-
-	injectedArgs := make([]*syntax.Word, 0, len(call.Args)+2)
-	injectedArgs = append(injectedArgs, call.Args[:subcommandIdx]...)
-	injectedArgs = append(injectedArgs, overrideFlagWord, overridePathWord)
-	injectedArgs = append(injectedArgs, call.Args[subcommandIdx:]...)
-	call.Args = injectedArgs
 
 	var out bytes.Buffer
-	printer := syntax.NewPrinter(syntax.SingleLine(true))
-	if err := printer.Print(&out, stmt); err != nil {
-		return "", false, fmt.Errorf("failed to render compose command: %w", err)
+	last := 0
+	injected := false
+
+	for _, m := range matches {
+		if len(m) < 14 {
+			continue
+		}
+
+		matchStart, matchEnd := m[0], m[1]
+		flagStart, flagEnd := m[2], m[3]
+		delimStart, delimEnd := m[4], m[5]
+		tokenStart, tokenEnd := m[6], m[7]
+		singleInnerStart, singleInnerEnd := m[8], m[9]
+		doubleInnerStart, doubleInnerEnd := m[10], m[11]
+		bareStart, bareEnd := m[12], m[13]
+
+		if tokenStart < 0 || tokenEnd < 0 {
+			continue
+		}
+
+		quoteChar := byte(0)
+		value := ""
+		switch {
+		case singleInnerStart >= 0 && singleInnerEnd >= 0:
+			quoteChar = '\''
+			value = command[singleInnerStart:singleInnerEnd]
+		case doubleInnerStart >= 0 && doubleInnerEnd >= 0:
+			quoteChar = '"'
+			value = command[doubleInnerStart:doubleInnerEnd]
+		case bareStart >= 0 && bareEnd >= 0:
+			value = command[bareStart:bareEnd]
+		default:
+			continue
+		}
+
+		if !isReplayComposeSourcePath(value) {
+			continue
+		}
+
+		out.WriteString(command[last:matchStart])
+		out.WriteString(command[matchStart:matchEnd])
+		out.WriteString(" ")
+		flag := command[flagStart:flagEnd]
+		delim := command[delimStart:delimEnd]
+		out.WriteString(flag)
+		out.WriteString(delim)
+		out.WriteString(quoteForShell(overridePath, quoteChar))
+		last = matchEnd
+		injected = true
 	}
+
+	if !injected {
+		return command, false, nil
+	}
+	out.WriteString(command[last:])
 	return out.String(), true, nil
 }
 
-func shellLiteralWord(value string) (*syntax.Word, error) {
-	quoted, err := syntax.Quote(value, syntax.LangBash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to quote shell literal: %w", err)
-	}
-	return syntax.NewParser(syntax.Variant(syntax.LangBash)).Document(strings.NewReader(quoted))
-}
-
-// findComposeInvocation identifies where compose starts in a shell command.
-// It supports:
-//   - "docker compose ..."
-//   - "docker-compose ..."
-//   - "tusk-compose ..." wrappers
-//
-// The returned composeArgsStart index points to the first token after the
-// compose executable/verb where global compose flags are expected.
-func findComposeInvocation(tokens []string) (commandIdx int, composeArgsStart int, ok bool) {
-	for i := 0; i < len(tokens); i++ {
-		token := strings.ToLower(tokens[i])
-		base := filepath.Base(token)
-
-		if token == "docker" && i+1 < len(tokens) && strings.ToLower(tokens[i+1]) == "compose" {
-			return i, i + 2, true
-		}
-		if base == "docker-compose" || base == "tusk-compose" {
-			return i, i + 1, true
-		}
-	}
-	return -1, -1, false
-}
-
-// findComposeSubcommandAndFiles walks compose-global args until it finds the
-// subcommand token (e.g. "up", "run") and collects any compose file paths from
-// -f/--file flags encountered before that point.
-func findComposeSubcommandAndFiles(tokens []string, composeArgsStart int) (subcommandIdx int, composeFiles []string, err error) {
-	expectingValue := ""
-
-	for i := composeArgsStart; i < len(tokens); i++ {
-		token := tokens[i]
-
-		if expectingValue != "" {
-			if expectingValue == "file" {
-				composeFiles = append(composeFiles, token)
-			}
-			expectingValue = ""
-			continue
-		}
-
-		switch {
-		case token == "-f" || token == "--file":
-			expectingValue = "file"
-			continue
-		case strings.HasPrefix(token, "-f="):
-			composeFiles = append(composeFiles, strings.TrimPrefix(token, "-f="))
-			continue
-		case strings.HasPrefix(token, "--file="):
-			composeFiles = append(composeFiles, strings.TrimPrefix(token, "--file="))
-			continue
-		case strings.HasPrefix(token, "-"):
-			if composeFlagNeedsValue(token) {
-				expectingValue = "flag"
-			}
-			continue
-		default:
-			subcommandIdx = i
-			return subcommandIdx, composeFiles, nil
-		}
-	}
-
-	if expectingValue == "file" {
-		return -1, nil, fmt.Errorf("compose command has -f/--file without a value")
-	}
-
-	return -1, composeFiles, nil
-}
-
-// composeFlagNeedsValue marks compose-global flags that consume the next token.
-// This keeps argument scanning aligned when identifying the subcommand.
-func composeFlagNeedsValue(flag string) bool {
-	switch flag {
-	case "-p", "--project-name", "--project-directory", "--env-file", "--profile", "--parallel", "--progress", "--ansi":
+func isReplayComposeSourcePath(path string) bool {
+	if path == replayComposeServiceSourceFile {
 		return true
+	}
+	return strings.HasSuffix(path, "/"+replayComposeServiceSourceFile)
+}
+
+func quoteForShell(value string, quoteChar byte) string {
+	switch quoteChar {
+	case '\'':
+		return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+	case '"':
+		escaped := strings.ReplaceAll(value, `\`, `\\`)
+		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		return `"` + escaped + `"`
 	default:
-		return false
+		quoted, err := syntax.Quote(value, syntax.LangBash)
+		if err != nil {
+			return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+		}
+		return quoted
 	}
 }
 

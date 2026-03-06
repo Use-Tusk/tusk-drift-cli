@@ -22,46 +22,24 @@ func TestIsComposeBasedStartCommand(t *testing.T) {
 
 func TestInjectComposeOverrideFile(t *testing.T) {
 	tests := []struct {
-		name       string
-		command    string
-		override   string
-		want       string
-		injected   bool
-		shouldFail bool
+		name     string
+		command  string
+		override string
+		want     string
+		injected bool
 	}{
 		{
-			name:     "docker_compose",
-			command:  "docker compose -f docker-compose.yml up",
-			override: "/tmp/replay-env.yml",
-			want:     "docker compose -f docker-compose.yml -f /tmp/replay-env.yml up",
-			injected: true,
-		},
-		{
-			name:     "docker_compose_with_env_prefix",
-			command:  "ENV=test docker-compose --project-name demo up -d",
-			override: "/tmp/replay-env.yml",
-			want:     "ENV=test docker-compose --project-name demo -f /tmp/replay-env.yml up -d",
-			injected: true,
-		},
-		{
-			name:     "tusk_compose_wrapper",
+			name:     "appends_override_after_source_file_flag",
 			command:  "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml up",
 			override: "/tmp/replay-env.yml",
 			want:     "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up",
 			injected: true,
 		},
 		{
-			name:     "preserves_quoted_arguments",
-			command:  `docker compose --project-name "my project" -f "docker compose.yml" up`,
-			override: "/tmp/replay-env.yml",
-			want:     `docker compose --project-name "my project" -f "docker compose.yml" -f /tmp/replay-env.yml up`,
-			injected: true,
-		},
-		{
-			name:     "quotes_override_path_with_spaces",
-			command:  `docker compose --project-name "my project" up`,
+			name:     "supports_double_quoted_file_arg",
+			command:  `docker compose --file "${COMPOSE_DIR}/docker-compose.tusk-override.yml" up`,
 			override: "/tmp/replay env.yml",
-			want:     `docker compose --project-name "my project" -f '/tmp/replay env.yml' up`,
+			want:     `docker compose --file "${COMPOSE_DIR}/docker-compose.tusk-override.yml" --file "/tmp/replay env.yml" up`,
 			injected: true,
 		},
 		{
@@ -72,27 +50,31 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 			injected: false,
 		},
 		{
-			name:     "compound_command_not_injected",
+			name:     "supports_compound_commands",
 			command:  "cd /app && docker compose -f docker-compose.tusk-override.yml up",
 			override: "/tmp/replay-env.yml",
-			want:     "cd /app && docker compose -f docker-compose.tusk-override.yml up",
-			injected: false,
+			want:     "cd /app && docker compose -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up",
+			injected: true,
 		},
 		{
-			name:       "malformed_quoting_returns_error",
-			command:    `docker compose -f "unclosed up`,
-			override:   "/tmp/replay-env.yml",
-			shouldFail: true,
+			name:     "supports_bash_lc_with_literal_compose_file_arg",
+			command:  "bash -lc 'docker compose -f docker-compose.tusk-override.yml up'",
+			override: "/tmp/replay-env.yml",
+			want:     "bash -lc 'docker compose -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up'",
+			injected: true,
+		},
+		{
+			name:     "equal_form_file_flag_replaced",
+			command:  "docker compose --file=./docker-compose.tusk-override.yml up",
+			override: "/tmp/replay-env.yml",
+			want:     "docker compose --file=./docker-compose.tusk-override.yml --file=/tmp/replay-env.yml up",
+			injected: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, injected, err := injectComposeOverrideFile(tt.command, tt.override)
-			if tt.shouldFail {
-				require.Error(t, err)
-				return
-			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.injected, injected)
@@ -108,7 +90,52 @@ func TestInjectComposeOverrideFile_PreservesShellExpansion(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, injected)
 	assert.Equal(t, "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml -f /tmp/replay-env.yml up", got)
-	assert.NotContains(t, got, "'$COMPOSE_DIR/docker-compose.tusk-override.yml'")
+	assert.Contains(t, got, "$COMPOSE_DIR/docker-compose.tusk-override.yml")
+}
+
+func TestInjectComposeOverrideFile_KnownLimitations(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+	}{
+		{
+			name:    "does_not_inject_when_file_arg_is_indirect_variable",
+			command: `docker compose -f "$COMPOSE_DIR/$OVERRIDE_FILE" up`,
+		},
+		{
+			name:    "does_not_inject_when_compose_file_is_set_via_env",
+			command: "COMPOSE_FILE=docker-compose.tusk-override.yml docker compose up",
+		},
+		{
+			name:    "does_not_inject_when_file_arg_uses_command_substitution",
+			command: `docker compose -f "$(pwd)/$(echo docker-compose.tusk-override.yml)" up`,
+		},
+		{
+			name:    "does_not_inject_when_file_arg_builds_name_via_concatenation",
+			command: `docker compose -f docker-compose.tusk-override."yml" up`,
+		},
+		{
+			name:    "does_not_inject_when_file_arg_has_dynamic_suffix_after_filename",
+			command: `docker compose -f "${COMPOSE_DIR}/docker-compose.tusk-override.yml.${ENV}" up`,
+		},
+		{
+			name:    "does_not_inject_when_file_arg_uses_process_substitution",
+			command: `docker compose -f <(echo docker-compose.tusk-override.yml) up`,
+		},
+		{
+			name:    "does_not_inject_when_compose_file_is_only_selected_from_env_list",
+			command: `COMPOSE_FILE=docker-compose.tusk-override.yml:docker-compose.dev.yml docker compose up`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, injected, err := injectComposeOverrideFile(tt.command, "/tmp/replay-env.yml")
+			require.NoError(t, err)
+			assert.False(t, injected)
+			assert.Equal(t, tt.command, got)
+		})
+	}
 }
 
 func TestCreateReplayComposeOverrideFile(t *testing.T) {
@@ -191,6 +218,61 @@ func TestCreateReplayComposeOverrideFile_SkipsWhenSourceFileMissing(t *testing.T
 	)
 	require.NoError(t, err)
 	assert.Empty(t, overridePath)
+}
+
+func TestExtractComposeServiceNames_FindsNestedSourceFile(t *testing.T) {
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+
+	tempDir := t.TempDir()
+	require.NoError(t, os.Chdir(tempDir))
+	defer func() {
+		_ = os.Chdir(originalWD)
+	}()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, ".tusk"), 0o750))
+	nestedDir := filepath.Join(tempDir, "services", "api")
+	require.NoError(t, os.MkdirAll(nestedDir, 0o750))
+
+	composeContent := `
+services:
+  web:
+    image: web
+  worker:
+    image: worker
+`
+	require.NoError(t, os.WriteFile(filepath.Join(nestedDir, replayComposeServiceSourceFile), []byte(composeContent), 0o600))
+
+	serviceNames, extractErr := extractComposeServiceNames()
+	require.NoError(t, extractErr)
+	assert.Equal(t, []string{"web", "worker"}, serviceNames)
+}
+
+func TestExtractComposeServiceNames_ErrorsWhenMultipleNestedSourcesExist(t *testing.T) {
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+
+	tempDir := t.TempDir()
+	require.NoError(t, os.Chdir(tempDir))
+	defer func() {
+		_ = os.Chdir(originalWD)
+	}()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, ".tusk"), 0o750))
+
+	composeContent := `
+services:
+  api:
+    image: api
+`
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, "a"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, "b"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "a", replayComposeServiceSourceFile), []byte(composeContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "b", replayComposeServiceSourceFile), []byte(composeContent), 0o600))
+
+	_, extractErr := extractComposeServiceNames()
+	require.Error(t, extractErr)
+	assert.Contains(t, extractErr.Error(), "multiple "+replayComposeServiceSourceFile+" files found")
 }
 
 func TestFilterReplayEnvVarsForCompose(t *testing.T) {
