@@ -911,9 +911,9 @@ func (m *testExecutorModel) startNextEnvironmentGroup() tea.Cmd {
 
 		m.addServiceLog(fmt.Sprintf("Starting environment: %s (%d tests)", group.Name, len(group.Tests)))
 
-		// Set environment variables with cleanup
+		// Set environment variables and prepare compose replay override with cleanup
 		var err error
-		m.groupCleanup, err = runner.SetEnvironmentVariables(group.EnvVars)
+		m.groupCleanup, err = runner.PrepareReplayEnvironmentGroup(m.executor, group)
 		if err != nil {
 			m.addServiceLog(fmt.Sprintf("❌ Failed to set env vars: %v", err))
 			return executionFailedMsg{reason: fmt.Sprintf("Failed to set env vars: %v", err)}
