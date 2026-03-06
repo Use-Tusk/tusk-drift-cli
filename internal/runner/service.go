@@ -52,7 +52,7 @@ func (e *Executor) StartService() error {
 	if e.GetSandboxMode() != SandboxModeOff && !e.sandboxBypass {
 		if !fence.IsSupported() {
 			if requireSandbox {
-				return fmt.Errorf("failed to initialize replay sandbox in strict mode: sandbox not supported on this platform")
+				return fmt.Errorf("strict replay sandbox unavailable: sandbox not supported on this platform")
 			}
 			log.UserWarn("⚠️  Sandbox unavailable: sandbox not supported on this platform")
 			log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
@@ -64,7 +64,7 @@ func (e *Executor) StartService() error {
 			if err := e.fenceManager.Initialize(); err != nil {
 				if requireSandbox {
 					e.fenceManager = nil
-					return fmt.Errorf("failed to initialize replay sandbox in strict mode: %s", friendlySandboxError(err))
+					return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(err))
 				}
 				log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
 				log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
@@ -75,7 +75,7 @@ func (e *Executor) StartService() error {
 					if requireSandbox {
 						e.fenceManager.Cleanup()
 						e.fenceManager = nil
-						return fmt.Errorf("failed to apply replay sandbox in strict mode: %s", friendlySandboxError(err))
+						return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(err))
 					}
 					log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
 					log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
