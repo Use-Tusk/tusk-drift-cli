@@ -247,6 +247,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				// (e.g. no seat, paused by label, feature disabled after trial expiry, repo disabled)
 				if api.IsSkippableError(err) && ci {
 					log.Stderrln("Skipping: " + err.Error())
+					utils.CIWarning("Tusk Drift skipped: " + err.Error())
 					return nil
 				}
 				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
