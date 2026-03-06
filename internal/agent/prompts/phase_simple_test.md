@@ -45,6 +45,7 @@ Run tusk_run to replay the trace.
 If it fails:
 
 - Run with `debug: true` (keep running it in debug mode until it passes)
+- If startup fails in sandbox (for example secret manager bootstrapping), retry with `sandbox_mode: "off"`
 - Check for errors in the output or in the logs (in .tusk/logs/). Logs only appear if `debug: true` is set.
 - If you see config-related errors (e.g., "no start command"), run `tusk_validate_config` to check for config issues
 - Try to fix issues and retry (max 3 attempts)

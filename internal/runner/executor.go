@@ -27,6 +27,12 @@ const (
 	inboundSpanDeviationField      = "replay.inbound_span"
 )
 
+const (
+	SandboxModeAuto   = "auto"
+	SandboxModeStrict = "strict"
+	SandboxModeOff    = "off"
+)
+
 type Executor struct {
 	serviceURL             string
 	parallel               int
@@ -44,6 +50,8 @@ type Executor struct {
 	allowSuiteWideMatching bool         // When true, allows cross-trace matching from any suite span
 	cancelTests            context.CancelFunc
 	disableSandbox         bool
+	sandboxMode            string
+	lastServiceSandboxed   bool
 	debug                  bool
 	fenceManager           *fence.Manager
 	requireInboundReplay   bool
@@ -54,6 +62,7 @@ func NewExecutor() *Executor {
 		serviceURL:           "http://localhost:3000",
 		parallel:             5,
 		testTimeout:          30 * time.Second,
+		sandboxMode:          SandboxModeAuto,
 		requireInboundReplay: isTruthyEnv(os.Getenv(requireInboundReplaySpanEnvVar)),
 	}
 }
@@ -61,11 +70,35 @@ func NewExecutor() *Executor {
 // SetDisableSandbox sets whether to disable fence sandboxing for the service process
 func (e *Executor) SetDisableSandbox(disable bool) {
 	e.disableSandbox = disable
+	if disable {
+		e.sandboxMode = SandboxModeOff
+	}
 }
 
 // IsSandboxDisabled returns true if fence sandboxing is disabled
 func (e *Executor) IsSandboxDisabled() bool {
 	return e.disableSandbox
+}
+
+// SetSandboxMode configures replay sandbox behavior.
+// Supported values: auto, strict, off.
+func (e *Executor) SetSandboxMode(mode string) error {
+	switch mode {
+	case SandboxModeAuto, SandboxModeStrict, SandboxModeOff:
+		e.sandboxMode = mode
+		e.disableSandbox = mode == SandboxModeOff
+		return nil
+	default:
+		return fmt.Errorf("invalid sandbox mode %q (expected one of: auto, strict, off)", mode)
+	}
+}
+
+// GetSandboxMode returns the configured replay sandbox mode.
+func (e *Executor) GetSandboxMode() string {
+	if e.sandboxMode == "" {
+		return SandboxModeAuto
+	}
+	return e.sandboxMode
 }
 
 // SetDebug enables debug mode for fence sandbox

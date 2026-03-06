@@ -16,6 +16,8 @@ import (
 )
 
 func (e *Executor) StartService() error {
+	e.lastServiceSandboxed = false
+
 	if err := config.Load(""); err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -41,26 +43,40 @@ func (e *Executor) StartService() error {
 
 	log.Debug("Starting service", "command", cfg.Service.Start.Command)
 
-	// Wrap command with fence sandboxing (if supported and not disabled)
+	// Wrap command with fence sandboxing (if supported and enabled)
 	command := cfg.Service.Start.Command
-	if !e.disableSandbox && fence.IsSupported() {
+	if e.GetSandboxMode() == SandboxModeOff || e.disableSandbox {
+		log.ServiceLog("⚠️  Replay sandbox disabled (real outbound connections allowed)")
+	}
+	requireSandbox := e.GetSandboxMode() == SandboxModeStrict
+	if e.GetSandboxMode() != SandboxModeOff && !e.disableSandbox && fence.IsSupported() {
 		fenceCfg := createReplayFenceConfig()
 		e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
 		e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
 
 		if err := e.fenceManager.Initialize(); err != nil {
+			if requireSandbox {
+				e.fenceManager = nil
+				return fmt.Errorf("failed to initialize replay sandbox in strict mode: %s", friendlySandboxError(err))
+			}
 			log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
 			log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
 			e.fenceManager = nil
 		} else {
 			wrappedCmd, err := e.fenceManager.WrapCommand(command)
 			if err != nil {
+				if requireSandbox {
+					e.fenceManager.Cleanup()
+					e.fenceManager = nil
+					return fmt.Errorf("failed to apply replay sandbox in strict mode: %s", friendlySandboxError(err))
+				}
 				log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
 				log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
 				e.fenceManager.Cleanup()
 				e.fenceManager = nil
 			} else {
 				command = wrappedCmd
+				e.lastServiceSandboxed = true
 				log.ServiceLog("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
 			}
 		}

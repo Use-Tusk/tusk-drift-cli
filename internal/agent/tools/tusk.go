@@ -112,8 +112,9 @@ func (tt *TuskTools) List(input json.RawMessage) (string, error) {
 // Run runs tests using the internal runner
 func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 	var params struct {
-		Filter string `json:"filter"`
-		Debug  bool   `json:"debug"`
+		Filter      string `json:"filter"`
+		Debug       bool   `json:"debug"`
+		SandboxMode string `json:"sandbox_mode"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("invalid input: %w", err)
@@ -141,6 +142,16 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 	if cfg, err := config.Get(); err == nil && cfg.TestExecution.Timeout != "" {
 		if d, err := time.ParseDuration(cfg.TestExecution.Timeout); err == nil {
 			executor.SetTestTimeout(d)
+		}
+	}
+	if cfg, err := config.Get(); err == nil && cfg.Replay.Sandbox.Mode != "" {
+		if err := executor.SetSandboxMode(cfg.Replay.Sandbox.Mode); err != nil {
+			return "", err
+		}
+	}
+	if params.SandboxMode != "" {
+		if err := executor.SetSandboxMode(params.SandboxMode); err != nil {
+			return "", err
 		}
 	}
 

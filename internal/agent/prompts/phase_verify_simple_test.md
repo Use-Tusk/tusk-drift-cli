@@ -33,6 +33,7 @@ Run tusk_run to replay the trace.
 If it fails:
 
 - Run with `debug: true` once more
+- If startup fails in sandbox, retry with `sandbox_mode: "off"`
 - If still failing, mark as failed
 
 ### Step 5: Save to Cache

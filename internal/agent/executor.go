@@ -410,6 +410,10 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 					"debug": {
 						"type": "boolean",
 						"description": "Enable debug logging for troubleshooting"
+					},
+					"sandbox_mode": {
+						"type": "string",
+						"description": "Optional replay sandbox mode override for this run: auto, strict, or off. If omitted, the value in the config will be used."
 					}
 				}
 			}`),

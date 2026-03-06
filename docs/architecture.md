@@ -76,7 +76,7 @@ During replay mode, the CLI uses [Fence](https://github.com/Use-Tusk/fence) to s
 - Allows Unix socket communication for SDK <-> mock server protocol
 - Preserves localhost inbound for health checks
 
-Sandboxing is enabled by default when the platform supports it (macOS/Linux). Use `--disable-sandbox` to bypass if needed.
+Sandboxing is enabled by default when the platform supports it (macOS/Linux). Use `--sandbox-mode off` to bypass if needed. In `strict` mode, replay fails if sandbox setup cannot be initialized/applied.
 
 ### Backend client
 
@@ -248,7 +248,7 @@ results:
 - **Concurrency**: Tests can run concurrently, with per‑test attribution for mock events.
 - **Service logs**: Written to `.tusk/logs/tusk-replay-*.log` when `--enable-service-logs` is provided.
 - **Timeouts**: SDK ACK ~10s, HTTP client ~30s. Socket messages are capped at 1MB.
-- **Sandboxing**: Uses [Fence](https://github.com/Use-Tusk/fence) to block localhost outbound (Postgres, Redis, etc.), enforcing SDK mock usage. Linux requires `bubblewrap` and `socat`. Disable with `--disable-sandbox`.
+- **Sandboxing**: Uses [Fence](https://github.com/Use-Tusk/fence) to block localhost outbound (Postgres, Redis, etc.), enforcing SDK mock usage. Linux requires `bubblewrap` and `socat`. Disable with `--sandbox-mode off`.
 
 ## Troubleshooting
 

@@ -22,11 +22,26 @@ func (e *Executor) StartEnvironment() error {
 
 	log.ServiceLog("Starting service...")
 	if err := e.StartService(); err != nil {
+		if e.GetSandboxMode() == SandboxModeAuto && e.lastServiceSandboxed {
+			log.ServiceLog("⚠️  Service failed to start in sandbox; retrying once without sandbox...")
+			_ = e.StopService()
+			e.disableSandbox = true
+			e.lastServiceSandboxed = false
+
+			if retryErr := e.StartService(); retryErr == nil {
+				log.ServiceLog("✅ Service started without sandbox (auto fallback)")
+				goto waitForSDK
+			} else {
+				_ = e.StopServer()
+				return fmt.Errorf("start service (sandboxed): %w; retry without sandbox failed: %w", err, retryErr)
+			}
+		}
 		_ = e.StopServer()
 		return fmt.Errorf("start service: %w", err)
 	}
 	log.ServiceLog("✅ Service started")
 
+waitForSDK:
 	log.ServiceLog("Waiting for SDK acknowledgement...")
 	if err := e.WaitForSDKAcknowledgement(); err != nil {
 		log.ServiceLog(fmt.Sprintf("❌ Failed to get SDK acknowledgement: %v", err))

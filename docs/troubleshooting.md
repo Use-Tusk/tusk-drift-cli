@@ -26,10 +26,12 @@ If `tusk setup` (AI-powered setup) fails or doesn't support your project:
 
 - **No Mock Found**: Check suite spans availability and matching rules; ensure traces exist for the trace being replayed.
 - **Environment Mismatch**: If you can record traces successfully but unable to replay them, check if you are running `tusk run` in an environment similar to what you recorded the traces in. For example, for Node.js services, a common issue could be a difference in Node versions.
+- **App fails to start only during replay sandbox**: If startup depends on external services (for example `doppler run -- ...`), use `replay.sandbox.mode: auto` (default) or run `tusk run --sandbox-mode off`.
 
 ## Linux Issues
 
 - **Sandboxing disabled warning**: Install `bubblewrap` and `socat` for replay isolation. Without these, your service may hit real databases during replay instead of using mocks. Run `sudo apt install bubblewrap socat` (Debian/Ubuntu) or equivalent for your distro.
+- **Strict sandbox mode fails immediately**: If `replay.sandbox.mode` is `strict`, replay will fail when sandbox dependencies are missing or cannot be applied. Install `bubblewrap` and `socat`, or use `auto`/`off` mode.
 
 ## Windows Issues
 
