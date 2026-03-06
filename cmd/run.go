@@ -243,14 +243,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			id, err := client.CreateDriftRun(context.Background(), req, authOptions)
 			if err != nil {
-				// Handle NO_SEAT error as a no-op in CI mode
-				if api.IsNoSeatError(err) && ci {
+				// Handle skippable errors as a no-op in CI mode
+				// (e.g. no seat, paused by label, feature disabled after trial expiry, repo disabled)
+				if api.IsSkippableError(err) && ci {
 					log.Stderrln("Skipping: " + err.Error())
-					return nil
-				}
-				// Handle PAUSED_BY_LABEL error as a no-op in CI mode
-				if api.IsPausedByLabelError(err) && ci {
-					log.Stderrln("Skipping: " + err.Error())
+					utils.CIWarning("Tusk Drift skipped: " + err.Error())
 					return nil
 				}
 				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
