@@ -129,7 +129,7 @@ func PrepareReplayEnvironmentGroup(executor *Executor, group *EnvironmentGroup) 
 		return cleanup, nil
 	}
 
-	overridePath, createErr := createReplayComposeOverrideFile(cfg.Service.Start.Command, filteredEnvVars, group.Name)
+	overridePath, createErr := createReplayComposeOverrideFile(filteredEnvVars, group.Name)
 	if createErr != nil {
 		cleanup()
 		return nil, fmt.Errorf("failed to prepare replay compose override for %s: %w", group.Name, createErr)

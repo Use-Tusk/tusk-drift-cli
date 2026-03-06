@@ -50,13 +50,13 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 			name:     "preserves_quoted_arguments",
 			command:  `docker compose --project-name "my project" -f "docker compose.yml" up`,
 			override: "/tmp/replay-env.yml",
-			want:     `docker compose --project-name 'my project' -f 'docker compose.yml' -f /tmp/replay-env.yml up`,
+			want:     `docker compose --project-name "my project" -f "docker compose.yml" -f /tmp/replay-env.yml up`,
 		},
 		{
 			name:     "quotes_override_path_with_spaces",
 			command:  `docker compose --project-name "my project" up`,
 			override: "/tmp/replay env.yml",
-			want:     `docker compose --project-name 'my project' -f '/tmp/replay env.yml' up`,
+			want:     `docker compose --project-name "my project" -f '/tmp/replay env.yml' up`,
 		},
 		{
 			name:     "non_compose_command_unchanged",
@@ -83,6 +83,16 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestInjectComposeOverrideFile_PreservesShellExpansion(t *testing.T) {
+	command := "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml up"
+	override := "/tmp/replay-env.yml"
+
+	got, err := injectComposeOverrideFile(command, override)
+	require.NoError(t, err)
+	assert.Equal(t, "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml -f /tmp/replay-env.yml up", got)
+	assert.NotContains(t, got, "'$COMPOSE_DIR/docker-compose.tusk-override.yml'")
 }
 
 func TestCreateReplayComposeOverrideFile(t *testing.T) {
@@ -115,7 +125,7 @@ services:
 	}
 	filteredEnvVars, _ := filterReplayEnvVarsForCompose(envVars)
 
-	overridePath, err := createReplayComposeOverrideFile("docker compose -f docker-compose.yml up", filteredEnvVars, "staging/us-east")
+	overridePath, err := createReplayComposeOverrideFile(filteredEnvVars, "staging/us-east")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = os.Remove(overridePath)
@@ -160,7 +170,6 @@ func TestCreateReplayComposeOverrideFile_SkipsWhenSourceFileMissing(t *testing.T
 	}()
 
 	overridePath, err := createReplayComposeOverrideFile(
-		"docker compose -f docker-compose.yml up",
 		map[string]string{"API_KEY": "abc"},
 		"development",
 	)
