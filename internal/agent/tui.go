@@ -534,28 +534,14 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.text != "" && msg.text != m.lastAgentMessage {
 				m.lastAgentMessage = msg.text
 				m.addLog("spacing", "", "")
-				// Format agent messages with proper markdown spacing
-				// Wrap text at 120 chars max for readability
 				maxWidth := min(max(m.width-8, 40), 120)
-				lines := strings.Split(msg.text, "\n")
-				for i, line := range lines {
-					trimmed := strings.TrimSpace(line)
-					switch {
-					case trimmed == "":
-						// Keep blank lines for markdown formatting
+				rendered := renderAgentMessage(msg.text, maxWidth)
+				for _, line := range strings.Split(rendered, "\n") {
+					if strings.TrimSpace(line) == "" {
 						m.addLog("spacing", "", "")
-					case strings.HasPrefix(trimmed, "#"):
-						if i > 0 {
-							m.addLog("spacing", "", "")
-						}
-						m.addLog("agent-header", trimmed, "")
-					default:
-						// Wrap long lines for readability
-						wrapped := wrapText(trimmed, maxWidth)
-						for _, wrappedLine := range strings.Split(wrapped, "\n") {
-							m.addLog("agent", wrappedLine, "")
-						}
+						continue
 					}
+					m.addLog("agent", line, "")
 				}
 			}
 		}

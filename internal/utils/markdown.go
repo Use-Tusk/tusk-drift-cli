@@ -35,6 +35,11 @@ func init() {
 		"margin": 0,
 	}
 
+	styleOverrides["link"] = map[string]any{
+		"color":     styles.PrimaryColor,
+		"underline": true,
+	}
+
 	if hasDarkBackground {
 		styleOverrides["document"].(map[string]any)["color"] = "255"
 		styleOverrides["heading"] = map[string]any{
