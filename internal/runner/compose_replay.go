@@ -9,6 +9,7 @@ import (
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	shellquote "github.com/kballard/go-shellquote"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,8 +36,7 @@ func (e *Executor) getReplayComposeOverride() string {
 // Service discovery is intentionally scoped to docker-compose.tusk-override.yml.
 // If that file is absent or has no services, replay env override injection is skipped.
 func createReplayComposeOverrideFile(command string, envVars map[string]string, groupName string) (string, error) {
-	filteredEnvVars, _ := filterReplayEnvVarsForCompose(envVars)
-	if len(filteredEnvVars) == 0 {
+	if len(envVars) == 0 {
 		return "", nil
 	}
 
@@ -58,6 +58,7 @@ func createReplayComposeOverrideFile(command string, envVars map[string]string, 
 	}
 	overridePath := tempFile.Name()
 	if closeErr := tempFile.Close(); closeErr != nil {
+		os.Remove(overridePath)
 		return "", fmt.Errorf("failed to close temporary replay compose override file: %w", closeErr)
 	}
 
@@ -66,8 +67,8 @@ func createReplayComposeOverrideFile(command string, envVars map[string]string, 
 	}
 
 	for _, serviceName := range serviceNames {
-		environment := make(map[string]string, len(filteredEnvVars))
-		for key, value := range filteredEnvVars {
+		environment := make(map[string]string, len(envVars))
+		for key, value := range envVars {
 			environment[key] = value
 		}
 		override.Services[serviceName] = replayComposeService{Environment: environment}
@@ -75,10 +76,12 @@ func createReplayComposeOverrideFile(command string, envVars map[string]string, 
 
 	content, err := yaml.Marshal(override)
 	if err != nil {
+		os.Remove(overridePath)
 		return "", fmt.Errorf("failed to marshal replay compose override: %w", err)
 	}
 
 	if err := os.WriteFile(overridePath, content, 0o600); err != nil {
+		os.Remove(overridePath)
 		return "", fmt.Errorf("failed to write replay compose override file: %w", err)
 	}
 
@@ -122,16 +125,19 @@ func extractComposeServiceNames(command string) ([]string, error) {
 }
 
 func isComposeBasedStartCommand(command string) bool {
-	tokens := strings.Fields(strings.ToLower(command))
-	_, _, ok := findComposeInvocation(tokens)
-	return ok
+	return strings.Contains(command, replayComposeServiceSourceFile)
 }
 
 // injectComposeOverrideFile inserts an extra "-f <override>" before the compose
 // subcommand (up/run/etc.) so compose treats it as a merged config file.
 // This preserves existing flags and subcommand arguments.
 func injectComposeOverrideFile(command, overridePath string) (string, error) {
-	tokens := strings.Fields(command)
+	// shellquote.Split/Join are used instead of strings.Fields/Join to correctly
+	// handle quoted arguments and paths with spaces (e.g. -f "my compose.yml").
+	tokens, err := shellquote.Split(command)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse compose command: %w", err)
+	}
 	_, composeArgsStart, ok := findComposeInvocation(tokens)
 	if !ok {
 		return command, nil
@@ -150,7 +156,7 @@ func injectComposeOverrideFile(command, overridePath string) (string, error) {
 	injected = append(injected, "-f", overridePath)
 	injected = append(injected, tokens[subcommandIdx:]...)
 
-	return strings.Join(injected, " "), nil
+	return shellquote.Join(injected...), nil
 }
 
 // findComposeInvocation identifies where compose starts in a shell command.
@@ -180,7 +186,6 @@ func findComposeInvocation(tokens []string) (commandIdx int, composeArgsStart in
 // subcommand token (e.g. "up", "run") and collects any compose file paths from
 // -f/--file flags encountered before that point.
 func findComposeSubcommandAndFiles(tokens []string, composeArgsStart int) (subcommandIdx int, composeFiles []string, err error) {
-	subcommandIdx = -1
 	expectingValue := ""
 
 	for i := composeArgsStart; i < len(tokens); i++ {

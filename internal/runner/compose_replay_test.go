@@ -11,10 +11,11 @@ import (
 )
 
 func TestIsComposeBasedStartCommand(t *testing.T) {
-	assert.True(t, isComposeBasedStartCommand("docker compose up"))
-	assert.True(t, isComposeBasedStartCommand("ENV=test docker-compose up -d"))
-	assert.True(t, isComposeBasedStartCommand("./.tusk/bin/tusk-compose -f docker-compose.yml up"))
+	assert.True(t, isComposeBasedStartCommand("docker compose -f docker-compose.tusk-override.yml up"))
+	assert.True(t, isComposeBasedStartCommand("ENV=test docker-compose -f docker-compose.tusk-override.yml up -d"))
+	assert.True(t, isComposeBasedStartCommand("./.tusk/bin/tusk-compose -f docker-compose.tusk-override.yml up"))
 
+	assert.False(t, isComposeBasedStartCommand("docker compose up"))
 	assert.False(t, isComposeBasedStartCommand("docker run --rm alpine echo hello"))
 	assert.False(t, isComposeBasedStartCommand("go run ./cmd/server"))
 }
@@ -46,10 +47,28 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 			want:     "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up",
 		},
 		{
+			name:     "preserves_quoted_arguments",
+			command:  `docker compose --project-name "my project" -f "docker compose.yml" up`,
+			override: "/tmp/replay-env.yml",
+			want:     `docker compose --project-name 'my project' -f 'docker compose.yml' -f /tmp/replay-env.yml up`,
+		},
+		{
+			name:     "quotes_override_path_with_spaces",
+			command:  `docker compose --project-name "my project" up`,
+			override: "/tmp/replay env.yml",
+			want:     `docker compose --project-name 'my project' -f '/tmp/replay env.yml' up`,
+		},
+		{
 			name:     "non_compose_command_unchanged",
 			command:  "go test ./...",
 			override: "/tmp/replay-env.yml",
 			want:     "go test ./...",
+		},
+		{
+			name:       "malformed_quoting_returns_error",
+			command:    `docker compose -f "unclosed up`,
+			override:   "/tmp/replay-env.yml",
+			shouldFail: true,
 		},
 	}
 
@@ -94,8 +113,9 @@ services:
 		"TUSK_DRIFT_MODE": "RECORD",
 		"TUSK_MOCK_PORT":  "9999",
 	}
+	filteredEnvVars, _ := filterReplayEnvVarsForCompose(envVars)
 
-	overridePath, err := createReplayComposeOverrideFile("docker compose -f docker-compose.yml up", envVars, "staging/us-east")
+	overridePath, err := createReplayComposeOverrideFile("docker compose -f docker-compose.yml up", filteredEnvVars, "staging/us-east")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = os.Remove(overridePath)
@@ -146,4 +166,21 @@ func TestCreateReplayComposeOverrideFile_SkipsWhenSourceFileMissing(t *testing.T
 	)
 	require.NoError(t, err)
 	assert.Empty(t, overridePath)
+}
+
+func TestFilterReplayEnvVarsForCompose(t *testing.T) {
+	input := map[string]string{
+		"API_KEY":         "abc",
+		"TUSK_DRIFT_MODE": "RECORD",
+		"TUSK_MOCK_PORT":  "9999",
+		"PATH":            "/usr/local/bin",
+	}
+
+	filtered, skipped := filterReplayEnvVarsForCompose(input)
+
+	assert.Equal(t, map[string]string{
+		"API_KEY": "abc",
+		"PATH":    "/usr/local/bin",
+	}, filtered)
+	assert.Equal(t, []string{"TUSK_DRIFT_MODE", "TUSK_MOCK_PORT"}, skipped)
 }

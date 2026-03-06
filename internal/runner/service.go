@@ -55,6 +55,9 @@ func (e *Executor) StartService() error {
 	} else if e.getReplayComposeOverride() != "" {
 		log.ServiceLog("❌ Replay env override was prepared but not injected (start command is not Docker Compose)")
 	}
+	if e.GetSandboxMode() == SandboxModeOff || e.sandboxBypass {
+		log.ServiceLog("⚠️  Replay sandbox disabled (real outbound connections allowed)")
+	}
 
 	requireSandbox := e.GetSandboxMode() == SandboxModeStrict
 	if e.GetSandboxMode() != SandboxModeOff && !e.sandboxBypass {
