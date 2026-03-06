@@ -21,13 +21,13 @@ If no traces were uploaded (`trace_upload_success` is false or `traces_uploaded`
 
 If traces were uploaded, run the validation:
 
-1. Use `cloud_run_validation` tool (no parameters needed)
+1. Use `cloud_run_validation` tool (optional `sandbox_mode` parameter)
    - This executes `tusk run --cloud --validate-suite --print`
    - It validates all uploaded traces against the live service
    - Passing tests are automatically added to the test suite
+   - If startup fails in sandbox, retry once with `sandbox_mode: "off"`
 
 > **Tip:** If validation fails because the server is already running on the required port, prompt the user to stop the existing server process before retrying. The validation tool needs to start its own instance of the service.
-
 
 2. Parse the result:
    - `success`: whether validation ran successfully
