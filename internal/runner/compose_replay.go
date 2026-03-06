@@ -40,8 +40,11 @@ func removeOverrideFile(path string) {
 	}
 }
 
-// createReplayComposeOverrideFile builds a temporary compose override that injects
-// recorded env vars into every discovered compose service for the current group.
+// createReplayComposeOverrideFile builds a temporary compose override that uses
+// ${VAR} interpolation references to inject recorded env vars into every discovered
+// compose service for the current group. The actual values are read from the host
+// process environment (set via os.Setenv before compose runs), so the override file
+// never contains secret values directly.
 // Service discovery is intentionally scoped to docker-compose.tusk-override.yml.
 // If that file is absent or has no services, replay env override injection is skipped.
 func createReplayComposeOverrideFile(envVars map[string]string, groupName string) (string, error) {
@@ -77,8 +80,8 @@ func createReplayComposeOverrideFile(envVars map[string]string, groupName string
 
 	for _, serviceName := range serviceNames {
 		environment := make(map[string]string, len(envVars))
-		for key, value := range envVars {
-			environment[key] = value
+		for key := range envVars {
+			environment[key] = fmt.Sprintf("${%s}", key)
 		}
 		override.Services[serviceName] = replayComposeService{Environment: environment}
 	}
@@ -139,22 +142,26 @@ func isComposeBasedStartCommand(command string) bool {
 // injectComposeOverrideFile inserts an extra "-f <override>" before the compose
 // subcommand (up/run/etc.) so compose treats it as a merged config file.
 // This preserves existing flags and subcommand arguments.
-func injectComposeOverrideFile(command, overridePath string) (string, error) {
+//
+// The returned injected flag indicates whether override args were actually
+// injected. A nil error with injected=false means the command was parsed but did
+// not match the supported single-statement compose call shape.
+func injectComposeOverrideFile(command, overridePath string) (string, bool, error) {
 	parser := syntax.NewParser(syntax.Variant(syntax.LangBash))
 	file, err := parser.Parse(strings.NewReader(command), "compose-start-command")
 	if err != nil {
-		return "", fmt.Errorf("failed to parse compose command: %w", err)
+		return "", false, fmt.Errorf("failed to parse compose command: %w", err)
 	}
 	if len(file.Stmts) != 1 {
-		return command, nil
+		return command, false, nil
 	}
 	stmt := file.Stmts[0]
 	call, ok := stmt.Cmd.(*syntax.CallExpr)
 	if !ok {
-		return command, nil
+		return command, false, nil
 	}
 	if len(call.Args) == 0 {
-		return command, nil
+		return command, false, nil
 	}
 
 	callTokens := make([]string, 0, len(call.Args))
@@ -164,12 +171,12 @@ func injectComposeOverrideFile(command, overridePath string) (string, error) {
 
 	_, composeArgsStart, ok := findComposeInvocation(callTokens)
 	if !ok {
-		return command, nil
+		return command, false, nil
 	}
 
 	subcommandIdx, _, err := findComposeSubcommandAndFiles(callTokens, composeArgsStart)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if subcommandIdx == -1 {
 		subcommandIdx = len(call.Args)
@@ -177,11 +184,11 @@ func injectComposeOverrideFile(command, overridePath string) (string, error) {
 
 	overrideFlagWord, err := shellLiteralWord("-f")
 	if err != nil {
-		return "", fmt.Errorf("failed to build compose override flag: %w", err)
+		return "", false, fmt.Errorf("failed to build compose override flag: %w", err)
 	}
 	overridePathWord, err := shellLiteralWord(overridePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to build compose override path: %w", err)
+		return "", false, fmt.Errorf("failed to build compose override path: %w", err)
 	}
 
 	injectedArgs := make([]*syntax.Word, 0, len(call.Args)+2)
@@ -193,9 +200,9 @@ func injectComposeOverrideFile(command, overridePath string) (string, error) {
 	var out bytes.Buffer
 	printer := syntax.NewPrinter(syntax.SingleLine(true))
 	if err := printer.Print(&out, stmt); err != nil {
-		return "", fmt.Errorf("failed to render compose command: %w", err)
+		return "", false, fmt.Errorf("failed to render compose command: %w", err)
 	}
-	return out.String(), nil
+	return out.String(), true, nil
 }
 
 func shellLiteralWord(value string) (*syntax.Word, error) {

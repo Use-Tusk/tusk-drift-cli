@@ -26,6 +26,7 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 		command    string
 		override   string
 		want       string
+		injected   bool
 		shouldFail bool
 	}{
 		{
@@ -33,36 +34,49 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 			command:  "docker compose -f docker-compose.yml up",
 			override: "/tmp/replay-env.yml",
 			want:     "docker compose -f docker-compose.yml -f /tmp/replay-env.yml up",
+			injected: true,
 		},
 		{
 			name:     "docker_compose_with_env_prefix",
 			command:  "ENV=test docker-compose --project-name demo up -d",
 			override: "/tmp/replay-env.yml",
 			want:     "ENV=test docker-compose --project-name demo -f /tmp/replay-env.yml up -d",
+			injected: true,
 		},
 		{
 			name:     "tusk_compose_wrapper",
 			command:  "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml up",
 			override: "/tmp/replay-env.yml",
 			want:     "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up",
+			injected: true,
 		},
 		{
 			name:     "preserves_quoted_arguments",
 			command:  `docker compose --project-name "my project" -f "docker compose.yml" up`,
 			override: "/tmp/replay-env.yml",
 			want:     `docker compose --project-name "my project" -f "docker compose.yml" -f /tmp/replay-env.yml up`,
+			injected: true,
 		},
 		{
 			name:     "quotes_override_path_with_spaces",
 			command:  `docker compose --project-name "my project" up`,
 			override: "/tmp/replay env.yml",
 			want:     `docker compose --project-name "my project" -f '/tmp/replay env.yml' up`,
+			injected: true,
 		},
 		{
 			name:     "non_compose_command_unchanged",
 			command:  "go test ./...",
 			override: "/tmp/replay-env.yml",
 			want:     "go test ./...",
+			injected: false,
+		},
+		{
+			name:     "compound_command_not_injected",
+			command:  "cd /app && docker compose -f docker-compose.tusk-override.yml up",
+			override: "/tmp/replay-env.yml",
+			want:     "cd /app && docker compose -f docker-compose.tusk-override.yml up",
+			injected: false,
 		},
 		{
 			name:       "malformed_quoting_returns_error",
@@ -74,13 +88,14 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := injectComposeOverrideFile(tt.command, tt.override)
+			got, injected, err := injectComposeOverrideFile(tt.command, tt.override)
 			if tt.shouldFail {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.injected, injected)
 		})
 	}
 }
@@ -89,8 +104,9 @@ func TestInjectComposeOverrideFile_PreservesShellExpansion(t *testing.T) {
 	command := "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml up"
 	override := "/tmp/replay-env.yml"
 
-	got, err := injectComposeOverrideFile(command, override)
+	got, injected, err := injectComposeOverrideFile(command, override)
 	require.NoError(t, err)
+	assert.True(t, injected)
 	assert.Equal(t, "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml -f /tmp/replay-env.yml up", got)
 	assert.NotContains(t, got, "'$COMPOSE_DIR/docker-compose.tusk-override.yml'")
 }
@@ -146,14 +162,14 @@ services:
 	require.NoError(t, yaml.Unmarshal(data, &parsed))
 	require.Len(t, parsed.Services, 2)
 	assert.Equal(t, map[string]string{
-		"API_KEY":      `abc=123`,
-		"QUOTED_VALUE": `value "with quotes"`,
-		"MULTILINE":    "line1\nline2",
+		"API_KEY":      "${API_KEY}",
+		"QUOTED_VALUE": "${QUOTED_VALUE}",
+		"MULTILINE":    "${MULTILINE}",
 	}, parsed.Services["django"].Environment)
 	assert.Equal(t, map[string]string{
-		"API_KEY":      `abc=123`,
-		"QUOTED_VALUE": `value "with quotes"`,
-		"MULTILINE":    "line1\nline2",
+		"API_KEY":      "${API_KEY}",
+		"QUOTED_VALUE": "${QUOTED_VALUE}",
+		"MULTILINE":    "${MULTILINE}",
 	}, parsed.Services["worker"].Environment)
 	assert.NotContains(t, parsed.Services["django"].Environment, "TUSK_DRIFT_MODE")
 	assert.NotContains(t, parsed.Services["django"].Environment, "TUSK_MOCK_PORT")
