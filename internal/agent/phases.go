@@ -801,6 +801,11 @@ func cloudCreateApiKeyPhase() *Phase {
 		Tools: Tools(
 			ToolCloudCheckApiKeyExists,
 			ToolCloudCreateApiKey,
+			ToolListDirectory,
+			ToolReadFile,
+			ToolGrep,
+			ToolPatchFile,
+			ToolWriteFile,
 			ToolAskUser,
 			ToolTransitionPhase,
 		),
