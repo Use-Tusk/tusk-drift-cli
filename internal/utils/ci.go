@@ -1,9 +1,11 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 )
 
 // CIWarning emits a warning annotation visible in the CI provider's UI.
@@ -27,7 +29,9 @@ func CIWarning(message string) {
 
 	case os.Getenv("BUILDKITE") == "true":
 		// https://buildkite.com/docs/agent/v3/cli-annotate
-		cmd := exec.Command("buildkite-agent", "annotate", message, "--style", "warning")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "buildkite-agent", "annotate", message, "--style", "warning")
 		_ = cmd.Run() // best-effort, ignore errors
 
 	case os.Getenv("GITLAB_CI") == "true":
