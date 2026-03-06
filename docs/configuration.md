@@ -340,6 +340,27 @@ This will not affect CLI behavior. See SDK for more details:
 
 - [Node](https://github.com/Use-Tusk/drift-node-sdk)
 
+## Replay
+
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>replay.sandbox.mode</code></td>
+      <td>string</td>
+      <td><code>auto</code></td>
+      <td>Replay sandbox strategy: <code>auto</code> (start sandboxed, retry once without sandbox if startup fails), <code>strict</code> (require sandbox; fail if sandbox cannot be initialized/applied), <code>off</code> (never sandbox).</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Results
 
 <table>
@@ -370,6 +391,7 @@ This will not affect CLI behavior. See SDK for more details:
 - `--concurrency` → overrides `test_execution.concurrency`
 - `--enable-service-logs` → enables service log capture (not a config key)
 - `--save-results` and `--results-dir` → control result file output (uses `results.dir` if not provided)
+- `--sandbox-mode` → overrides `replay.sandbox.mode`
 - `--cloud` and metadata flags (e.g., `--trace-test-id`, `--all-cloud-trace-tests`, CI context flags)
 - `--trace-dir` → overrides `traces.dir`
 
@@ -408,6 +430,10 @@ comparison:
 
 results:
   dir: .tusk/results
+
+replay:
+  sandbox:
+    mode: auto
 ```
 
 ### Starting your service with `docker run`

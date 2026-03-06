@@ -93,7 +93,15 @@ type RecordingConfig struct {
 }
 
 type ReplayConfig struct {
-	// Reserved for future replay-specific options
+	Sandbox ReplaySandboxConfig `koanf:"sandbox"`
+}
+
+type ReplaySandboxConfig struct {
+	// Supported modes:
+	// - auto:   start with sandbox, retry once without sandbox on startup failure
+	// - strict: always use sandbox (no fallback)
+	// - off:    never use sandbox
+	Mode string `koanf:"mode"`
 }
 
 type TracesConfig struct {
@@ -198,6 +206,9 @@ func parseAndValidate() (*Config, error) {
 		defaultEnableEnvVarRecording := false
 		cfg.Recording.EnableEnvVarRecording = &defaultEnableEnvVarRecording
 	}
+	if cfg.Replay.Sandbox.Mode == "" {
+		cfg.Replay.Sandbox.Mode = "auto"
+	}
 	if cfg.Results.Dir == "" {
 		cfg.Results.Dir = ".tusk/results"
 	}
@@ -263,6 +274,11 @@ func (cfg *Config) Validate() error {
 
 	if cfg.Service.Communication.TCPPort < 1 || cfg.Service.Communication.TCPPort > 65535 {
 		errs = append(errs, fmt.Errorf("service.communication.tcp_port must be between 1-65535, got %d", cfg.Service.Communication.TCPPort))
+	}
+
+	validSandboxModes := map[string]bool{"auto": true, "strict": true, "off": true}
+	if !validSandboxModes[cfg.Replay.Sandbox.Mode] {
+		errs = append(errs, fmt.Errorf("replay.sandbox.mode must be 'auto', 'strict', or 'off', got %s", cfg.Replay.Sandbox.Mode))
 	}
 
 	if len(errs) > 0 {

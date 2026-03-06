@@ -112,8 +112,9 @@ func (tt *TuskTools) List(input json.RawMessage) (string, error) {
 // Run runs tests using the internal runner
 func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 	var params struct {
-		Filter string `json:"filter"`
-		Debug  bool   `json:"debug"`
+		Filter      string `json:"filter"`
+		Debug       bool   `json:"debug"`
+		SandboxMode string `json:"sandbox_mode"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("invalid input: %w", err)
@@ -141,6 +142,16 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 	if cfg, err := config.Get(); err == nil && cfg.TestExecution.Timeout != "" {
 		if d, err := time.ParseDuration(cfg.TestExecution.Timeout); err == nil {
 			executor.SetTestTimeout(d)
+		}
+	}
+	if cfg, err := config.Get(); err == nil && cfg.Replay.Sandbox.Mode != "" {
+		if err := executor.SetSandboxMode(cfg.Replay.Sandbox.Mode); err != nil {
+			return "", err
+		}
+	}
+	if params.SandboxMode != "" {
+		if err := executor.SetSandboxMode(params.SandboxMode); err != nil {
+			return "", err
 		}
 	}
 
@@ -229,13 +240,33 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 
 // RunValidation runs 'tusk run --cloud --validate-suite --print' and returns the results
 func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
+	var params struct {
+		SandboxMode string `json:"sandbox_mode"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("invalid input: %w", err)
+	}
+
+	if params.SandboxMode != "" {
+		switch params.SandboxMode {
+		case runner.SandboxModeAuto, runner.SandboxModeStrict, runner.SandboxModeOff:
+			// valid
+		default:
+			return "", fmt.Errorf("invalid sandbox_mode %q (expected one of: auto, strict, off)", params.SandboxMode)
+		}
+	}
+
 	// Use a timeout to prevent hanging indefinitely
 	timeout := 120 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Execute tusk run --cloud --validate-suite --print
-	cmd := exec.CommandContext(ctx, "tusk", "run", "--cloud", "--validate-suite", "--print")
+	args := []string{"run", "--cloud", "--validate-suite", "--print"}
+	if params.SandboxMode != "" {
+		args = append(args, "--sandbox-mode", params.SandboxMode)
+	}
+	cmd := exec.CommandContext(ctx, "tusk", args...)
 	cmd.Dir = tt.workDir
 
 	output, err := cmd.CombinedOutput()

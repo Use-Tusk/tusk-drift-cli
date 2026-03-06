@@ -410,6 +410,10 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 					"debug": {
 						"type": "boolean",
 						"description": "Enable debug logging for troubleshooting"
+					},
+					"sandbox_mode": {
+						"type": "string",
+						"description": "Optional replay sandbox mode override for this run: auto, strict, or off. If omitted, the value in the config will be used."
 					}
 				}
 			}`),
@@ -683,10 +687,15 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 		},
 		ToolCloudRunValidation: {
 			Name:        ToolCloudRunValidation,
-			Description: "Run trace validation using 'tusk run --cloud --validate-suite --print'. Returns validation results including how many tests became part of the suite.",
+			Description: "Run trace validation using 'tusk run --cloud --validate-suite --print'. Returns validation results including how many tests became part of the suite. Supports optional sandbox_mode override.",
 			InputSchema: json.RawMessage(`{
 				"type": "object",
-				"properties": {}
+				"properties": {
+					"sandbox_mode": {
+						"type": "string",
+						"description": "Optional replay sandbox mode override for this run: auto, strict, or off. If omitted, the value in the config will be used."
+					}
+				}
 			}`),
 		},
 	}

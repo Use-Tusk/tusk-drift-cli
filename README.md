@@ -165,6 +165,7 @@ tusk run --trace-id <traceId>
 # Common flags
 tusk run --filter '^/api/users' --concurrency 10 --enable-service-logs
 tusk run --save-results --results-dir .tusk/results
+tusk run --sandbox-mode auto   # default: auto (choices: auto|strict|off)
 ```
 
 ## ✨ Tusk Drift Cloud
