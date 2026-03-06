@@ -47,7 +47,7 @@ jobs:
         working-directory: ../drift-python-demo
         run: |
           source venv/bin/activate
-          $GITHUB_WORKSPACE/tusk run --print --sandbox-mode strict
+          $GITHUB_WORKSPACE/tusk run --print --sandbox-mode auto
           # Exits non-zero if any test has deviations
 
       # CI environments don't have a TTY, so the CLI falls back to headless mode by default.
