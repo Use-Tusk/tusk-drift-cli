@@ -6,7 +6,9 @@ Create an API key for recording traces to Tusk Cloud and CI/CD authentication. T
 
 1. **Check if API key exists**: Use `cloud_check_api_key_exists` to see if TUSK_API_KEY is already set.
 
-2. **If API key exists**: Inform the user and skip to transition.
+2. **If API key exists**:
+   - Inform the user.
+   - Continue to the SDK initialization update step below (do not skip it).
 
 3. **If no API key**:
    - Ask the user if they want to create an API key now using `ask_user`:
@@ -16,7 +18,7 @@ Create an API key for recording traces to Tusk Cloud and CI/CD authentication. T
    - If user provides a name, create the key with `cloud_create_api_key`:
      - `name`: the user-provided name
      - `client_id`: from state.selected_client_id
-   - If user skips (empty input), that's fine - proceed to transition
+   - If user skips (empty input), that's fine - continue to the SDK initialization update step below
 
 4. **If API key created**:
    - Display the key to the user with clear instructions:
@@ -25,7 +27,22 @@ Create an API key for recording traces to Tusk Cloud and CI/CD authentication. T
      - Or set as CI/CD secret
    - Wait for user acknowledgment
 
-5. **Transition**: Move to the next phase with:
+5. **Update SDK initialization for cloud mode (required, always attempt)**:
+   - Find the existing `TuskDrift.initialize(...)` call in the repository.
+   - Prefer known setup locations first (for example, `tuskDriftInit.ts`, `tusk_drift_init.py`, or files near `state.entry_point`), then use `grep` if needed.
+   - Update the initialization call to read API key from env var:
+     - Node.js: add `apiKey: process.env.TUSK_API_KEY`
+     - Python: add `api_key=os.getenv("TUSK_API_KEY")`
+   - Add a reminder comment immediately above that option line:
+     - Node.js: `// Set TUSK_API_KEY in your deployed environment (do not hardcode secrets).`
+     - Python: `# Set TUSK_API_KEY in your deployed environment (do not hardcode secrets).`
+   - Python only: if `os.getenv(...)` is used and `import os` is missing, add `import os`.
+   - Keep edits idempotent:
+     - Do not add duplicate `apiKey` / `api_key` fields.
+     - Do not add duplicate reminder comments.
+   - If no initialization call can be found automatically, ask the user for the file path and then apply the edit there.
+
+6. **Transition**: Move to the next phase with:
    - `api_key_created`: true/false
 
 ### Important Notes
