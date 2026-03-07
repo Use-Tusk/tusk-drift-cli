@@ -284,6 +284,8 @@ func quoteForShell(value string, quoteChar byte) string {
 	case '"':
 		escaped := strings.ReplaceAll(value, `\`, `\\`)
 		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		escaped = strings.ReplaceAll(escaped, `$`, `\$`)
+		escaped = strings.ReplaceAll(escaped, "`", "\\`")
 		return `"` + escaped + `"`
 	default:
 		quoted, err := syntax.Quote(value, syntax.LangBash)

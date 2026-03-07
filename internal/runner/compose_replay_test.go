@@ -43,6 +43,13 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 			injected: true,
 		},
 		{
+			name:     "escapes_dollar_and_backtick_when_original_file_arg_is_double_quoted",
+			command:  "docker compose --file \"${COMPOSE_DIR}/docker-compose.tusk-override.yml\" up",
+			override: "/tmp/replay-$FOO-`bar`.yml",
+			want:     "docker compose --file \"${COMPOSE_DIR}/docker-compose.tusk-override.yml\" --file \"/tmp/replay-\\$FOO-\\`bar\\`.yml\" up",
+			injected: true,
+		},
+		{
 			name:     "non_compose_command_unchanged",
 			command:  "go test ./...",
 			override: "/tmp/replay-env.yml",
