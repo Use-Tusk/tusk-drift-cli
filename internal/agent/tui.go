@@ -1507,10 +1507,9 @@ func (m *TUIModel) applyDragHint(text string) string {
 	padding := m.width - textWidth - hintWidth
 	if padding >= 2 {
 		return text + strings.Repeat(" ", padding) + hint
-	} else if m.width > hintWidth {
-		// Not enough space for both, just show the hint right-aligned
-		return strings.Repeat(" ", m.width-hintWidth) + hint
 	}
+	// Not enough space for both - prioritize help text (shortcuts are essential,
+	// drag hint is just informational)
 	return text
 }
 
