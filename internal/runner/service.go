@@ -45,9 +45,23 @@ func (e *Executor) StartService() error {
 
 	// Wrap command with fence sandboxing (if supported and enabled)
 	command := cfg.Service.Start.Command
+	replayOverridePath := e.getReplayComposeOverride()
+	if replayOverridePath != "" && isComposeBasedStartCommand(command) {
+		commandWithReplayOverride, injected, injectErr := injectComposeOverrideFile(command, replayOverridePath)
+		if injectErr != nil {
+			return fmt.Errorf("failed to inject replay compose env override: %w", injectErr)
+		}
+		command = commandWithReplayOverride
+		if injected {
+			log.ServiceLog(fmt.Sprintf("✅ Replay env override injected into Docker Compose command: %s", replayOverridePath))
+		} else {
+			log.ServiceLog("❌ Replay env override was prepared but not injected (unsupported Docker Compose command shape)")
+		}
+	}
 	if e.GetSandboxMode() == SandboxModeOff || e.sandboxBypass {
 		log.ServiceLog("⚠️  Replay sandbox disabled (real outbound connections allowed)")
 	}
+
 	requireSandbox := e.GetSandboxMode() == SandboxModeStrict
 	if e.GetSandboxMode() != SandboxModeOff && !e.sandboxBypass {
 		if !fence.IsSupported() {

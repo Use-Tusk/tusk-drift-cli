@@ -55,6 +55,7 @@ type Executor struct {
 	debug                  bool
 	fenceManager           *fence.Manager
 	requireInboundReplay   bool
+	replayComposeOverride  string
 }
 
 func NewExecutor() *Executor {

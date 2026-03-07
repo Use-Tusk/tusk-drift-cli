@@ -57,7 +57,9 @@ recording:
   enable_env_var_recording: true
 ```
 
-Also create docker-compose.tusk-override.yml if using Docker Compose.
+Also create a Docker Compose override file named exactly `docker-compose.tusk-override.yml` if using Docker Compose.
+
+IMPORTANT for Docker Compose: The override filename must be exactly `docker-compose.tusk-override.yml` (do not rename it).
 
 IMPORTANT:
 
