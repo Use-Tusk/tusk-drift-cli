@@ -24,3 +24,14 @@ func TestRenderAgentMessage_DoesNotCreateMailtoForPlainEmail(t *testing.T) {
 		t.Fatalf("expected no mailto link in rendered output, got: %q", out)
 	}
 }
+
+func TestRenderAgentMessage_FallbackDoesNotLeakSanitizerBackticks(t *testing.T) {
+	input := "Remote: git@github.com:Use-Tusk/tusk-drift-cli.git | Email: jy@usetusk.ai"
+
+	out := renderAgentMessage(input, 100)
+
+	if strings.Contains(out, "`git@github.com:Use-Tusk/tusk-drift-cli.git`") ||
+		strings.Contains(out, "`jy@usetusk.ai`") {
+		t.Fatalf("expected fallback/rendered output to not contain sanitizer backticks, got: %q", out)
+	}
+}

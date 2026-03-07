@@ -19,6 +19,8 @@ func renderAgentMessage(text string, width int) string {
 		width = 80
 	}
 
+	originalText := text
+
 	// Prevent markdown autolink/email parsers from converting scp-style Git remotes
 	// (e.g., git@github.com:org/repo.git) into broken mailto links.
 	text = gitScpLikeRemotePattern.ReplaceAllStringFunc(text, func(match string) string {
@@ -32,7 +34,7 @@ func renderAgentMessage(text string, width int) string {
 	// RenderMarkdownWithWidth returns raw text in non-terminal/no-color mode.
 	// Keep output readable by wrapping plain text to the viewport width.
 	if rendered == text {
-		return utils.WrapText(text, width)
+		return utils.WrapText(originalText, width)
 	}
 
 	return rendered
