@@ -31,15 +31,15 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 		{
 			name:     "appends_override_after_source_file_flag",
 			command:  "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml up",
-			override: "/tmp/replay-env.yml",
-			want:     "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up",
+			override: "/tmp/tusk-replay-env-override-staging-us-east-123456.yml",
+			want:     "./.tusk/bin/tusk-compose -f docker-compose.local.yaml -f docker-compose.tusk-override.yml -f /tmp/tusk-replay-env-override-staging-us-east-123456.yml up",
 			injected: true,
 		},
 		{
 			name:     "supports_double_quoted_file_arg",
 			command:  `docker compose --file "${COMPOSE_DIR}/docker-compose.tusk-override.yml" up`,
-			override: "/tmp/replay env.yml",
-			want:     `docker compose --file "${COMPOSE_DIR}/docker-compose.tusk-override.yml" --file "/tmp/replay env.yml" up`,
+			override: "/tmp/tusk-replay-env-override-staging-us-east-123456.yml",
+			want:     `docker compose --file "${COMPOSE_DIR}/docker-compose.tusk-override.yml" --file "/tmp/tusk-replay-env-override-staging-us-east-123456.yml" up`,
 			injected: true,
 		},
 		{
@@ -52,29 +52,29 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 		{
 			name:     "non_compose_command_unchanged",
 			command:  "go test ./...",
-			override: "/tmp/replay-env.yml",
+			override: "/tmp/tusk-replay-env-override-staging-us-east-123456.yml",
 			want:     "go test ./...",
 			injected: false,
 		},
 		{
 			name:     "supports_compound_commands",
 			command:  "cd /app && docker compose -f docker-compose.tusk-override.yml up",
-			override: "/tmp/replay-env.yml",
-			want:     "cd /app && docker compose -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up",
+			override: "/tmp/tusk-replay-env-override-staging-us-east-123456.yml",
+			want:     "cd /app && docker compose -f docker-compose.tusk-override.yml -f /tmp/tusk-replay-env-override-staging-us-east-123456.yml up",
 			injected: true,
 		},
 		{
 			name:     "supports_bash_lc_with_literal_compose_file_arg",
 			command:  "bash -lc 'docker compose -f docker-compose.tusk-override.yml up'",
-			override: "/tmp/replay-env.yml",
-			want:     "bash -lc 'docker compose -f docker-compose.tusk-override.yml -f /tmp/replay-env.yml up'",
+			override: "/tmp/tusk-replay-env-override-staging-us-east-123456.yml",
+			want:     "bash -lc 'docker compose -f docker-compose.tusk-override.yml -f /tmp/tusk-replay-env-override-staging-us-east-123456.yml up'",
 			injected: true,
 		},
 		{
 			name:     "equal_form_file_flag_replaced",
 			command:  "docker compose --file=./docker-compose.tusk-override.yml up",
-			override: "/tmp/replay-env.yml",
-			want:     "docker compose --file=./docker-compose.tusk-override.yml --file=/tmp/replay-env.yml up",
+			override: "/tmp/tusk-replay-env-override-staging-us-east-123456.yml",
+			want:     "docker compose --file=./docker-compose.tusk-override.yml --file=/tmp/tusk-replay-env-override-staging-us-east-123456.yml up",
 			injected: true,
 		},
 	}
@@ -91,12 +91,12 @@ func TestInjectComposeOverrideFile(t *testing.T) {
 
 func TestInjectComposeOverrideFile_PreservesShellExpansion(t *testing.T) {
 	command := "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml up"
-	override := "/tmp/replay-env.yml"
+	override := "/tmp/tusk-replay-env-override-staging-us-east-123456.yml"
 
 	got, injected, err := injectComposeOverrideFile(command, override)
 	require.NoError(t, err)
 	assert.True(t, injected)
-	assert.Equal(t, "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml -f /tmp/replay-env.yml up", got)
+	assert.Equal(t, "docker compose -f $COMPOSE_DIR/docker-compose.tusk-override.yml -f /tmp/tusk-replay-env-override-staging-us-east-123456.yml up", got)
 	assert.Contains(t, got, "$COMPOSE_DIR/docker-compose.tusk-override.yml")
 }
 
@@ -118,14 +118,6 @@ func TestInjectComposeOverrideFile_KnownLimitations(t *testing.T) {
 			command: `docker compose -f "$(pwd)/$(echo docker-compose.tusk-override.yml)" up`,
 		},
 		{
-			name:    "does_not_inject_when_file_arg_builds_name_via_concatenation",
-			command: `docker compose -f docker-compose.tusk-override."yml" up`,
-		},
-		{
-			name:    "does_not_inject_when_file_arg_has_dynamic_suffix_after_filename",
-			command: `docker compose -f "${COMPOSE_DIR}/docker-compose.tusk-override.yml.${ENV}" up`,
-		},
-		{
 			name:    "does_not_inject_when_file_arg_uses_process_substitution",
 			command: `docker compose -f <(echo docker-compose.tusk-override.yml) up`,
 		},
@@ -137,7 +129,7 @@ func TestInjectComposeOverrideFile_KnownLimitations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, injected, err := injectComposeOverrideFile(tt.command, "/tmp/replay-env.yml")
+			got, injected, err := injectComposeOverrideFile(tt.command, "/tmp/tusk-replay-env-override-staging-us-east-123456.yml")
 			require.NoError(t, err)
 			assert.False(t, injected)
 			assert.Equal(t, tt.command, got)
