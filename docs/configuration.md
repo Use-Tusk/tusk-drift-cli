@@ -129,7 +129,9 @@ See: [Docker example](#starting-your-service-with-docker-run).
 
 While Tusk replays traffic in your app as a standalone service, we do support Docker Compose setups as well.
 
-Create a `docker-compose.tusk-override.yml` file:
+Create a `docker-compose.tusk-override.yml` file.
+
+**Important:** the override filename must be exactly `docker-compose.tusk-override.yml`
 
 ```yaml
 services:
@@ -497,6 +499,7 @@ traces:
 ```
 
 As a reminder, you need to create and pass in an override file in your start command (see [Docker Support](#docker-support) section above).
+Use the exact filename `docker-compose.tusk-override.yml`.
 
 ### Cloud example
 
