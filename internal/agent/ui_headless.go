@@ -6,6 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
+
+	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -97,7 +100,16 @@ func (u *HeadlessUI) AgentText(text string, streaming bool) {
 		u.isThinking = false
 	}
 	if strings.TrimSpace(text) != "" {
-		fmt.Println(text)
+		width := 90
+		if utils.IsTerminal() {
+			if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
+				width = max(w-4, 40)
+			}
+		}
+
+		// Headless mode intentionally keeps raw markdown syntax and avoids
+		// glamour rendering for lower overhead and predictable plain output.
+		fmt.Println(utils.WrapText(text, width))
 		fmt.Println()
 	}
 }
