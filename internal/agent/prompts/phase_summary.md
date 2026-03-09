@@ -19,6 +19,7 @@ Generate a final report documenting:
    - Any important observations
 
 IMPORTANT: First output the FULL report content as text in your response so the user can read it in the terminal.
-Then save the same report to .tusk/setup/SETUP_REPORT.md using write_file.
+Then save the same report using write_file to the exact path: `.tusk/setup/SETUP_REPORT.md`
+⚠️ IMPORTANT: The file MUST be written to `.tusk/setup/SETUP_REPORT.md` — do NOT use any other filename or directory (e.g. do NOT write to `.tusk/SETUP_NOTES.md` or any other path).
 
 After saving the report, call transition_phase to complete.

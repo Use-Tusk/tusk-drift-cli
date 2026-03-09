@@ -85,7 +85,8 @@ Mention that they can view this checklist at any time in `.tusk/setup/CLOUD_SETU
 
 2. **Display report**: Output the full report content to the terminal so the user can read it. The Next Steps checklist (section 7) is especially important — make sure it is clearly displayed.
 
-3. **Save report**: Use `write_file` to save the report to `.tusk/setup/CLOUD_SETUP_REPORT.md`
+3. **Save report**: Use `write_file` to save the report to the exact path: `.tusk/setup/CLOUD_SETUP_REPORT.md`
+   ⚠️ IMPORTANT: The file MUST be written to `.tusk/setup/CLOUD_SETUP_REPORT.md` — do NOT use any other filename or directory.
 
 4. **Transition**: Call `transition_phase` to complete the setup.
 

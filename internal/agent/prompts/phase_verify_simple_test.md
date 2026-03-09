@@ -54,7 +54,8 @@ Format:
 }
 ```
 
-Write the updated JSON back to `.tusk/setup/verify-cache.json`.
+Write the updated JSON back to `.tusk/setup/verify-cache.json` (this exact path, no alternatives).
+⚠️ IMPORTANT: The file MUST be written to `.tusk/setup/verify-cache.json` — do NOT use any other filename or directory.
 
 ### Transition
 
