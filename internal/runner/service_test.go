@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -64,6 +65,11 @@ func createMarkerIfEnvMatchesCommand(markerFile, key, value string) string {
 		return fmt.Sprintf(`powershell -NoProfile -NonInteractive -Command "$v=$env:%s; if ($v -eq '%s') { New-Item -Path '%s' -ItemType File -Force | Out-Null; exit 0 } else { exit 1 }"`, key, value, markerFile)
 	}
 	return fmt.Sprintf(`test "$%s" = "%s" && touch "%s"`, key, value, markerFile)
+}
+
+func yamlSingleQuoted(value string) string {
+	// Escape single quotes per YAML spec by doubling them.
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func TestStartService(t *testing.T) {
@@ -474,8 +480,8 @@ service:
   start:
     command: "%s"
   stop:
-    command: '%s'
-`, getSimpleSleepCommand(), createMarkerIfEnvMatchesCommand(markerFileYAML, replayKey, replayValue))
+    command: %s
+`, getSimpleSleepCommand(), yamlSingleQuoted(createMarkerIfEnvMatchesCommand(markerFileYAML, replayKey, replayValue)))
 
 	configPath := filepath.Join(tempDir, "tusk.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0o600)
@@ -745,8 +751,8 @@ func TestCheckServerHealthUsesReplayEnvVarsForReadinessCommand(t *testing.T) {
 service:
   port: 13014
   readiness_check:
-    command: '%s'
-`, envEqualsCommand(replayKey, replayValue))
+    command: %s
+`, yamlSingleQuoted(envEqualsCommand(replayKey, replayValue)))
 
 	configPath := filepath.Join(tempDir, "tusk.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0o600)
