@@ -666,15 +666,15 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		maxIterations = DefaultMaxIterations
 	}
 
-	// phaseContext returns a context with the remaining phase time budget,
+	// phaseRemaining returns the remaining phase time budget,
 	// excluding time the user spent responding to prompts.
-	phaseContext := func() (context.Context, context.CancelFunc) {
+	phaseRemaining := func() time.Duration {
 		activeTime := time.Since(phaseStart) - a.userWaitTime
 		remaining := PhaseTimeout - activeTime
 		if remaining <= 0 {
-			remaining = 1 // will expire immediately
+			return 1 // will expire immediately
 		}
-		return context.WithTimeout(ctx, remaining)
+		return remaining
 	}
 
 	for iteration := 0; iteration < maxIterations; iteration++ {
@@ -689,8 +689,6 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		if activeTime > PhaseTimeout {
 			return context.DeadlineExceeded
 		}
-		iterCtx, iterCancel := phaseContext()
-		defer iterCancel()
 
 		a.ui.Thinking(true)
 		if a.logger != nil {
@@ -699,7 +697,7 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 
 		var streamedText strings.Builder
 
-		apiCtx, apiCancel := context.WithTimeout(iterCtx, APITimeout)
+		apiCtx, apiCancel := context.WithTimeout(ctx, min(APITimeout, phaseRemaining()))
 		resp, err := a.client.CreateMessageStreaming(apiCtx, systemPrompt, messages, tools, func(event StreamEvent) {
 			switch event.Type {
 			case "text":
@@ -778,7 +776,9 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		}
 
 		if resp.StopReason == "tool_use" {
-			toolResults, err := a.executeToolCalls(iterCtx, cleanedContent)
+			toolCtx, toolCtxCancel := context.WithTimeout(ctx, phaseRemaining())
+			toolResults, err := a.executeToolCalls(toolCtx, cleanedContent)
+			toolCtxCancel()
 			if err != nil {
 				// Special handling for abort_setup - graceful exit
 				if errors.Is(err, agenttools.ErrSetupAborted) {
