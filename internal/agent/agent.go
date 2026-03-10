@@ -776,9 +776,7 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		}
 
 		if resp.StopReason == "tool_use" {
-			toolCtx, toolCtxCancel := context.WithTimeout(ctx, phaseRemaining())
-			toolResults, err := a.executeToolCalls(toolCtx, cleanedContent)
-			toolCtxCancel()
+			toolResults, err := a.executeToolCalls(ctx, cleanedContent)
 			if err != nil {
 				// Special handling for abort_setup - graceful exit
 				if errors.Is(err, agenttools.ErrSetupAborted) {
