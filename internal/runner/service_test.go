@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 
@@ -55,16 +54,16 @@ service:
 
 func envEqualsCommand(key, value string) string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf(`if "%%%s%%"=="%s" (exit /b 0) else (exit /b 1)`, key, value)
+		return fmt.Sprintf(`powershell -NoProfile -NonInteractive -Command "if ($env:%s -eq '%s') { exit 0 } else { exit 1 }"`, key, value)
 	}
 	return fmt.Sprintf(`test "$%s" = "%s"`, key, value)
 }
 
-func writeEnvValueToFileCommand(outputFile, key string) string {
+func createMarkerIfEnvMatchesCommand(markerFile, key, value string) string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf(`echo %%%s%% > "%s"`, key, outputFile)
+		return fmt.Sprintf(`powershell -NoProfile -NonInteractive -Command "$v=$env:%s; if ($v -eq '%s') { New-Item -Path '%s' -ItemType File -Force | Out-Null; exit 0 } else { exit 1 }"`, key, value, markerFile)
 	}
-	return fmt.Sprintf(`echo "$%s" > "%s"`, key, outputFile)
+	return fmt.Sprintf(`test "$%s" = "%s" && touch "%s"`, key, value, markerFile)
 }
 
 func TestStartService(t *testing.T) {
@@ -464,10 +463,10 @@ func TestCustomStopCommandUsesReplayEnv(t *testing.T) {
 	}()
 
 	tempDir := t.TempDir()
-	envDumpFile := filepath.Join(tempDir, "stop-replay-env-value.txt")
+	markerFile := filepath.Join(tempDir, "stop-replay-env-ok")
 	replayKey := "TUSK_TEST_REPLAY_STOP_ENV"
 	replayValue := "stop-ok"
-	envDumpFileYAML := filepath.ToSlash(envDumpFile)
+	markerFileYAML := filepath.ToSlash(markerFile)
 
 	configContent := fmt.Sprintf(`
 service:
@@ -476,7 +475,7 @@ service:
     command: "%s"
   stop:
     command: '%s'
-`, getSimpleSleepCommand(), writeEnvValueToFileCommand(envDumpFileYAML, replayKey))
+`, getSimpleSleepCommand(), createMarkerIfEnvMatchesCommand(markerFileYAML, replayKey, replayValue))
 
 	configPath := filepath.Join(tempDir, "tusk.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0o600)
@@ -494,9 +493,8 @@ service:
 	err = e.StopService()
 	assert.NoError(t, err)
 
-	envBytes, err := os.ReadFile(envDumpFile)
-	require.NoError(t, err, "Custom stop command should write replay env value")
-	assert.Equal(t, replayValue, strings.TrimSpace(string(envBytes)))
+	_, err = os.Stat(markerFile)
+	require.NoError(t, err, "Custom stop command should create marker when replay env is present")
 }
 
 func TestGetServiceLogPath(t *testing.T) {
