@@ -56,6 +56,7 @@ type Executor struct {
 	fenceManager           *fence.Manager
 	requireInboundReplay   bool
 	replayComposeOverride  string
+	replayEnvVars          map[string]string
 }
 
 func NewExecutor() *Executor {
@@ -91,6 +92,33 @@ func (e *Executor) GetSandboxMode() string {
 // SetDebug enables debug mode for fence sandbox
 func (e *Executor) SetDebug(debug bool) {
 	e.debug = debug
+}
+
+// SetReplayEnvVars configures environment variables to inject into the replay
+// service subprocess. This does not mutate the CLI process environment.
+func (e *Executor) SetReplayEnvVars(envVars map[string]string) {
+	if len(envVars) == 0 {
+		e.replayEnvVars = nil
+		return
+	}
+
+	copied := make(map[string]string, len(envVars))
+	for key, value := range envVars {
+		copied[key] = value
+	}
+	e.replayEnvVars = copied
+}
+
+func (e *Executor) getReplayEnvVars() map[string]string {
+	if len(e.replayEnvVars) == 0 {
+		return nil
+	}
+
+	copied := make(map[string]string, len(e.replayEnvVars))
+	for key, value := range e.replayEnvVars {
+		copied[key] = value
+	}
+	return copied
 }
 
 func (e *Executor) SetResultsOutput(dir string) {

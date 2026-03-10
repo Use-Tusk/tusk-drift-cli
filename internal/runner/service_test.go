@@ -665,6 +665,39 @@ func TestSetEnableServiceLogs(t *testing.T) {
 	assert.False(t, e.enableServiceLogs)
 }
 
+func TestSetReplayEnvVarsCopiesInput(t *testing.T) {
+	e := NewExecutor()
+	input := map[string]string{
+		"TMPDIR": "/tmp/original",
+	}
+
+	e.SetReplayEnvVars(input)
+	input["TMPDIR"] = "/tmp/changed"
+
+	stored := e.getReplayEnvVars()
+	require.NotNil(t, stored)
+	assert.Equal(t, "/tmp/original", stored["TMPDIR"])
+
+	// Verify callers can't mutate executor state through returned map.
+	stored["TMPDIR"] = "/tmp/mutated"
+	again := e.getReplayEnvVars()
+	assert.Equal(t, "/tmp/original", again["TMPDIR"])
+}
+
+func TestMergeEnvVars(t *testing.T) {
+	base := []string{"A=1", "B=2"}
+	overrides := map[string]string{
+		"B": "22",
+		"C": "3",
+	}
+
+	merged := mergeEnvVars(base, overrides)
+	assert.Contains(t, merged, "A=1")
+	assert.Contains(t, merged, "B=22")
+	assert.Contains(t, merged, "C=3")
+	assert.NotContains(t, merged, "B=2")
+}
+
 func TestSetupServiceLogging(t *testing.T) {
 	tests := []struct {
 		name              string

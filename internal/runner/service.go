@@ -111,6 +111,7 @@ func (e *Executor) StartService() error {
 	setupProcessGroup(e.serviceCmd)
 
 	env := os.Environ()
+	env = mergeEnvVars(env, e.getReplayEnvVars())
 
 	if e.server != nil {
 		socketPath, tcpPort := e.server.GetConnectionInfo()
@@ -258,6 +259,36 @@ func (e *Executor) StopService() error {
 	}
 
 	return nil
+}
+
+func mergeEnvVars(base []string, overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+
+	merged := make([]string, len(base))
+	copy(merged, base)
+
+	indexByKey := make(map[string]int, len(base))
+	for i, pair := range merged {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) == 2 {
+			indexByKey[parts[0]] = i
+		}
+	}
+
+	for key, value := range overrides {
+		pair := fmt.Sprintf("%s=%s", key, value)
+		if idx, ok := indexByKey[key]; ok {
+			merged[idx] = pair
+			continue
+		}
+
+		indexByKey[key] = len(merged)
+		merged = append(merged, pair)
+	}
+
+	return merged
 }
 
 func (e *Executor) GetServiceLogPath() string {
