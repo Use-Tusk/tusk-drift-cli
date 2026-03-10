@@ -1203,7 +1203,10 @@ func (a *Agent) checkPortConflicts(input json.RawMessage) error {
 
 	for _, port := range ports {
 		if isPortInUse(port) {
-			if a.ui.PromptKillPort(port) {
+			waitStart := time.Now()
+			killIt := a.ui.PromptKillPort(port)
+			a.userWaitTime += time.Since(waitStart)
+			if killIt {
 				if err := killProcessOnPort(port); err != nil {
 					return fmt.Errorf("failed to kill process on port %d: %w", port, err)
 				}
