@@ -61,7 +61,8 @@ func envEqualsCommand(key, value string) string {
 
 func createMarkerIfEnvMatchesCommand(markerFile, key, value string) string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf(`if "%%%s%%"=="%s" (type nul > "%s") else (exit /b 1)`, key, value, markerFile)
+		// "echo. > file" is more reliable than "type nul > file" on GitHub Windows runners.
+		return fmt.Sprintf(`if "%%%s%%"=="%s" (echo. > "%s") else (exit /b 1)`, key, value, markerFile)
 	}
 	return fmt.Sprintf(`test "$%s" = "%s" && touch "%s"`, key, value, markerFile)
 }
@@ -723,6 +724,35 @@ func TestWaitForReadiness(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckServerHealthUsesReplayEnvVarsForReadinessCommand(t *testing.T) {
+	config.Invalidate()
+
+	tempDir := t.TempDir()
+	replayKey := "TUSK_TEST_REPLAY_HEALTHCHECK_ENV"
+	replayValue := "health-ok"
+
+	configContent := fmt.Sprintf(`
+service:
+  port: 13014
+  readiness_check:
+    command: '%s'
+`, envEqualsCommand(replayKey, replayValue))
+
+	configPath := filepath.Join(tempDir, "tusk.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0o600)
+	require.NoError(t, err)
+
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	withoutReplayEnv := NewExecutor()
+	assert.False(t, withoutReplayEnv.CheckServerHealth())
+
+	withReplayEnv := NewExecutor()
+	withReplayEnv.SetReplayEnvVars(map[string]string{replayKey: replayValue})
+	assert.True(t, withReplayEnv.CheckServerHealth())
 }
 
 func TestSetEnableServiceLogs(t *testing.T) {
