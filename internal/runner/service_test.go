@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -49,6 +50,20 @@ service:
 	require.NoError(t, err)
 
 	return configPath
+}
+
+func envEqualsCommand(key, value string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf(`if "%%%s%%"=="%s" (exit /b 0) else (exit /b 1)`, key, value)
+	}
+	return fmt.Sprintf(`test "$%s" = "%s"`, key, value)
+}
+
+func createMarkerIfEnvMatchesCommand(markerFile, key, value string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf(`if "%%%s%%"=="%s" (type nul > "%s") else (exit /b 1)`, key, value, markerFile)
+	}
+	return fmt.Sprintf(`test "$%s" = "%s" && touch "%s"`, key, value, markerFile)
 }
 
 func TestStartService(t *testing.T) {
@@ -435,6 +450,44 @@ service:
 	assert.NoError(t, err, "Custom stop command should have created marker file")
 }
 
+func TestCustomStopCommandUsesReplayEnv(t *testing.T) {
+	config.Invalidate()
+
+	tempDir := t.TempDir()
+	markerFile := filepath.Join(tempDir, "stop-used-replay-env")
+	replayKey := "TUSK_TEST_REPLAY_STOP_ENV"
+	replayValue := "stop-ok"
+	markerFileYAML := filepath.ToSlash(markerFile)
+
+	configContent := fmt.Sprintf(`
+service:
+  port: 13013
+  start:
+    command: "%s"
+  stop:
+    command: '%s'
+`, getSimpleSleepCommand(), createMarkerIfEnvMatchesCommand(markerFileYAML, replayKey, replayValue))
+
+	configPath := filepath.Join(tempDir, "tusk.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0o600)
+	require.NoError(t, err)
+
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	e := NewExecutor()
+	e.SetReplayEnvVars(map[string]string{replayKey: replayValue})
+
+	err = e.StartService()
+	require.NoError(t, err)
+
+	err = e.StopService()
+	assert.NoError(t, err)
+
+	_, err = os.Stat(markerFile)
+	assert.NoError(t, err, "Custom stop command should see replay env vars")
+}
+
 func TestGetServiceLogPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -633,6 +686,20 @@ func TestWaitForReadiness(t *testing.T) {
 			expectError: false,
 			setupFunc:   noopCleanup,
 		},
+		{
+			name: "readiness_command_uses_replay_env_vars",
+			config: &config.Config{
+				Service: config.ServiceConfig{
+					Readiness: config.ReadinessConfig{
+						Command:  envEqualsCommand("TUSK_TEST_REPLAY_READINESS_ENV", "ready-ok"),
+						Timeout:  "2s",
+						Interval: "200ms",
+					},
+				},
+			},
+			expectError: false,
+			setupFunc:   noopCleanup,
+		},
 	}
 
 	for _, tt := range tests {
@@ -643,6 +710,9 @@ func TestWaitForReadiness(t *testing.T) {
 			defer cleanup()
 
 			e := NewExecutor()
+			if tt.name == "readiness_command_uses_replay_env_vars" {
+				e.SetReplayEnvVars(map[string]string{"TUSK_TEST_REPLAY_READINESS_ENV": "ready-ok"})
+			}
 			err := e.waitForReadiness(tt.config)
 
 			if tt.expectError {

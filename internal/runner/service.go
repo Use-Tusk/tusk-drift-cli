@@ -110,8 +110,7 @@ func (e *Executor) StartService() error {
 	// Set up process group so we can kill all child processes
 	setupProcessGroup(e.serviceCmd)
 
-	env := os.Environ()
-	env = mergeEnvVars(env, e.getReplayEnvVars())
+	env := e.buildCommandEnv()
 
 	if e.server != nil {
 		socketPath, tcpPort := e.server.GetConnectionInfo()
@@ -241,6 +240,7 @@ func (e *Executor) StopService() error {
 		log.Debug("Using custom stop command", "command", cfg.Service.Stop.Command)
 
 		stopCmd := createServiceCommand(context.Background(), cfg.Service.Stop.Command)
+		stopCmd.Env = e.buildCommandEnv()
 		if err := stopCmd.Run(); err != nil {
 			log.Warn("Stop command failed", "error", err)
 			// Continue to fallback method
@@ -289,6 +289,10 @@ func mergeEnvVars(base []string, overrides map[string]string) []string {
 	}
 
 	return merged
+}
+
+func (e *Executor) buildCommandEnv() []string {
+	return mergeEnvVars(os.Environ(), e.getReplayEnvVars())
 }
 
 func (e *Executor) GetServiceLogPath() string {
@@ -354,6 +358,7 @@ func (e *Executor) waitForReadiness(cfg *config.Config) error {
 
 	for time.Now().Before(deadline) {
 		cmd := createReadinessCommand(cfg.Service.Readiness.Command)
+		cmd.Env = e.buildCommandEnv()
 		if err := cmd.Run(); err == nil {
 			return nil
 		}
