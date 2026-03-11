@@ -463,6 +463,7 @@ func (e *Executor) CheckServerHealth() bool {
 	// Use readiness command if configured
 	if cfg.Service.Readiness.Command != "" {
 		cmd := createReadinessCommand(cfg.Service.Readiness.Command)
+		cmd.Env = e.buildCommandEnv()
 		if err := cmd.Run(); err == nil {
 			return true
 		}

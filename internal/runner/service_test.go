@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -49,6 +51,25 @@ service:
 	require.NoError(t, err)
 
 	return configPath
+}
+
+func envEqualsCommand(key, value string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf(`powershell -NoProfile -NonInteractive -Command "if ($env:%s -eq '%s') { exit 0 } else { exit 1 }"`, key, value)
+	}
+	return fmt.Sprintf(`test "$%s" = "%s"`, key, value)
+}
+
+func createMarkerIfEnvMatchesCommand(markerFile, key, value string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf(`powershell -NoProfile -NonInteractive -Command "$v=$env:%s; if ($v -eq '%s') { New-Item -Path '%s' -ItemType File -Force | Out-Null; exit 0 } else { exit 1 }"`, key, value, markerFile)
+	}
+	return fmt.Sprintf(`test "$%s" = "%s" && touch "%s"`, key, value, markerFile)
+}
+
+func yamlSingleQuoted(value string) string {
+	// Escape single quotes per YAML spec by doubling them.
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func TestStartService(t *testing.T) {
@@ -435,6 +456,53 @@ service:
 	assert.NoError(t, err, "Custom stop command should have created marker file")
 }
 
+func TestCustomStopCommandUsesReplayEnv(t *testing.T) {
+	config.Invalidate()
+	origWait := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
+	_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", "100ms")
+	defer func() {
+		if origWait != "" {
+			_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", origWait)
+		} else {
+			_ = os.Unsetenv("TUSK_TEST_DEFAULT_WAIT")
+		}
+	}()
+
+	tempDir := t.TempDir()
+	markerFile := filepath.Join(tempDir, "stop-replay-env-ok")
+	replayKey := "TUSK_TEST_REPLAY_STOP_ENV"
+	replayValue := "stop-ok"
+	markerFileYAML := filepath.ToSlash(markerFile)
+
+	configContent := fmt.Sprintf(`
+service:
+  port: 13013
+  start:
+    command: "%s"
+  stop:
+    command: %s
+`, getSimpleSleepCommand(), yamlSingleQuoted(createMarkerIfEnvMatchesCommand(markerFileYAML, replayKey, replayValue)))
+
+	configPath := filepath.Join(tempDir, "tusk.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0o600)
+	require.NoError(t, err)
+
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	e := NewExecutor()
+	e.SetReplayEnvVars(map[string]string{replayKey: replayValue})
+
+	err = e.StartService()
+	require.NoError(t, err)
+
+	err = e.StopService()
+	assert.NoError(t, err)
+
+	_, err = os.Stat(markerFile)
+	require.NoError(t, err, "Custom stop command should create marker when replay env is present")
+}
+
 func TestGetServiceLogPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -633,6 +701,20 @@ func TestWaitForReadiness(t *testing.T) {
 			expectError: false,
 			setupFunc:   noopCleanup,
 		},
+		{
+			name: "readiness_command_uses_replay_env_vars",
+			config: &config.Config{
+				Service: config.ServiceConfig{
+					Readiness: config.ReadinessConfig{
+						Command:  envEqualsCommand("TUSK_TEST_REPLAY_READINESS_ENV", "ready-ok"),
+						Timeout:  "2s",
+						Interval: "200ms",
+					},
+				},
+			},
+			expectError: false,
+			setupFunc:   noopCleanup,
+		},
 	}
 
 	for _, tt := range tests {
@@ -643,6 +725,9 @@ func TestWaitForReadiness(t *testing.T) {
 			defer cleanup()
 
 			e := NewExecutor()
+			if tt.name == "readiness_command_uses_replay_env_vars" {
+				e.SetReplayEnvVars(map[string]string{"TUSK_TEST_REPLAY_READINESS_ENV": "ready-ok"})
+			}
 			err := e.waitForReadiness(tt.config)
 
 			if tt.expectError {
@@ -653,6 +738,35 @@ func TestWaitForReadiness(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckServerHealthUsesReplayEnvVarsForReadinessCommand(t *testing.T) {
+	config.Invalidate()
+
+	tempDir := t.TempDir()
+	replayKey := "TUSK_TEST_REPLAY_HEALTHCHECK_ENV"
+	replayValue := "health-ok"
+
+	configContent := fmt.Sprintf(`
+service:
+  port: 13014
+  readiness_check:
+    command: %s
+`, yamlSingleQuoted(envEqualsCommand(replayKey, replayValue)))
+
+	configPath := filepath.Join(tempDir, "tusk.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0o600)
+	require.NoError(t, err)
+
+	err = config.Load(configPath)
+	require.NoError(t, err)
+
+	withoutReplayEnv := NewExecutor()
+	assert.False(t, withoutReplayEnv.CheckServerHealth())
+
+	withReplayEnv := NewExecutor()
+	withReplayEnv.SetReplayEnvVars(map[string]string{replayKey: replayValue})
+	assert.True(t, withReplayEnv.CheckServerHealth())
 }
 
 func TestSetEnableServiceLogs(t *testing.T) {
