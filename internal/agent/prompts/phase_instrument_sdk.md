@@ -24,7 +24,7 @@ Read the existing `next.config.js` or `next.config.mjs` file and wrap the config
 **For next.config.js (CommonJS):**
 
 ```javascript
-const { withTuskDrift } = require("@use-tusk/drift-node-sdk");
+const { withTuskDrift } = require("@use-tusk/drift-node-sdk/next");
 
 module.exports = withTuskDrift(
   {
@@ -40,7 +40,7 @@ module.exports = withTuskDrift(
 **For next.config.mjs (ESM):**
 
 ```javascript
-import { withTuskDrift } from "@use-tusk/drift-node-sdk";
+import { withTuskDrift } from "@use-tusk/drift-node-sdk/next";
 
 export default withTuskDrift(
   {
