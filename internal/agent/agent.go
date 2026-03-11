@@ -32,7 +32,7 @@ const (
 
 // Timeouts
 const (
-	PhaseTimeout         = 15 * time.Minute // Max time per phase
+	PhaseTimeout         = 30 * time.Minute // Max time per phase
 	APITimeout           = 5 * time.Minute  // Max time for a single API call
 	ToolTimeout          = 3 * time.Minute  // Max time for a single tool execution
 	DefaultMaxIterations = 50               // Default max iterations if phase doesn't specify
@@ -89,6 +89,10 @@ type Agent struct {
 	// Analytics
 	startTime time.Time
 	sessionID string
+
+	// Phase timing: tracks time spent waiting for user input so it can be
+	// excluded from the phase timeout budget.
+	userWaitTime time.Duration
 }
 
 // New creates a new Agent, with Claude client based on API mode
@@ -366,10 +370,9 @@ func (a *Agent) runAgent() error {
 			a.logger.LogPhaseStart(phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
 		}
 
-		// Run phase with timeout
-		phaseCtx, phaseCancel := context.WithTimeout(a.ctx, PhaseTimeout)
-		err := a.runPhase(phaseCtx, phase)
-		phaseCancel()
+		// Run phase with timeout (excludes time spent waiting for user input)
+		a.userWaitTime = 0
+		err := a.runPhase(a.ctx, phase)
 
 		if err != nil {
 			if a.ctx.Err() != nil {
@@ -571,9 +574,8 @@ func (a *Agent) runAgent() error {
 					a.logger.LogPhaseStart(phase.Name, phase.Description, phaseIdx, len(a.phaseManager.phases))
 				}
 
-				phaseCtx, phaseCancel := context.WithTimeout(a.ctx, PhaseTimeout)
-				err := a.runPhase(phaseCtx, phase)
-				phaseCancel()
+				a.userWaitTime = 0
+				err := a.runPhase(a.ctx, phase)
 
 				if err != nil {
 					if a.ctx.Err() != nil {
@@ -657,10 +659,22 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 
 	a.phaseManager.ResetTransitionFlag()
 	apiErrorCount := 0
+	phaseStart := time.Now()
 
 	maxIterations := phase.MaxIterations
 	if maxIterations <= 0 {
 		maxIterations = DefaultMaxIterations
+	}
+
+	// phaseRemaining returns the remaining phase time budget,
+	// excluding time the user spent responding to prompts.
+	phaseRemaining := func() time.Duration {
+		activeTime := time.Since(phaseStart) - a.userWaitTime
+		remaining := PhaseTimeout - activeTime
+		if remaining <= 0 {
+			return 1 // will expire immediately
+		}
+		return remaining
 	}
 
 	for iteration := 0; iteration < maxIterations; iteration++ {
@@ -670,6 +684,12 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 		default:
 		}
 
+		// Check phase timeout using active time (excluding user wait time)
+		activeTime := time.Since(phaseStart) - a.userWaitTime
+		if activeTime > PhaseTimeout {
+			return context.DeadlineExceeded
+		}
+
 		a.ui.Thinking(true)
 		if a.logger != nil {
 			a.logger.LogThinking(true)
@@ -677,7 +697,7 @@ func (a *Agent) runPhase(ctx context.Context, phase *Phase) error {
 
 		var streamedText strings.Builder
 
-		apiCtx, apiCancel := context.WithTimeout(ctx, APITimeout)
+		apiCtx, apiCancel := context.WithTimeout(ctx, min(APITimeout, phaseRemaining()))
 		resp, err := a.client.CreateMessageStreaming(apiCtx, systemPrompt, messages, tools, func(event StreamEvent) {
 			switch event.Type {
 			case "text":
@@ -944,7 +964,9 @@ func (a *Agent) executeToolCalls(ctx context.Context, content []Content) ([]Cont
 
 				if shouldPrompt {
 					preview := formatToolPreview(c.Name, inputStr)
+					waitStart := time.Now()
 					response := a.ui.PromptPermission(c.Name, preview, commandPrefixes)
+					a.userWaitTime += time.Since(waitStart)
 
 					switch {
 					case response == "approve":
@@ -1086,7 +1108,9 @@ func (a *Agent) handleAskUser(c Content) Content {
 		}
 	}
 
+	waitStart := time.Now()
 	response, cancelled := a.ui.PromptUserInput(params.Question)
+	a.userWaitTime += time.Since(waitStart)
 
 	if cancelled {
 		if a.logger != nil {
@@ -1134,7 +1158,9 @@ func (a *Agent) handleAskUserSelect(c Content) Content {
 		}
 	}
 
+	waitStart := time.Now()
 	selectedID, selectedLabel, cancelled := a.ui.PromptUserSelect(params.Question, params.Options)
+	a.userWaitTime += time.Since(waitStart)
 
 	if cancelled {
 		if a.logger != nil {
@@ -1177,7 +1203,10 @@ func (a *Agent) checkPortConflicts(input json.RawMessage) error {
 
 	for _, port := range ports {
 		if isPortInUse(port) {
-			if a.ui.PromptKillPort(port) {
+			waitStart := time.Now()
+			killIt := a.ui.PromptKillPort(port)
+			a.userWaitTime += time.Since(waitStart)
+			if killIt {
 				if err := killProcessOnPort(port); err != nil {
 					return fmt.Errorf("failed to kill process on port %d: %w", port, err)
 				}
