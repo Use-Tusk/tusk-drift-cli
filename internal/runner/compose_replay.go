@@ -45,9 +45,9 @@ func removeOverrideFile(path string) {
 
 // createReplayComposeOverrideFile builds a temporary compose override that uses
 // ${VAR} interpolation references to inject recorded env vars into every discovered
-// compose service for the current group. The actual values are read from the host
-// process environment (set via os.Setenv before compose runs), so the override file
-// never contains secret values directly.
+// compose service for the current group. The actual values are read from the
+// docker compose command environment (injected when the service subprocess is
+// started), so the override file never contains secret values directly.
 // Service discovery is intentionally scoped to docker-compose.tusk-override.yml.
 // If that file is absent or has no services, replay env override injection is skipped.
 func createReplayComposeOverrideFile(envVars map[string]string, groupName string) (string, error) {

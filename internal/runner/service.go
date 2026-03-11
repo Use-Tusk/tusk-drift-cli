@@ -110,7 +110,7 @@ func (e *Executor) StartService() error {
 	// Set up process group so we can kill all child processes
 	setupProcessGroup(e.serviceCmd)
 
-	env := os.Environ()
+	env := e.buildCommandEnv()
 
 	if e.server != nil {
 		socketPath, tcpPort := e.server.GetConnectionInfo()
@@ -240,6 +240,7 @@ func (e *Executor) StopService() error {
 		log.Debug("Using custom stop command", "command", cfg.Service.Stop.Command)
 
 		stopCmd := createServiceCommand(context.Background(), cfg.Service.Stop.Command)
+		stopCmd.Env = e.buildCommandEnv()
 		if err := stopCmd.Run(); err != nil {
 			log.Warn("Stop command failed", "error", err)
 			// Continue to fallback method
@@ -258,6 +259,40 @@ func (e *Executor) StopService() error {
 	}
 
 	return nil
+}
+
+func mergeEnvVars(base []string, overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+
+	merged := make([]string, len(base))
+	copy(merged, base)
+
+	indexByKey := make(map[string]int, len(base))
+	for i, pair := range merged {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) == 2 {
+			indexByKey[parts[0]] = i
+		}
+	}
+
+	for key, value := range overrides {
+		pair := fmt.Sprintf("%s=%s", key, value)
+		if idx, ok := indexByKey[key]; ok {
+			merged[idx] = pair
+			continue
+		}
+
+		indexByKey[key] = len(merged)
+		merged = append(merged, pair)
+	}
+
+	return merged
+}
+
+func (e *Executor) buildCommandEnv() []string {
+	return mergeEnvVars(os.Environ(), e.getReplayEnvVars())
 }
 
 func (e *Executor) GetServiceLogPath() string {
@@ -323,6 +358,7 @@ func (e *Executor) waitForReadiness(cfg *config.Config) error {
 
 	for time.Now().Before(deadline) {
 		cmd := createReadinessCommand(cfg.Service.Readiness.Command)
+		cmd.Env = e.buildCommandEnv()
 		if err := cmd.Run(); err == nil {
 			return nil
 		}

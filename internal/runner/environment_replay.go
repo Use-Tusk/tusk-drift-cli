@@ -11,11 +11,11 @@ import (
 
 // ReplayTestsByEnvironment orchestrates environment-based test replay
 // For each environment group:
-//  1. Set environment variables
+//  1. Configure replay environment variables for the service subprocess
 //  2. Start environment (server + service)
 //  3. Run tests for that environment
 //  4. Stop environment
-//  5. Restore environment variables
+//  5. Clear replay environment variable configuration
 func ReplayTestsByEnvironment(
 	ctx context.Context,
 	executor *Executor,
@@ -33,7 +33,7 @@ func ReplayTestsByEnvironment(
 
 		log.ServiceLog(fmt.Sprintf("Running %d tests for environment: %s", len(group.Tests), group.Name))
 
-		// 1. Set environment variables and prepare compose replay override (if needed)
+		// 1. Configure replay env vars and prepare compose replay override (if needed)
 		cleanup, err := PrepareReplayEnvironmentGroup(executor, group)
 		if err != nil {
 			return allResults, fmt.Errorf("failed to set env vars for %s: %w", group.Name, err)
@@ -82,20 +82,18 @@ func ReplayTestsByEnvironment(
 
 // PrepareReplayEnvironmentGroup sets recorded env vars on the process and, if applicable,
 // prepares a Docker Compose override file so env vars are injected into containers.
-// The returned cleanup always restores process env vars, clears executor override state,
-// and removes the temporary override file when present.
+// The returned cleanup always clears executor replay env vars, clears executor override
+// state, and removes the temporary override file when present.
 func PrepareReplayEnvironmentGroup(executor *Executor, group *EnvironmentGroup) (cleanup func(), err error) {
 	cfg, err := config.Get()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
-	cleanup, err = SetEnvironmentVariables(group.EnvVars)
-	if err != nil {
-		return nil, err
-	}
-
-	cleanup = chainCleanup(cleanup, func() {
+	executor.SetReplayEnvVars(group.EnvVars)
+	cleanup = chainCleanup(func() {
+		executor.SetReplayEnvVars(nil)
+	}, func() {
 		executor.setReplayComposeOverride("")
 	})
 
@@ -167,64 +165,4 @@ func chainCleanup(cleanups ...func()) func() {
 			}
 		}
 	}
-}
-
-// SetEnvironmentVariables applies env vars to current process
-// Returns cleanup function to restore original values
-func SetEnvironmentVariables(envVars map[string]string) (cleanup func(), err error) {
-	if len(envVars) == 0 {
-		// No env vars to set, return no-op cleanup
-		return func() {}, nil
-	}
-
-	// Store original values for cleanup
-	originalVars := make(map[string]string)
-	keysToUnset := make([]string, 0)
-
-	for key := range envVars {
-		if val, exists := os.LookupEnv(key); exists {
-			originalVars[key] = val
-		} else {
-			keysToUnset = append(keysToUnset, key)
-		}
-	}
-
-	// Set new values
-	for key, val := range envVars {
-		if err := os.Setenv(key, val); err != nil {
-			// If setting fails, attempt to restore what we've already changed
-			restoreEnvironmentVariables(originalVars, keysToUnset)
-			return nil, fmt.Errorf("failed to set env var %s: %w", key, err)
-		}
-	}
-
-	log.Debug("Set environment variables", "count", len(envVars))
-
-	// Return cleanup function
-	cleanup = func() {
-		restoreEnvironmentVariables(originalVars, keysToUnset)
-	}
-
-	return cleanup, nil
-}
-
-// restoreEnvironmentVariables restores original env var values
-func restoreEnvironmentVariables(originalVars map[string]string, keysToUnset []string) {
-	// Restore original values
-	for key, val := range originalVars {
-		if err := os.Setenv(key, val); err != nil {
-			log.Warn("Failed to restore env var", "key", key, "error", err)
-		}
-	}
-
-	// Unset keys that didn't exist before
-	for _, key := range keysToUnset {
-		if err := os.Unsetenv(key); err != nil {
-			log.Warn("Failed to unset env var", "key", key, "error", err)
-		}
-	}
-
-	log.Debug("Restored environment variables",
-		"restored_count", len(originalVars),
-		"unset_count", len(keysToUnset))
 }
