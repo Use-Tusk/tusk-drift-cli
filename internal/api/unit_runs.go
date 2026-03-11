@@ -10,9 +10,11 @@ import (
 	"strings"
 )
 
-type UnitTestRunSummary map[string]any
-type UnitTestRunDetails map[string]any
-type UnitTestScenarioDetails map[string]any
+type (
+	UnitTestRunSummary      map[string]any
+	UnitTestRunDetails      map[string]any
+	UnitTestScenarioDetails map[string]any
+)
 
 func (c *TuskClient) makeJSONRequest(ctx context.Context, method string, path string, query url.Values, out any, auth AuthOptions) error {
 	fullURL := c.baseURL + path
