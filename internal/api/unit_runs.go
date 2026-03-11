@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,34 +21,15 @@ func (c *TuskClient) makeJSONRequest(ctx context.Context, method string, path st
 		fullURL += "?" + query.Encode()
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, method, fullURL, nil)
+	httpReq, err := buildAuthenticatedRequest(ctx, method, fullURL, nil, auth)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return err
 	}
 	httpReq.Header.Set("Accept", "application/json")
 
-	switch {
-	case auth.APIKey != "":
-		httpReq.Header.Set("x-api-key", auth.APIKey)
-	case auth.BearerToken != "":
-		httpReq.Header.Set("Authorization", "Bearer "+auth.BearerToken)
-	default:
-		return fmt.Errorf("no auth provided")
-	}
-
-	if auth.BearerToken != "" && auth.TuskClientID != "" {
-		httpReq.Header.Set("selected-client-id", auth.TuskClientID)
-	}
-
-	httpResp, err := c.httpClient.Do(httpReq)
+	body, httpResp, err := c.executeRequest(httpReq)
 	if err != nil {
-		return fmt.Errorf("http error: %w", err)
-	}
-	defer func() { _ = httpResp.Body.Close() }()
-
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return fmt.Errorf("read json response body: %w", err)
+		return err
 	}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {

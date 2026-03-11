@@ -65,7 +65,7 @@ func parseRepoSlugFromRemote(remoteURL string) (string, error) {
 		return "", fmt.Errorf("failed to infer owner/repo from remote URL: %s", remoteURL)
 	}
 
-	return parts[0] + "/" + parts[1], nil
+	return parts[len(parts)-2] + "/" + parts[len(parts)-1], nil
 }
 
 func resolveLatestRunInput(repo string, branch string) (string, string, error) {

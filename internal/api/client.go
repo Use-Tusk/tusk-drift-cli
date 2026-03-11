@@ -115,6 +115,48 @@ func NewClient(baseURL, apiKey string) *TuskClient {
 	}
 }
 
+func buildAuthenticatedRequest(
+	ctx context.Context,
+	method string,
+	fullURL string,
+	body io.Reader,
+	auth AuthOptions,
+) (*http.Request, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, method, fullURL, body)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+
+	switch {
+	case auth.APIKey != "":
+		httpReq.Header.Set("x-api-key", auth.APIKey)
+	case auth.BearerToken != "":
+		httpReq.Header.Set("Authorization", "Bearer "+auth.BearerToken)
+	default:
+		return nil, fmt.Errorf("no auth provided")
+	}
+
+	if auth.BearerToken != "" && auth.TuskClientID != "" {
+		httpReq.Header.Set("selected-client-id", auth.TuskClientID)
+	}
+
+	return httpReq, nil
+}
+
+func (c *TuskClient) executeRequest(httpReq *http.Request) ([]byte, *http.Response, error) {
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("http error: %w", err)
+	}
+	defer func() { _ = httpResp.Body.Close() }()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read response body: %w", err)
+	}
+	return body, httpResp, nil
+}
+
 // Helper method to make protobuf requests
 // If overrideBaseURL is provided, it's used instead of c.baseURL
 func (c *TuskClient) makeProtoRequest(ctx context.Context, serviceAPIPath string, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions) error {
@@ -125,40 +167,21 @@ func (c *TuskClient) makeProtoRequest(ctx context.Context, serviceAPIPath string
 		return fmt.Errorf("marshal proto: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(bin))
+	httpReq, err := buildAuthenticatedRequest(ctx, http.MethodPost, fullURL, bytes.NewReader(bin), auth)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/protobuf")
 	httpReq.Header.Set("Accept", "application/protobuf")
 
-	// Prefer API key if provided, otherwise JWT bearer
-	switch {
-	case auth.APIKey != "":
-		httpReq.Header.Set("x-api-key", auth.APIKey)
-	case auth.BearerToken != "":
-		httpReq.Header.Set("Authorization", "Bearer "+auth.BearerToken)
-	default:
-		return fmt.Errorf("no auth provided")
-	}
-
-	if auth.BearerToken != "" && auth.TuskClientID != "" {
-		httpReq.Header.Set("selected-client-id", auth.TuskClientID)
-	}
-
-	httpResp, err := c.httpClient.Do(httpReq)
+	body, httpResp, err := c.executeRequest(httpReq)
 	if err != nil {
-		return fmt.Errorf("http error: %w", err)
-	}
-	defer func() { _ = httpResp.Body.Close() }()
-
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return fmt.Errorf("read proto response body: %w", err)
+		return err
 	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		return fmt.Errorf("http %d: %s", httpResp.StatusCode, string(body))
 	}
+
 	if err := proto.Unmarshal(body, resp); err != nil {
 		ct := httpResp.Header.Get("Content-Type")
 		first := string(body[:min(120, len(body))])
