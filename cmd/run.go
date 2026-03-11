@@ -65,40 +65,54 @@ var runCmd = &cobra.Command{
 	RunE:  runTests,
 }
 
-func init() {
-	rootCmd.AddCommand(runCmd)
+var runAliasCmd = &cobra.Command{
+	Use:        "run",
+	Short:      "Run API tests",
+	Long:       utils.RenderMarkdown(runContent + "\n\n" + filterContent),
+	RunE:       runTests,
+	Deprecated: "use `tusk drift run` instead",
+}
 
-	runCmd.Flags().StringVar(&traceDir, "trace-dir", "", "Path to local recordings folder")
-	runCmd.Flags().StringVar(&traceFile, "trace-file", "", "Path to a single test file")
-	runCmd.Flags().StringVar(&traceID, "trace-id", "", "Database ID of a single test")
-	runCmd.Flags().BoolVarP(&print, "print", "p", false, "Print response and exit (useful for pipes)")
-	runCmd.Flags().StringVar(&outputFormat, "output-format", "text", `Output format (only works with --print): "text" (default) or "json" (single result) (choices: "text", "json")"`)
-	runCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
-	runCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Quiet output, only show deviations (only works with --print and --output-format text)")
-	runCmd.Flags().BoolVarP(&verbose, "verbose", "", false, "Verbose output, show detailed deviation information (only works with --print)")
-	runCmd.Flags().IntVar(&concurrency, "concurrency", 1, "Maximum number of concurrent tests. If set, overrides the concurrency setting in the config file.")
-	runCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
-	runCmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
-	runCmd.Flags().StringVar(&resultsDir, "results-dir", "", "Path to directory to save results (only works with --save-results). Default is '.tusk/results'")
-	runCmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "", "Replay sandbox mode: auto (default), strict, or off")
+func init() {
+	driftCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(runAliasCmd)
+
+	bindRunFlags(runCmd)
+	bindRunFlags(runAliasCmd)
+}
+
+func bindRunFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&traceDir, "trace-dir", "", "Path to local recordings folder")
+	cmd.Flags().StringVar(&traceFile, "trace-file", "", "Path to a single test file")
+	cmd.Flags().StringVar(&traceID, "trace-id", "", "Database ID of a single test")
+	cmd.Flags().BoolVarP(&print, "print", "p", false, "Print response and exit (useful for pipes)")
+	cmd.Flags().StringVar(&outputFormat, "output-format", "text", `Output format (only works with --print): "text" (default) or "json" (single result) (choices: "text", "json")"`)
+	cmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Quiet output, only show deviations (only works with --print and --output-format text)")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "", false, "Verbose output, show detailed deviation information (only works with --print)")
+	cmd.Flags().IntVar(&concurrency, "concurrency", 1, "Maximum number of concurrent tests. If set, overrides the concurrency setting in the config file.")
+	cmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
+	cmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
+	cmd.Flags().StringVar(&resultsDir, "results-dir", "", "Path to directory to save results (only works with --save-results). Default is '.tusk/results'")
+	cmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "", "Replay sandbox mode: auto (default), strict, or off")
 
 	// Cloud mode
-	runCmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "[Cloud] Use Tusk Drift Cloud backend for orchestration/reporting")
-	runCmd.Flags().BoolVar(&ci, "ci", false, "[Cloud] Create a Tusk Drift run and upload results to Tusk Drift Cloud")
-	runCmd.Flags().BoolVarP(&allCloudTraceTests, "all-cloud-trace-tests", "a", false, "[Cloud] Run against all trace tests from Tusk Drift Cloud for this run (not just the current suite)")
-	runCmd.Flags().StringVar(&commitSha, "commit-sha", "", "[Cloud] Commit SHA for this run (only works with --ci)")
-	runCmd.Flags().StringVar(&prNumber, "pr-number", "", "[Cloud] Pull request number (only works with --ci)")
-	runCmd.Flags().StringVar(&branchName, "branch", "", "[Cloud] Branch name for this run (only works with --ci)")
-	runCmd.Flags().StringVar(&externalCheckRunID, "external-check-run-id", "", "[Cloud] External check run ID (only works with --ci)")
-	runCmd.Flags().StringVar(&traceTestID, "trace-test-id", "", "[Cloud] Run against a single trace test")
-	runCmd.Flags().StringVar(&clientID, "client-id", "", "[Cloud] Client ID for JWT auth (optional; ignored when using API key)") // Tusk client ID. Not used right now, but could be useful for auth
+	cmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "[Cloud] Use Tusk Drift Cloud backend for orchestration/reporting")
+	cmd.Flags().BoolVar(&ci, "ci", false, "[Cloud] Create a Tusk Drift run and upload results to Tusk Drift Cloud")
+	cmd.Flags().BoolVarP(&allCloudTraceTests, "all-cloud-trace-tests", "a", false, "[Cloud] Run against all trace tests from Tusk Drift Cloud for this run (not just the current suite)")
+	cmd.Flags().StringVar(&commitSha, "commit-sha", "", "[Cloud] Commit SHA for this run (only works with --ci)")
+	cmd.Flags().StringVar(&prNumber, "pr-number", "", "[Cloud] Pull request number (only works with --ci)")
+	cmd.Flags().StringVar(&branchName, "branch", "", "[Cloud] Branch name for this run (only works with --ci)")
+	cmd.Flags().StringVar(&externalCheckRunID, "external-check-run-id", "", "[Cloud] External check run ID (only works with --ci)")
+	cmd.Flags().StringVar(&traceTestID, "trace-test-id", "", "[Cloud] Run against a single trace test")
+	cmd.Flags().StringVar(&clientID, "client-id", "", "[Cloud] Client ID for JWT auth (optional; ignored when using API key)") // Tusk client ID. Not used right now, but could be useful for auth
 
 	// Validation mode flags
-	runCmd.Flags().BoolVar(&validateSuiteIfDefaultBranch, "validate-suite-if-default-branch", false, "[Cloud] Validate traces on default branch before adding to suite")
-	runCmd.Flags().BoolVar(&validateSuite, "validate-suite", false, "[Cloud] Force validation mode regardless of branch")
+	cmd.Flags().BoolVar(&validateSuiteIfDefaultBranch, "validate-suite-if-default-branch", false, "[Cloud] Validate traces on default branch before adding to suite")
+	cmd.Flags().BoolVar(&validateSuite, "validate-suite", false, "[Cloud] Force validation mode regardless of branch")
 
-	_ = runCmd.Flags().MarkHidden("client-id")
-	runCmd.Flags().SortFlags = false
+	_ = cmd.Flags().MarkHidden("client-id")
+	cmd.Flags().SortFlags = false
 }
 
 func runTests(cmd *cobra.Command, args []string) error {
