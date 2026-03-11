@@ -12,23 +12,35 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
 )
 
-// createServiceCommand creates a shell command for Windows systems
+// createServiceCommand creates a shell command for Windows systems.
+// We set SysProcAttr.CmdLine directly so that double-quotes and other
+// special characters in the user's command survive intact; Go's default
+// EscapeArg escapes " as \" which cmd.exe does not understand.
 func createServiceCommand(ctx context.Context, command string) *exec.Cmd {
-	return exec.CommandContext(ctx, "cmd.exe", "/c", command) // #nosec G204
-}
-
-// createReadinessCommand creates a shell command for Windows systems
-func createReadinessCommand(command string) *exec.Cmd {
-	return exec.Command("cmd.exe", "/c", command) // #nosec G204
-}
-
-// setupProcessGroup configures the command for Windows process management
-func setupProcessGroup(cmd *exec.Cmd) {
-	// On Windows, we set CREATE_NEW_PROCESS_GROUP flag
-	// This allows us to send Ctrl+Break signals to the process group
+	cmd := exec.CommandContext(ctx, "cmd.exe") // #nosec G204
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		CmdLine: `cmd.exe /c ` + command,
 	}
+	return cmd
+}
+
+// createReadinessCommand creates a shell command for Windows systems.
+func createReadinessCommand(command string) *exec.Cmd {
+	cmd := exec.Command("cmd.exe") // #nosec G204
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine: `cmd.exe /c ` + command,
+	}
+	return cmd
+}
+
+// setupProcessGroup configures the command for Windows process management.
+// It merges into the existing SysProcAttr to preserve the CmdLine field
+// set by createServiceCommand.
+func setupProcessGroup(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags = syscall.CREATE_NEW_PROCESS_GROUP
 }
 
 // killProcessGroup attempts to kill the process gracefully, then forcefully
