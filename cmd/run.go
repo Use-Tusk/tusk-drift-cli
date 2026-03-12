@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -965,7 +966,11 @@ func validateCIMetadata(metadata CIMetadata) (CIMetadata, error) {
 	if inCI {
 		if metadata.CommitSha == "" {
 			if isGitHub {
-				metadata.CommitSha = os.Getenv("GITHUB_SHA")
+				if sha := getGitHubPRHeadSHA(); sha != "" {
+					metadata.CommitSha = sha
+				} else {
+					metadata.CommitSha = os.Getenv("GITHUB_SHA")
+				}
 			} else if isGitLab {
 				metadata.CommitSha = os.Getenv("CI_COMMIT_SHA")
 			}
@@ -1021,6 +1026,38 @@ func validateCIMetadata(metadata CIMetadata) (CIMetadata, error) {
 	// ExternalCheckRunID is optional - no validation needed
 
 	return metadata, nil
+}
+
+// getGitHubPRHeadSHA reads the actual PR head commit SHA from the GitHub Actions
+// event payload. Returns "" if not a PR event or if the SHA cannot be determined.
+func getGitHubPRHeadSHA() string {
+	eventName := os.Getenv("GITHUB_EVENT_NAME")
+	if eventName != "pull_request" && eventName != "pull_request_target" {
+		return ""
+	}
+
+	eventPath := os.Getenv("GITHUB_EVENT_PATH")
+	if eventPath == "" {
+		return ""
+	}
+
+	data, err := os.ReadFile(eventPath) //nolint:gosec // path comes from trusted GITHUB_EVENT_PATH env var set by GitHub Actions
+	if err != nil {
+		return ""
+	}
+
+	var event struct {
+		PullRequest struct {
+			Head struct {
+				SHA string `json:"sha"`
+			} `json:"head"`
+		} `json:"pull_request"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		return ""
+	}
+
+	return event.PullRequest.Head.SHA
 }
 
 func stringPtr(s string) *string {
