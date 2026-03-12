@@ -79,6 +79,7 @@ func init() {
 
 	bindRunFlags(runCmd)
 	bindRunFlags(runAliasCmd)
+	bindLegacyDriftAliasConfigFlag(runAliasCmd)
 }
 
 func bindRunFlags(cmd *cobra.Command) {

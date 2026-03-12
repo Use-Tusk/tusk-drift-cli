@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
@@ -15,14 +14,15 @@ var (
 )
 
 var unitGetScenarioCmd = &cobra.Command{
-	Use:   "get-scenario",
-	Short: "Get details for a unit test scenario",
+	Use:          "get-scenario",
+	Short:        "Get details for a unit test scenario",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(unitGetScenarioRunID) == "" || strings.TrimSpace(unitGetScenarioScenarioID) == "" {
 			return fmt.Errorf("--run-id and --scenario-id must be non-empty")
 		}
 
-		client, authOptions, _, err := api.SetupCloud(context.Background(), false)
+		client, authOptions, err := setupUnitCloud()
 		if err != nil {
 			return err
 		}

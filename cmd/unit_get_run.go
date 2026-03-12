@@ -3,16 +3,16 @@ package cmd
 import (
 	"context"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
 var unitGetRunCmd = &cobra.Command{
-	Use:   "get-run <run-id>",
-	Short: "Get details for a unit test run",
-	Args:  cobra.ExactArgs(1),
+	Use:          "get-run <run-id>",
+	Short:        "Get details for a unit test run",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, authOptions, _, err := api.SetupCloud(context.Background(), false)
+		client, authOptions, err := setupUnitCloud()
 		if err != nil {
 			return err
 		}

@@ -41,21 +41,35 @@ var setupCmd = &cobra.Command{
 	RunE:  runSetup,
 }
 
-func init() {
-	rootCmd.AddCommand(setupCmd)
+var setupAliasCmd = &cobra.Command{
+	Use:        "setup",
+	Short:      "AI-powered setup wizard for Tusk Drift",
+	Long:       utils.RenderMarkdown(setupContent),
+	RunE:       runSetup,
+	Deprecated: "use `tusk drift setup` instead",
+}
 
-	setupCmd.Flags().StringVar(&setupAPIKey, "api-key", "", "Your Anthropic API key (requests go directly to Anthropic). If not provided, uses Tusk's secure proxy")
-	setupCmd.Flags().StringVar(&setupModel, "model", "claude-sonnet-4-5-20250929", "Claude model to use")
-	setupCmd.Flags().BoolVar(&setupSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
-	setupCmd.Flags().BoolVar(&setupNoSkipPermissions, "no-skip-permissions", false, "In headless mode (--print), still prompt for permissions instead of auto-approving")
-	setupCmd.Flags().BoolVar(&setupDisableProgress, "disable-progress-state", false, "Disable progress state (saving to .tusk/setup/PROGRESS.md) or resuming from it")
-	setupCmd.Flags().BoolVar(&setupSkipToCloud, "skip-to-cloud", false, "Skip local setup and go directly to cloud setup (for testing)")
-	setupCmd.Flags().BoolVar(&setupPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout (auto-approves permissions unless --no-skip-permissions)")
-	setupCmd.Flags().BoolVar(&setupOutputLogs, "output-logs", false, "Output all logs (tool calls, messages) to .tusk/logs/setup-<datetime>.log")
-	setupCmd.Flags().BoolVar(&setupEligibilityOnly, "eligibility-only", false, "Only check eligibility for SDK setup across all services in the directory tree, output JSON report and exit")
-	setupCmd.Flags().BoolVar(&setupVerifyMode, "verify", false, "Verify that an existing Tusk Drift setup is working correctly by re-recording and replaying traces")
-	setupCmd.Flags().StringVar(&setupGuidance, "guidance", "", "Additional guidance for the eligibility check agent (used with --eligibility-only)")
-	_ = setupCmd.Flags().MarkHidden("guidance") // Hidden - primarily for backend use
+func init() {
+	driftCmd.AddCommand(setupCmd)
+	rootCmd.AddCommand(setupAliasCmd)
+
+	bindSetupFlags(setupCmd)
+	bindSetupFlags(setupAliasCmd)
+}
+
+func bindSetupFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&setupAPIKey, "api-key", "", "Your Anthropic API key (requests go directly to Anthropic). If not provided, uses Tusk's secure proxy")
+	cmd.Flags().StringVar(&setupModel, "model", "claude-sonnet-4-5-20250929", "Claude model to use")
+	cmd.Flags().BoolVar(&setupSkipPermissions, "skip-permissions", false, "Skip permission prompts for consequential actions (commands, file writes, etc.)")
+	cmd.Flags().BoolVar(&setupNoSkipPermissions, "no-skip-permissions", false, "In headless mode (--print), still prompt for permissions instead of auto-approving")
+	cmd.Flags().BoolVar(&setupDisableProgress, "disable-progress-state", false, "Disable progress state (saving to .tusk/setup/PROGRESS.md) or resuming from it")
+	cmd.Flags().BoolVar(&setupSkipToCloud, "skip-to-cloud", false, "Skip local setup and go directly to cloud setup (for testing)")
+	cmd.Flags().BoolVar(&setupPrintMode, "print", false, "Headless mode - no TUI, stream output to stdout (auto-approves permissions unless --no-skip-permissions)")
+	cmd.Flags().BoolVar(&setupOutputLogs, "output-logs", false, "Output all logs (tool calls, messages) to .tusk/logs/setup-<datetime>.log")
+	cmd.Flags().BoolVar(&setupEligibilityOnly, "eligibility-only", false, "Only check eligibility for SDK setup across all services in the directory tree, output JSON report and exit")
+	cmd.Flags().BoolVar(&setupVerifyMode, "verify", false, "Verify that an existing Tusk Drift setup is working correctly by re-recording and replaying traces")
+	cmd.Flags().StringVar(&setupGuidance, "guidance", "", "Additional guidance for the eligibility check agent (used with --eligibility-only)")
+	_ = cmd.Flags().MarkHidden("guidance") // Hidden - primarily for backend use
 }
 
 // APIConfig holds the configuration for connecting to the LLM API

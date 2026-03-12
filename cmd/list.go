@@ -48,6 +48,7 @@ func init() {
 
 	bindListFlags(listCmd)
 	bindListFlags(listAliasCmd)
+	bindLegacyDriftAliasConfigFlag(listAliasCmd)
 }
 
 func bindListFlags(cmd *cobra.Command) {
