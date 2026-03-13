@@ -79,12 +79,13 @@ type TestExecutionConfig struct {
 }
 
 type ComparisonConfig struct {
-	IgnoreFields     []string `koanf:"ignore_fields"`
-	IgnorePatterns   []string `koanf:"ignore_patterns"`
-	IgnoreUUIDs      *bool    `koanf:"ignore_uuids"`
-	IgnoreTimestamps *bool    `koanf:"ignore_timestamps"`
-	IgnoreDates      *bool    `koanf:"ignore_dates"`
-	IgnoreJWTFields  *bool    `koanf:"ignore_jwt_fields"`
+	IgnoreFields          []string `koanf:"ignore_fields"`
+	IgnorePatterns        []string `koanf:"ignore_patterns"`
+	IgnoreUUIDs           *bool    `koanf:"ignore_uuids"`
+	IgnoreTimestamps      *bool    `koanf:"ignore_timestamps"`
+	IgnoreDates           *bool    `koanf:"ignore_dates"`
+	IgnoreJWTFields       *bool    `koanf:"ignore_jwt_fields"`
+	IgnoreEpochTimestamps *bool    `koanf:"ignore_epoch_timestamps"`
 }
 
 type RecordingConfig struct {

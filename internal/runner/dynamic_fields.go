@@ -26,6 +26,8 @@ type DynamicFieldMatcher struct {
 	ignoreFields map[string]bool
 	// Whether to decode and compare JWT tokens by payload
 	ignoreJWT bool
+	// Whether to ignore numeric epoch timestamps (seconds and milliseconds)
+	ignoreEpoch bool
 }
 
 // jwtRegex matches the general JWT format: three base64url segments separated by dots.
@@ -38,6 +40,16 @@ var jwtDynamicClaims = map[string]bool{
 	"jti": true, // JWT ID - unique per token issuance
 }
 
+// Epoch timestamp range boundaries.
+// Seconds:      1_000_000_000 (Sep 2001) to 4_102_444_800 (Jan 2100)
+// Milliseconds: 1_000_000_000_000        to 4_102_444_800_000
+const (
+	epochSecondsMin = 1_000_000_000
+	epochSecondsMax = 4_102_444_800
+	epochMillisMin  = 1_000_000_000_000
+	epochMillisMax  = 4_102_444_800_000
+)
+
 // NewDynamicFieldMatcher creates a new matcher with default patterns
 func NewDynamicFieldMatcher() *DynamicFieldMatcher {
 	return &DynamicFieldMatcher{
@@ -46,6 +58,7 @@ func NewDynamicFieldMatcher() *DynamicFieldMatcher {
 		dateRegex:      regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}$|^\d{2}-\d{2}-\d{4}$`),
 		ignoreFields:   make(map[string]bool),
 		ignoreJWT:      true,
+		ignoreEpoch:    true,
 	}
 }
 
@@ -68,6 +81,10 @@ func NewDynamicFieldMatcherWithConfig(cfg *config.ComparisonConfig) *DynamicFiel
 		// Check if JWT ignoring is explicitly disabled
 		if cfg.IgnoreJWTFields != nil && !*cfg.IgnoreJWTFields {
 			matcher.ignoreJWT = false
+		}
+		// Check if epoch timestamp ignoring is explicitly disabled
+		if cfg.IgnoreEpochTimestamps != nil && !*cfg.IgnoreEpochTimestamps {
+			matcher.ignoreEpoch = false
 		}
 
 		// Add custom field names
@@ -117,6 +134,13 @@ func (m *DynamicFieldMatcher) ShouldIgnoreField(fieldName string, expectedValue,
 	if m.dateRegex != nil && m.dateRegex.MatchString(expectedStr) && m.dateRegex.MatchString(actualStr) {
 		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (date pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
 		log.Debug("Field ignored by date pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
+		return true
+	}
+
+	// Check for numeric epoch timestamps (Unix seconds or milliseconds) - BOTH values must be in range
+	if m.ignoreEpoch && isEpochTimestamp(expectedValue) && isEpochTimestamp(actualValue) {
+		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (epoch timestamp): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
+		log.Debug("Field ignored by epoch timestamp range", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 		return true
 	}
 
@@ -219,4 +243,37 @@ func decodeJWTPayload(token string) (map[string]any, error) {
 	}
 
 	return payload, nil
+}
+
+// isEpochTimestamp returns true if the value is a number in a plausible
+// Unix timestamp range — either seconds (10-digit) or milliseconds (13-digit).
+// JSON numbers arrive as float64 from encoding/json; integer types are also handled.
+func isEpochTimestamp(v any) bool {
+	var n float64
+	switch val := v.(type) {
+	case float64:
+		n = val
+	case float32:
+		n = float64(val)
+	case int:
+		n = float64(val)
+	case int64:
+		n = float64(val)
+	case json.Number:
+		f, err := val.Float64()
+		if err != nil {
+			return false
+		}
+		n = f
+	default:
+		return false
+	}
+
+	// Reject fractional numbers — real epoch timestamps are always whole numbers
+	if n != float64(int64(n)) {
+		return false
+	}
+
+	return (n >= epochSecondsMin && n <= epochSecondsMax) ||
+		(n >= epochMillisMin && n <= epochMillisMax)
 }

@@ -315,6 +315,102 @@ func TestShouldIgnoreField_NonStringValues(t *testing.T) {
 		"test-1"))
 }
 
+func TestShouldIgnoreField_EpochTimestamp(t *testing.T) {
+	matcher := NewDynamicFieldMatcher()
+
+	// Both values are epoch milliseconds (the scenario from the user's screenshot)
+	require.True(t, matcher.ShouldIgnoreField("nextCycleEndTimestamp",
+		float64(1773268785165),
+		float64(1773268785162),
+		"test-epoch-1"))
+
+	// Both values are epoch seconds
+	require.True(t, matcher.ShouldIgnoreField("createdAt",
+		float64(1773268785),
+		float64(1773268790),
+		"test-epoch-2"))
+
+	// Small numbers should NOT be ignored (e.g. count, ID, status)
+	require.False(t, matcher.ShouldIgnoreField("count",
+		float64(42),
+		float64(43),
+		"test-epoch-3"))
+
+	// One value is epoch, the other is a small number - should NOT ignore
+	require.False(t, matcher.ShouldIgnoreField("value",
+		float64(1773268785165),
+		float64(100),
+		"test-epoch-4"))
+
+	// Zero should NOT be treated as epoch
+	require.False(t, matcher.ShouldIgnoreField("cycleEndTimestamp",
+		float64(0),
+		float64(1773268785165),
+		"test-epoch-5"))
+
+	// Boundary: just below epoch seconds range
+	require.False(t, matcher.ShouldIgnoreField("field",
+		float64(999_999_999),
+		float64(999_999_998),
+		"test-epoch-6"))
+
+	// Integer types should also work
+	require.True(t, matcher.ShouldIgnoreField("ts",
+		int64(1773268785165),
+		int64(1773268785162),
+		"test-epoch-7"))
+}
+
+func TestShouldIgnoreField_EpochTimestamp_Disabled(t *testing.T) {
+	falseValue := false
+	cfg := &config.ComparisonConfig{
+		IgnoreEpochTimestamps: &falseValue,
+	}
+	matcher := NewDynamicFieldMatcherWithConfig(cfg)
+
+	// Even with valid epoch timestamps, should not ignore when disabled
+	require.False(t, matcher.ShouldIgnoreField("nextCycleEndTimestamp",
+		float64(1773268785165),
+		float64(1773268785162),
+		"test-epoch-disabled"))
+}
+
+func TestIsEpochTimestamp(t *testing.T) {
+	// Epoch seconds (10-digit)
+	require.True(t, isEpochTimestamp(float64(1773268785)))
+	require.True(t, isEpochTimestamp(float64(1000000000)))
+	require.True(t, isEpochTimestamp(float64(4102444800)))
+
+	// Epoch milliseconds (13-digit)
+	require.True(t, isEpochTimestamp(float64(1773268785165)))
+	require.True(t, isEpochTimestamp(float64(1000000000000)))
+	require.True(t, isEpochTimestamp(float64(4102444800000)))
+
+	// Too small
+	require.False(t, isEpochTimestamp(float64(0)))
+	require.False(t, isEpochTimestamp(float64(42)))
+	require.False(t, isEpochTimestamp(float64(999999999)))
+
+	// In the gap between seconds max and millis min
+	require.False(t, isEpochTimestamp(float64(10_000_000_000)))
+	require.False(t, isEpochTimestamp(float64(100_000_000_000)))
+
+	// Too large
+	require.False(t, isEpochTimestamp(float64(9_999_999_999_999)))
+
+	// Non-numeric types
+	require.False(t, isEpochTimestamp("1773268785165"))
+	require.False(t, isEpochTimestamp(true))
+	require.False(t, isEpochTimestamp(nil))
+
+	// Float with fractional part - not an epoch
+	require.False(t, isEpochTimestamp(float64(1773268785.5)))
+
+	// Integer types
+	require.True(t, isEpochTimestamp(int(1773268785)))
+	require.True(t, isEpochTimestamp(int64(1773268785165)))
+}
+
 func TestShouldIgnoreField_JWT_DefaultEnabled(t *testing.T) {
 	matcher := NewDynamicFieldMatcher()
 
