@@ -133,7 +133,7 @@ Use our AI agent to automatically set up Tusk Drift for your service:
 
 ```bash
 cd path/to/your/service
-tusk setup
+tusk drift setup
 ```
 
 The agent will analyze your codebase, instrument the SDK, create configuration files, and test the setup with recording and replay. Supported languages: Python and Node.js.
@@ -144,28 +144,28 @@ Alternatively, use the interactive wizard:
 
 ```bash
 cd path/to/your/service
-tusk init
+tusk drift init
 ```
 
 This will guide you to create your `.tusk/config.yaml` config file. You can also create the `.tusk` directory and config file manually. See [configuration docs](/docs/configuration.md).
 
-You will need to record traces for your service. See your respective SDK's guide for more details. Once you have traces recorded, you can replay them with the `tusk run` command.
+You will need to record traces for your service. See your respective SDK's guide for more details. Once you have traces recorded, you can replay them with the `tusk drift run` command.
 
 Local traces (default):
 
 ```bash
 # Run all tests from local traces
-tusk run
+tusk drift run
 
 # Or specify source
-tusk run --trace-dir .tusk/traces
-tusk run --trace-file path/to/trace.jsonl
-tusk run --trace-id <traceId>
+tusk drift run --trace-dir .tusk/traces
+tusk drift run --trace-file path/to/trace.jsonl
+tusk drift run --trace-id <traceId>
 
 # Common flags
-tusk run --filter '^/api/users' --concurrency 10 --enable-service-logs
-tusk run --save-results --results-dir .tusk/results
-tusk run --sandbox-mode auto   # default: auto (choices: auto|strict|off)
+tusk drift run --filter '^/api/users' --concurrency 10 --enable-service-logs
+tusk drift run --save-results --results-dir .tusk/results
+tusk drift run --sandbox-mode auto   # default: auto (choices: auto|strict|off)
 ```
 
 ## ✨ Tusk Drift Cloud
@@ -183,10 +183,10 @@ You can use Tusk Drift as API tests in your CI/CD pipeline by running your test 
 - Securely store these traces as test suites
 - Analyze deviations (classification of intended vs unintended deviations), root cause of deviations against your code changes, and suggested fixes.
 
-If you used `tusk setup`, cloud configuration is included. Otherwise, run the cloud onboarding wizard:
+If you used `tusk drift setup`, cloud configuration is included. Otherwise, run the cloud onboarding wizard:
 
 ```bash
-tusk init-cloud
+tusk drift init-cloud
 ```
 
 For more details, dive into [Tusk Drift Cloud docs](./docs/cloud/).
@@ -197,22 +197,22 @@ List traces:
 
 ```bash
 # Local traces
-tusk list
-tusk list --trace-dir .tusk/traces
+tusk drift list
+tusk drift list --trace-dir .tusk/traces
 
 # With Tusk Drift Cloud
-tusk list --cloud
+tusk drift list --cloud
 ```
 
 Interactive TUI (default when attached to a terminal):
 
 ```bash
-tusk run
+tusk drift run
 
 # Run against Tusk Drift Cloud
-tusk run --cloud
-tusk run --cloud --trace-test-id <id>           # single test from backend
-tusk run --cloud --all-cloud-trace-tests        # run all tests for service
+tusk drift run --cloud
+tusk drift run --cloud --trace-test-id <id>           # single test from backend
+tusk drift run --cloud --all-cloud-trace-tests        # run all tests for service
 ```
 
 The TUI is best viewed in a window size of at least 150 x 40.
@@ -220,7 +220,7 @@ The TUI is best viewed in a window size of at least 150 x 40.
 Run headless mode with JSON output for a single test:
 
 ```bash
-tusk run --trace-id <id> --print --output-format=json
+tusk drift run --trace-id <id> --print --output-format=json
 ```
 
 How this program uses your `.tusk` directory:

@@ -391,7 +391,7 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 		},
 		ToolTuskList: {
 			Name:        ToolTuskList,
-			Description: "Run 'tusk list' to show available recorded traces. Use after recording to verify traces were captured.",
+			Description: "Run 'tusk drift list' to show available recorded traces. Use after recording to verify traces were captured.",
 			InputSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {}

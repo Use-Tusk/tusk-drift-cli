@@ -1,6 +1,6 @@
 # AI-Powered Setup
 
-`tusk setup` uses an AI agent to automatically analyze your codebase and set up Tusk Drift for you.
+`tusk drift setup` uses an AI agent to automatically analyze your codebase and set up Tusk Drift for you.
 
 ## What the agent does
 
@@ -33,7 +33,7 @@ To use your own Anthropic API key instead:
 
 ## Progress & Resumption
 
-The agent saves progress to `.tusk/setup/PROGRESS.md` by default. If setup is interrupted, running `tusk setup` again will resume from where it left off. Use `--disable-progress-state` to start fresh.
+The agent saves progress to `.tusk/setup/PROGRESS.md` by default. If setup is interrupted, running `tusk drift setup` again will resume from where it left off. Use `--disable-progress-state` to start fresh.
 
 ## Cloud Setup
 

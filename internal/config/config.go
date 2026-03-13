@@ -24,6 +24,7 @@ var (
 	cachedConfigErr error
 	loadMutex       sync.Mutex
 	hasLoaded       bool
+	configFileFound bool
 )
 
 type Config struct {
@@ -128,12 +129,14 @@ func Load(configFile string) error {
 	}
 
 	if configFile != "" {
+		configFileFound = true
 		if err := k.Load(file.Provider(configFile), yaml.Parser()); err != nil {
 			log.ServiceLog(fmt.Sprintf("Failed to load config file: %s. Error: %s", configFile, err))
 			return fmt.Errorf("error loading config file: %w", err)
 		}
 		log.Debug("Config file loaded", "file", configFile)
 	} else {
+		configFileFound = false
 		log.Debug("No config file found, using defaults and environment variables")
 	}
 
@@ -178,6 +181,11 @@ func Get() (*Config, error) {
 	// Parse and cache the config
 	cachedConfig, cachedConfigErr = parseAndValidate()
 	return cachedConfig, cachedConfigErr
+}
+
+// HasConfigFile reports whether a config file was found during Load.
+func HasConfigFile() bool {
+	return configFileFound
 }
 
 // parseAndValidate parses the loaded koanf data into a Config struct and validates it

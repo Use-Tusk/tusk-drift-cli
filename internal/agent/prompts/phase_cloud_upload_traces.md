@@ -17,7 +17,7 @@ If no traces are found:
    - They just need to start their app with `TUSK_DRIFT_MODE=RECORD` environment variable set
    - Make some API requests to their service
    - Traces will be saved to `.tusk/traces/`
-   - After recording, they can re-run `tusk setup --skip-to-cloud` to continue
+   - After recording, they can re-run `tusk drift setup --skip-to-cloud` to continue
    
    Example message using `ask_user`:
    ```
@@ -29,13 +29,13 @@ If no traces are found:
    1. Start your app with TUSK_DRIFT_MODE=RECORD (e.g., `TUSK_DRIFT_MODE=RECORD <your start command>`)
    2. Make some API requests to your service
    3. Stop your app after a few seconds (traces are saved to .tusk/traces/)
-   4. Re-run `tusk setup --skip-to-cloud`
+   4. Re-run `tusk drift setup --skip-to-cloud`
  
    Would you like to stop here and record traces first? (recommended) (yes/no)
    ```
 
 3. **If config does not exist** (setup was never done):
-   - Suggest running `tusk setup` (without `--skip-to-cloud`) to go through the full setup flow which includes SDK instrumentation and recording traces
+   - Suggest running `tusk drift setup` (without `--skip-to-cloud`) to go through the full setup flow which includes SDK instrumentation and recording traces
    
    Example message using `ask_user`:
    ```
@@ -43,7 +43,7 @@ If no traces are found:
 
    Without traces, there's nothing to upload or validate against your service.
    
-   Please run `tusk setup` (without --skip-to-cloud) first to:
+   Please run `tusk drift setup` (without --skip-to-cloud) first to:
    - Instrument the Tusk Drift SDK
    - Create configuration files
    - Record initial traces
@@ -73,7 +73,7 @@ If no traces are found:
    c. Finally, call `abort_setup` with:
    ```json
    {
-     "reason": "User chose to stop and record traces first. Config has been reset for local recording (sampling_rate: 1.0, export_spans: false). Run `tusk setup` to record traces, then `tusk setup --skip-to-cloud` to continue cloud setup."
+     "reason": "User chose to stop and record traces first. Config has been reset for local recording (sampling_rate: 1.0, export_spans: false). Run `tusk drift setup` to record traces, then `tusk drift setup --skip-to-cloud` to continue cloud setup."
    }
    ```
 
@@ -113,4 +113,4 @@ If traces are found, upload them to Tusk Cloud:
 
 - This phase gives users control over whether to continue without traces
 - Upload failures should warn but allow continuing
-- Users can always upload traces later by running `tusk setup` again
+- Users can always upload traces later by running `tusk drift setup` again

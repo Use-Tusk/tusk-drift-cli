@@ -13,8 +13,17 @@ This will create a .tusk/config.yaml file in the current directory.`,
 	RunE: initService,
 }
 
+var initAliasCmd = &cobra.Command{
+	Use:        "init",
+	Short:      "Set up a new service with Tusk",
+	Long:       initCmd.Long,
+	RunE:       initService,
+	Deprecated: "use `tusk drift init` instead",
+}
+
 func init() {
-	rootCmd.AddCommand(initCmd)
+	driftCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(initAliasCmd)
 }
 
 func initService(cmd *cobra.Command, args []string) error {

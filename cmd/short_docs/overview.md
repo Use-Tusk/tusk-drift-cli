@@ -16,7 +16,7 @@ Further reading: <https://opentelemetry.io/docs/concepts/signals/traces/>
 Setup involves creating a `.tusk/config.yaml` file in the directory of the service you wish to test.
 This lets Tusk know how to start your service and wait for it to ready during replay mode.
 
-You can run `tusk setup` to start an AI agent to automatically set up your service for Tusk Drift or `tusk init` to start a configuration wizard.
+You can run `tusk drift setup` to start an AI agent to automatically set up your service for Tusk Drift or `tusk drift init` to start a configuration wizard.
 
 ## Test workflow
 
@@ -24,5 +24,5 @@ You can run `tusk setup` to start an AI agent to automatically set up your servi
 1. Once your app is up and ready, send traffic to it.
     - Tusk will record traces in `.tusk/traces`.
     - Shut down your app when you're done.
-1. Run `tusk run` to run these traces locally.
+1. Run `tusk drift run` to run these traces locally.
 1. Set up a workflow to run tests in your CI/CD pipeline.

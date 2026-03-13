@@ -179,14 +179,14 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		tuskDir := filepath.Join(workDir, ".tusk")
 		if _, err := os.Stat(tuskDir); err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("--verify requires a completed setup.\n\nNo .tusk/ directory found. Please run 'tusk setup' first")
+				return fmt.Errorf("--verify requires a completed setup.\n\nNo .tusk/ directory found. Please run 'tusk drift setup' first")
 			}
 			return fmt.Errorf("failed to check .tusk/ directory: %w", err)
 		}
 		configPath := filepath.Join(tuskDir, "config.yaml")
 		if _, err := os.Stat(configPath); err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("--verify requires a completed setup.\n\nNo .tusk/config.yaml found. Please run 'tusk setup' first")
+				return fmt.Errorf("--verify requires a completed setup.\n\nNo .tusk/config.yaml found. Please run 'tusk drift setup' first")
 			}
 			return fmt.Errorf("failed to check .tusk/config.yaml: %w", err)
 		}
@@ -198,7 +198,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		configPath := filepath.Join(workDir, ".tusk", "config.yaml")
 		if _, err := os.Stat(configPath); err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("--skip-to-cloud requires local setup to be complete first.\n\nNo .tusk/config.yaml found. Please run 'tusk setup' (without --skip-to-cloud) first to complete local setup, or create .tusk/config.yaml manually")
+				return fmt.Errorf("--skip-to-cloud requires local setup to be complete first.\n\nNo .tusk/config.yaml found. Please run 'tusk drift setup' (without --skip-to-cloud) first to complete local setup, or create .tusk/config.yaml manually")
 			}
 			return fmt.Errorf("failed to check .tusk/config.yaml: %w", err)
 		}

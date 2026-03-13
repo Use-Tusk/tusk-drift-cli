@@ -9,7 +9,7 @@ Add CI configuration that:
 1. Triggers on pull requests and pushes to default branch.
 2. Reuses any project-specific CI preparation needed for replay (for example env file copy, image build, dependency install, app setup).
 3. For GitHub Actions, prefers `Use-Tusk/drift-action@v1`.
-4. For non-GitHub CI, uses explicit CLI commands (`install` + `tusk run -c -p --ci --validate-suite-if-default-branch`).
+4. For non-GitHub CI, uses explicit CLI commands (`install` + `tusk drift run -c -p --ci --validate-suite-if-default-branch`).
 5. Uses `TUSK_API_KEY` from secrets/environment.
 6. Follows the current action input contract from the action definition (`action.yml`) when using GitHub Actions.
 
@@ -48,7 +48,7 @@ Add CI configuration that:
    - If using non-GitHub CI:
      - Update existing CI config (or create the CI config file used by that system) with equivalent steps:
        - install CLI: `curl -fsSL https://cli.usetusk.ai/install.sh | sh`
-       - run replay: `tusk run -c -p --ci --validate-suite-if-default-branch`
+       - run replay: `tusk drift run -c -p --ci --validate-suite-if-default-branch`
        - inject `TUSK_API_KEY` from CI secret/env settings
 
    - For newly created CI config files, add a short draft note at the top using the file's native comment syntax:
@@ -72,7 +72,7 @@ Add CI configuration that:
 
 6. **Important behavior requirements**
    - For GitHub Actions:
-     - Do not add manual `curl ... install.sh`, manual `actions/cache`, or direct `tusk run` commands if using `drift-action`.
+     - Do not add manual `curl ... install.sh`, manual `actions/cache`, or direct `tusk drift run` commands if using `drift-action`.
      - Keep `actions/checkout` in the workflow.
      - If the service runs from a subdirectory, set `working-directory` input on the Drift action.
      - Do not hardcode API keys; always use `${{ secrets.TUSK_API_KEY }}`.
@@ -81,7 +81,7 @@ Add CI configuration that:
        - If `cli-source` is explicitly needed, default to `release` (do not use `source` in normal customer workflows).
        - Avoid tweaking advanced inputs unless required by the repo.
    - For non-GitHub CI:
-     - Use CLI install + `tusk run -c -p --ci --validate-suite-if-default-branch`.
+     - Use CLI install + `tusk drift run -c -p --ci --validate-suite-if-default-branch`.
      - Use CI-native secret/env configuration for `TUSK_API_KEY`.
      - Preserve existing CI style and job/stage conventions.
 

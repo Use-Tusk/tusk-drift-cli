@@ -21,7 +21,7 @@ If `verify_simple_passed` is true:
 
 If `verify_simple_passed` is false:
 - Report that verification failed
-- Recommend the user run `tusk setup` to reconfigure
+- Recommend the user run `tusk drift setup` to reconfigure
 
 ### Transition
 

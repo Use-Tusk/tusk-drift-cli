@@ -54,7 +54,7 @@ If it fails:
 ### Step 5: Save to Verify Cache
 
 If the test passed, save the endpoint info to the exact path: `.tusk/setup/verify-cache.json` so that
-future `tusk setup --verify` runs can reuse it. Read the existing file first (if it
+future `tusk drift setup --verify` runs can reuse it. Read the existing file first (if it
 exists) to preserve other entries (like `complex_test`).
 
 If `.tusk/setup/verify-cache.json` does not exist, create it.

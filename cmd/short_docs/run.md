@@ -1,6 +1,6 @@
 # Replay Traces
 
-`tusk run` replays recorded traces (API tests) against your service. These tests can be run from local files, folders, or by test ID.
+`tusk drift run` replays recorded traces (API tests) against your service. These tests can be run from local files, folders, or by test ID.
 
 An interactive session is started by default; use `-p`/`--print` for noninteractive output.
 
@@ -14,7 +14,7 @@ An interactive session is started by default; use `-p`/`--print` for noninteract
 
 ```text
 +-------------------------+                                    +------------------------+
-| Your service + SDK      | <================================> | tusk run (CLI)         |
+| Your service + SDK      | <================================> | tusk drift run (CLI)   |
 | (REPLAY mode)           |          Unix domain socket        | mock server + traces   |
 +-----------+-------------+                                    +-----------+------------+
             ^                                                               |
