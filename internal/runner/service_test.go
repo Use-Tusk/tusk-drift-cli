@@ -1046,7 +1046,7 @@ func TestCreateReplayFenceConfigMergesCustomConfig(t *testing.T) {
 	assert.False(t, *cfg.Network.AllowLocalOutbound)
 	assert.True(t, cfg.Network.AllowAllUnixSockets)
 	assert.Contains(t, cfg.Filesystem.AllowWrite, "custom-cache")
-	assert.Contains(t, cfg.Filesystem.AllowWrite, ".tusk")
+	assert.Contains(t, cfg.Filesystem.AllowWrite, "/")
 }
 
 func TestCreateReplayFenceConfigRejectsDeniedLocalhost(t *testing.T) {

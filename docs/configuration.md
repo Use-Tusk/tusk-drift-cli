@@ -364,7 +364,7 @@ This will not affect CLI behavior. See SDK for more details:
       <td><code>replay.sandbox.config_path</code></td>
       <td>string</td>
       <td></td>
-      <td>Optional path to a Fence config file to merge into the built-in replay sandbox. Replay-required settings are still enforced after merge.</td>
+      <td>Optional path to a <a href="https://github.com/Use-Tusk/fence">Fence</a> config file to merge into the built-in replay sandbox. Relative paths are resolved from the repo/service root containing <code>.tusk</code>. Replay-required settings are still enforced after merge. If that Fence config uses <code>extends</code>, those relative paths are resolved relative to the config file itself.</td>
     </tr>
   </tbody>
 </table>
