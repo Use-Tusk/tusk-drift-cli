@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
@@ -247,7 +248,8 @@ func decodeJWTPayload(token string) (map[string]any, error) {
 
 // isEpochTimestamp returns true if the value is a number in a plausible
 // Unix timestamp range — either seconds (10-digit) or milliseconds (13-digit).
-// JSON numbers arrive as float64 from encoding/json; integer types are also handled.
+// JSON numbers arrive as float64 from encoding/json; integer types and
+// numeric strings (e.g. "1773268785165") are also handled.
 func isEpochTimestamp(v any) bool {
 	var n float64
 	switch val := v.(type) {
@@ -261,6 +263,12 @@ func isEpochTimestamp(v any) bool {
 		n = float64(val)
 	case json.Number:
 		f, err := val.Float64()
+		if err != nil {
+			return false
+		}
+		n = f
+	case string:
+		f, err := strconv.ParseFloat(val, 64)
 		if err != nil {
 			return false
 		}

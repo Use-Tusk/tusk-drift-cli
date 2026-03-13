@@ -359,6 +359,12 @@ func TestShouldIgnoreField_EpochTimestamp(t *testing.T) {
 		int64(1773268785165),
 		int64(1773268785162),
 		"test-epoch-7"))
+
+	// String epoch values (e.g. JSON field was a quoted number)
+	require.True(t, matcher.ShouldIgnoreField("ts",
+		"1773268785165",
+		"1773268785162",
+		"test-epoch-8"))
 }
 
 func TestShouldIgnoreField_EpochTimestamp_Disabled(t *testing.T) {
@@ -398,8 +404,13 @@ func TestIsEpochTimestamp(t *testing.T) {
 	// Too large
 	require.False(t, isEpochTimestamp(float64(9_999_999_999_999)))
 
+	// Numeric strings
+	require.True(t, isEpochTimestamp("1773268785165"))
+	require.True(t, isEpochTimestamp("1773268785"))
+	require.False(t, isEpochTimestamp("42"))
+	require.False(t, isEpochTimestamp("not-a-number"))
+
 	// Non-numeric types
-	require.False(t, isEpochTimestamp("1773268785165"))
 	require.False(t, isEpochTimestamp(true))
 	require.False(t, isEpochTimestamp(nil))
 
