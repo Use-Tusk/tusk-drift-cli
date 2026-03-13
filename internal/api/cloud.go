@@ -44,9 +44,9 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 	case cliconfig.AuthMethodNone:
 		switch methodEnv {
 		case "jwt":
-			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. No valid JWT found.\nRun `tusk auth login` or set TUSK_API_KEY.\nGet started: %s", DocsSetupURL)
+			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. No valid JWT found.\nRun `tusk auth login` to sign in.\nGet started: %s", DocsSetupURL)
 		case "api_key":
-			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. TUSK_API_KEY is not set.\nRun `tusk auth login` or set TUSK_API_KEY.\nGet started: %s", DocsSetupURL)
+			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. TUSK_API_KEY is not set.\nSet TUSK_API_KEY or change TUSK_AUTH_METHOD.\nGet started: %s", DocsSetupURL)
 		case "auto":
 			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. Run `tusk auth login` or set TUSK_API_KEY.\nGet started: %s", DocsSetupURL)
 		default:

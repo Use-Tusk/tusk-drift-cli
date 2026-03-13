@@ -7,7 +7,7 @@
 Then, execute
 
 ```bash
-tusk cloud-init
+tusk drift init-cloud
 ```
 
 to start an onboarding wizard that will guide you to:

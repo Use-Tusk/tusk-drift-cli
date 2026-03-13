@@ -261,8 +261,7 @@ func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Execute tusk run --cloud --validate-suite --print
-	args := []string{"run", "--cloud", "--validate-suite", "--print"}
+	args := []string{"drift", "run", "--cloud", "--validate-suite", "--print"}
 	if params.SandboxMode != "" {
 		args = append(args, "--sandbox-mode", params.SandboxMode)
 	}

@@ -185,6 +185,8 @@ func Get() (*Config, error) {
 
 // HasConfigFile reports whether a config file was found during Load.
 func HasConfigFile() bool {
+	loadMutex.Lock()
+	defer loadMutex.Unlock()
 	return configFileFound
 }
 
