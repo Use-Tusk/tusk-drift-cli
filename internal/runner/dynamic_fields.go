@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
@@ -26,6 +27,8 @@ type DynamicFieldMatcher struct {
 	ignoreFields map[string]bool
 	// Whether to decode and compare JWT tokens by payload
 	ignoreJWT bool
+	// Whether to ignore numeric epoch timestamps (seconds and milliseconds)
+	ignoreEpoch bool
 }
 
 // jwtRegex matches the general JWT format: three base64url segments separated by dots.
@@ -38,6 +41,16 @@ var jwtDynamicClaims = map[string]bool{
 	"jti": true, // JWT ID - unique per token issuance
 }
 
+// Epoch timestamp range boundaries.
+// Seconds:      1_000_000_000 (Sep 2001) to 4_102_444_800 (Jan 2100)
+// Milliseconds: 1_000_000_000_000        to 4_102_444_800_000
+const (
+	epochSecondsMin = 1_000_000_000
+	epochSecondsMax = 4_102_444_800
+	epochMillisMin  = 1_000_000_000_000
+	epochMillisMax  = 4_102_444_800_000
+)
+
 // NewDynamicFieldMatcher creates a new matcher with default patterns
 func NewDynamicFieldMatcher() *DynamicFieldMatcher {
 	return &DynamicFieldMatcher{
@@ -46,6 +59,7 @@ func NewDynamicFieldMatcher() *DynamicFieldMatcher {
 		dateRegex:      regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}$|^\d{2}-\d{2}-\d{4}$`),
 		ignoreFields:   make(map[string]bool),
 		ignoreJWT:      true,
+		ignoreEpoch:    true,
 	}
 }
 
@@ -68,6 +82,10 @@ func NewDynamicFieldMatcherWithConfig(cfg *config.ComparisonConfig) *DynamicFiel
 		// Check if JWT ignoring is explicitly disabled
 		if cfg.IgnoreJWTFields != nil && !*cfg.IgnoreJWTFields {
 			matcher.ignoreJWT = false
+		}
+		// Check if epoch timestamp ignoring is explicitly disabled
+		if cfg.IgnoreEpochTimestamps != nil && !*cfg.IgnoreEpochTimestamps {
+			matcher.ignoreEpoch = false
 		}
 
 		// Add custom field names
@@ -118,6 +136,17 @@ func (m *DynamicFieldMatcher) ShouldIgnoreField(fieldName string, expectedValue,
 		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (date pattern): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
 		log.Debug("Field ignored by date pattern", "field", fieldName, "expected", expectedValue, "actual", actualValue)
 		return true
+	}
+
+	// Check for numeric epoch timestamps - BOTH values must be in the same unit (seconds or milliseconds)
+	if m.ignoreEpoch {
+		expectedUnit := epochTimestampUnit(expectedValue)
+		actualUnit := epochTimestampUnit(actualValue)
+		if expectedUnit != epochUnitNone && expectedUnit == actualUnit {
+			log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (epoch %s): expected=%v, actual=%v", fieldName, expectedUnit, expectedValue, actualValue))
+			log.Debug("Field ignored by epoch timestamp range", "field", fieldName, "unit", expectedUnit, "expected", expectedValue, "actual", actualValue)
+			return true
+		}
 	}
 
 	// Check custom patterns - BOTH values must match the pattern
@@ -219,4 +248,57 @@ func decodeJWTPayload(token string) (map[string]any, error) {
 	}
 
 	return payload, nil
+}
+
+type epochUnit string
+
+const (
+	epochUnitNone    epochUnit = ""
+	epochUnitSeconds epochUnit = "seconds"
+	epochUnitMillis  epochUnit = "milliseconds"
+)
+
+// epochTimestampUnit returns which epoch unit the value falls in, or
+// epochUnitNone if it isn't a plausible epoch timestamp. JSON numbers
+// arrive as float64 from encoding/json; integer types and numeric
+// strings (e.g. "1773268785165") are also handled.
+func epochTimestampUnit(v any) epochUnit {
+	var n float64
+	switch val := v.(type) {
+	case float64:
+		n = val
+	case float32:
+		n = float64(val)
+	case int:
+		n = float64(val)
+	case int64:
+		n = float64(val)
+	case json.Number:
+		f, err := val.Float64()
+		if err != nil {
+			return epochUnitNone
+		}
+		n = f
+	case string:
+		f, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			return epochUnitNone
+		}
+		n = f
+	default:
+		return epochUnitNone
+	}
+
+	// Reject fractional numbers — real epoch timestamps are always whole numbers
+	if n != float64(int64(n)) {
+		return epochUnitNone
+	}
+
+	if n >= epochSecondsMin && n <= epochSecondsMax {
+		return epochUnitSeconds
+	}
+	if n >= epochMillisMin && n <= epochMillisMax {
+		return epochUnitMillis
+	}
+	return epochUnitNone
 }
