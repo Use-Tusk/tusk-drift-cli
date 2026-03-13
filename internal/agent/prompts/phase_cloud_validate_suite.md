@@ -22,7 +22,7 @@ If no traces were uploaded (`trace_upload_success` is false or `traces_uploaded`
 If traces were uploaded, run the validation:
 
 1. Use `cloud_run_validation` tool (optional `sandbox_mode` parameter)
-   - This executes `tusk run --cloud --validate-suite --print`
+   - This executes `tusk drift run --cloud --validate-suite --print`
    - It validates all uploaded traces against the live service
    - Passing tests are automatically added to the test suite
    - If startup fails in sandbox, retry once with `sandbox_mode: "off"`
@@ -56,7 +56,7 @@ If traces were uploaded, run the validation:
 - Suggest they can:
   - Check the service is running correctly
   - Review trace recordings
-  - Run `tusk run --cloud --validate-suite` manually later
+  - Run `tusk drift run --cloud --validate-suite` manually later
 
 **If validation errors**:
 
@@ -83,4 +83,4 @@ Call `transition_phase` with:
 - The `cloud_run_validation` tool handles starting/stopping the service internally
 - Success is defined as having at least 1 test in the suite
 - Failed validation should not block cloud setup completion
-- Users can always run validation manually later with `tusk run --cloud --validate-suite`
+- Users can always run validation manually later with `tusk drift run --cloud --validate-suite`

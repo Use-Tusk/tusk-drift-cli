@@ -62,7 +62,7 @@ This may be important when choosing endpoints to test.
 
 ### Replay
 
-Run `tusk run` to replay recorded traces.
+Run `tusk drift run` to replay recorded traces.
 The CLI will:
 
 1. Start the service with mocked external calls

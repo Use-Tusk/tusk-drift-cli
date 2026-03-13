@@ -2,12 +2,12 @@
 
 ## Getting started
 
-[Sign up for a Tusk account](https://app.usetusk.ai/app) or run `tusk auth login`. You must also have created a Tusk config file (i.e., complete `tusk init` first).
+[Sign up for a Tusk account](https://app.usetusk.ai/app) or run `tusk auth login`. You must also have created a Tusk config file (i.e., complete `tusk drift init` first).
 
 Then, execute
 
 ```bash
-tusk cloud-init
+tusk drift init-cloud
 ```
 
 to start an onboarding wizard that will guide you to:

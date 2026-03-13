@@ -33,16 +33,31 @@ var listCmd = &cobra.Command{
 	SilenceUsage: true,
 }
 
+var listAliasCmd = &cobra.Command{
+	Use:          "list",
+	Short:        "List available traces for replay",
+	Long:         utils.RenderMarkdown(listContent + "\n\n" + filterContent),
+	RunE:         listTests,
+	SilenceUsage: true,
+	Deprecated:   "use `tusk drift list` instead",
+}
+
 func init() {
-	rootCmd.AddCommand(listCmd)
+	driftCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(listAliasCmd)
 
-	listCmd.Flags().StringVar(&traceDir, "trace-dir", "", "Path to local folder containing recorded trace files")
-	listCmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
-	listCmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "List trace tests from Tusk Drift Cloud")
-	listCmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs if you start a test. Logs from the SDK will be present.")
-	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output trace list as JSON (non-interactive)")
+	bindListFlags(listCmd)
+	bindListFlags(listAliasCmd)
+	bindLegacyDriftAliasConfigFlag(listAliasCmd)
+}
 
-	listCmd.Flags().SortFlags = false
+func bindListFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&traceDir, "trace-dir", "", "Path to local folder containing recorded trace files")
+	cmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
+	cmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "List trace tests from Tusk Drift Cloud")
+	cmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs if you start a test. Logs from the SDK will be present.")
+	cmd.Flags().BoolVar(&listJSON, "json", false, "Output trace list as JSON (non-interactive)")
+	cmd.Flags().SortFlags = false
 }
 
 func listTests(cmd *cobra.Command, args []string) error {
@@ -75,7 +90,7 @@ func listTests(cmd *cobra.Command, args []string) error {
 	if cloud {
 		client, authOptions, cfg, err = api.SetupCloud(context.Background(), true)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 
 		all, err := api.FetchAllTraceTestsWithCache(
@@ -87,7 +102,7 @@ func listTests(cmd *cobra.Command, args []string) error {
 			false,
 		)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 		tests = runner.ConvertTraceTestsToRunnerTests(all)
 	} else {

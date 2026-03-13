@@ -38,9 +38,9 @@ If you have any questions, feel free to open an issue or email [support@usetusk.
 3) Run:
 
    ```bash
-   tusk run --trace-dir .tusk/traces
+   tusk drift run --trace-dir .tusk/traces
    # or
-   tusk run --trace-file path/to/trace.jsonl
+   tusk drift run --trace-file path/to/trace.jsonl
    ```
 
 4) Useful flags:

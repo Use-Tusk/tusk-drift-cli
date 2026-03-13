@@ -63,7 +63,7 @@ The interactive UI orchestrates execution around the `Executor`, surfaces live l
   - If configured, calls `OnTestCompleted(result, test, executor)` non‑blocking to stream results to the backend in near‑real time.
   - On completion, calls `OnAllCompleted(results, tests, executor)` and, if results output is enabled, writes a `.json` file (path shown in logs).
 
-You can also run in non-interactive mode by passing `--print` to `tusk run`.
+You can also run in non-interactive mode by passing `--print` to `tusk drift run`.
 
 ### Sandboxing with Fence
 
@@ -82,7 +82,7 @@ Sandboxing is enabled by default when the platform supports it (macOS/Linux). Us
 
 Protobuf‑over‑HTTP client for communications to the Tusk Drift Cloud backend (create run, get tests, upload results, finalize).
 
-**Typical flow (`tusk run --cloud`)**:
+**Typical flow (`tusk drift run --cloud`)**:
 
 1. Create run, set CI status to `RUNNING`.
 2. Optionally fetch pre‑app‑start/global spans; inject into the server for matching.

@@ -8,7 +8,7 @@ Where the CLI reads config from:
 2. Environment variables (prefix `TUSK_`)
 3. Config file (auto-discovered): `.tusk/config.yaml`, `.tusk/config.yml`, `tusk.yaml`, `tusk.yml`, or `~/.tusk/config.yaml`
 
-**✨ Run `tusk init` in your service root directory to start a wizard to guide you through setting up your config file.**
+**✨ Run `tusk drift setup` in your service root directory to start an agent automatically create a config file based on your service.**
 
 ## Service
 

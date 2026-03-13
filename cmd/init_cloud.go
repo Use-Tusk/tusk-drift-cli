@@ -12,8 +12,17 @@ var initCloudCmd = &cobra.Command{
 	RunE:  initCloud,
 }
 
+var initCloudAliasCmd = &cobra.Command{
+	Use:        "init-cloud",
+	Short:      "Initialize Tusk Drift Cloud for this service",
+	Long:       initCloudCmd.Long,
+	RunE:       initCloud,
+	Deprecated: "use `tusk drift init-cloud` instead",
+}
+
 func init() {
-	rootCmd.AddCommand(initCloudCmd)
+	driftCmd.AddCommand(initCloudCmd)
+	rootCmd.AddCommand(initCloudAliasCmd)
 }
 
 func initCloud(cmd *cobra.Command, args []string) error {

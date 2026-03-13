@@ -2,13 +2,13 @@
 
 ## Setup Issues
 
-If `tusk setup` (AI-powered setup) fails or doesn't support your project:
+If `tusk drift setup` (AI-powered setup) fails or doesn't support your project:
 
 - **Missing API key**: The agent requires an Anthropic API key. Set it via `export ANTHROPIC_API_KEY=your-key` or pass `--api-key your-key`.
 - **Unsupported language/framework**: The AI agent currently supports Python (FastAPI, Flask, Django, Starlette) and Node.js (Express, Fastify, Koa, Hapi).
 - **Agent errors or timeouts**: Try running with `--print` for headless mode to see detailed output. You can also use `--output-logs` to save logs to `.tusk/logs/`.
-- **Resume interrupted setup**: The agent saves progress to `.tusk/setup/PROGRESS.md`. Run `tusk setup` again to resume, or use `--disable-progress-state` to start fresh.
-- **Fallback options**: If you prefer not to use the AI agent, you may also use `tusk init` for local setup and `tusk init-cloud` for cloud configuration.
+- **Resume interrupted setup**: The agent saves progress to `.tusk/setup/PROGRESS.md`. Run `tusk drift setup` again to resume, or use `--disable-progress-state` to start fresh.
+- **Fallback options**: If you prefer not to use the AI agent, you may also use `tusk drift init` for local setup and `tusk drift init-cloud` for cloud configuration.
 
 ## Connection Issues
 
@@ -25,8 +25,8 @@ If `tusk setup` (AI-powered setup) fails or doesn't support your project:
 ## Replay Issues
 
 - **No Mock Found**: Check suite spans availability and matching rules; ensure traces exist for the trace being replayed.
-- **Environment Mismatch**: If you can record traces successfully but unable to replay them, check if you are running `tusk run` in an environment similar to what you recorded the traces in. For example, for Node.js services, a common issue could be a difference in Node versions.
-- **App fails to start only during replay sandbox**: If startup depends on external services (for example `doppler run -- ...`), use `replay.sandbox.mode: auto` (default) or run `tusk run --sandbox-mode off`.
+- **Environment Mismatch**: If you can record traces successfully but unable to replay them, check if you are running `tusk drift run` in an environment similar to what you recorded the traces in. For example, for Node.js services, a common issue could be a difference in Node versions.
+- **App fails to start only during replay sandbox**: If startup depends on external services (for example `doppler run -- ...`), use `replay.sandbox.mode: auto` (default) or run `tusk drift run --sandbox-mode off`.
 
 ## Linux Issues
 

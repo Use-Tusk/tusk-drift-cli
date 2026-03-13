@@ -1,6 +1,6 @@
 # Filtering Tests
 
-Both `tusk run` and `tusk list` accept `--filter` to narrow which tests are shown or executed.
+Both `tusk drift run` and `tusk drift list` accept `--filter` to narrow which tests are shown or executed.
 
 ## Syntax
 
@@ -27,21 +27,21 @@ Notes:
 GraphQL:
 
 - By operation name (recommended):  
-  `tusk list -f 'type=GRAPHQL,op=^GetUser$'`  
-  `tusk run  -f 'type=GRAPHQL,op=Get(User|Resources)'`
+  `tusk drift list -f 'type=GRAPHQL,op=^GetUser$'`  
+  `tusk drift run  -f 'type=GRAPHQL,op=Get(User|Resources)'`
 - By display text (includes the verb):  
-  `tusk run -f 'name="^query\\s+GetUser$"'`
+  `tusk drift run -f 'name="^query\\s+GetUser$"'`
 
 HTTP:
 
-- By route: `tusk run -f 'path=^/api/orders(/|$)'`
-- By method + route: `tusk run -f 'method=POST,path=/checkout'`
-- By type: `tusk list -f 'type=HTTP'`
+- By route: `tusk drift run -f 'path=^/api/orders(/|$)'`
+- By method + route: `tusk drift run -f 'method=POST,path=/checkout'`
+- By type: `tusk drift list -f 'type=HTTP'`
 
 Trace/file:
 
-- Specific trace: `tusk run -f 'id=84d0de6b4e4498e996c7f8b8c0f35230'`
-- By file: `tusk list -f 'file=2025-09-24.*trace.*\\.jsonl'`
+- Specific trace: `tusk drift run -f 'id=84d0de6b4e4498e996c7f8b8c0f35230'`
+- By file: `tusk drift list -f 'file=2025-09-24.*trace.*\\.jsonl'`
 
 Regex tips:
 
@@ -51,4 +51,4 @@ Regex tips:
 
 Behavior:
 
-- If the filter yields 0 tests, `tusk run` exits gracefully without starting your service.
+- If the filter yields 0 tests, `tusk drift run` exits gracefully without starting your service.

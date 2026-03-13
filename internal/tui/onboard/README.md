@@ -1,6 +1,6 @@
 # Onboarding Wizard
 
-This directory contains the implementation of the `tusk init` onboarding wizard, a terminal UI (TUI) that guides users through configuring Tusk Drift for their service.
+This directory contains the implementation of the `tusk drift init` onboarding wizard, a terminal UI (TUI) that guides users through configuring Tusk Drift for their service.
 
 ## Architecture Overview
 
@@ -291,7 +291,7 @@ Run the wizard with:
 
 ```bash
 cd /path/to/your/nodejs/project
-tusk init
+tusk drift init
 ```
 
 The wizard will:

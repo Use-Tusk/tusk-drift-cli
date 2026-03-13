@@ -34,7 +34,7 @@ var overviewContent string
 
 var rootCmd = &cobra.Command{
 	Use:   "tusk",
-	Short: "Tusk CLI - API test record/replay system",
+	Short: "Tusk CLI - Unit test automation and API test record/replay system",
 	Long:  utils.RenderMarkdown(overviewContent),
 	Run: func(cmd *cobra.Command, args []string) {
 		showASCIIArt()
@@ -73,12 +73,12 @@ func showASCIIArt() {
 	}
 
 	banner := []string{
-		"  dBBBBBBP dBP dBP.dBBBBP   dBP dBP    dBBBBb dBBBBBb    dBP dBBBBP dBBBBBBP",
-		"                  BP       d8P.dBP        dB'     dBP                       ",
-		"   dBP   dBP dBP  `BBBBb  dBBBBP     dBP dB'  dBBBBK   dBP dBBBP     dBP    ",
-		"  dBP   dBP_dBP      dBP dBP BB     dBP dB'  dBP  BB  dBP dBP       dBP     ",
-		" dBP   dBBBBBP  dBBBBP' dBP dBP    dBBBBB'  dBP  dB' dBP dBP       dBP      ",
-		"                                                                            ",
+		"  dBBBBBBP dBP dBP.dBBBBP   dBP dBP    dBBBP  dBP    dBP",
+		"                  BP       dBP.d8P                      ",
+		"   dBP   dBP dBP  `BBBBb  dBBBBP'    dBP    dBP    dBP  ",
+		"  dBP   dBP_dBP      dBP dBP BB     dBP    dBP    dBP   ",
+		" dBP   dBBBBBP  dBBBBP' dBP dB'    dBBBBP dBBBBP dBP    ",
+		"                                                        ",
 	}
 
 	maxWidth := 0
@@ -104,7 +104,7 @@ func showASCIIArt() {
 	fmt.Print(reset)
 
 	// Center subtitle
-	subtitle := "API test record/replay system"
+	subtitle := "Unit test automation and API test record/replay system"
 	subtitlePadding := max((maxWidth-len(subtitle))/2, 0)
 	for range subtitlePadding {
 		fmt.Print(" ")
@@ -142,7 +142,6 @@ func showASCIIArt() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is .tusk/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "debug output")
 	rootCmd.PersistentFlags().BoolVarP(&showVersion, "version", "v", false, "show version and exit")
 	rootCmd.PersistentFlags().BoolVarP(&showVersion, "ver", "V", false, "show version and exit")

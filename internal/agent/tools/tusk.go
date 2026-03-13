@@ -14,7 +14,7 @@ import (
 	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
 )
 
-// Note: We currently use the internal `runner` package instead of direct Tusk CLI commands `tusk list` and `tusk run`.
+// Note: We currently use the internal `runner` package instead of direct Tusk CLI commands `tusk drift list` and `tusk drift run`.
 // Short term benefits:
 // - no dependency on finding the tusk binary path (for dev testing)
 // - faster execution (no process spawn)
@@ -238,7 +238,7 @@ func (tt *TuskTools) Run(input json.RawMessage) (string, error) {
 	return strings.Join(results, "\n") + summary, nil
 }
 
-// RunValidation runs 'tusk run --cloud --validate-suite --print' and returns the results
+// RunValidation runs 'tusk drift run --cloud --validate-suite --print' and returns the results
 func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
 	var params struct {
 		SandboxMode string `json:"sandbox_mode"`
@@ -261,8 +261,7 @@ func (tt *TuskTools) RunValidation(input json.RawMessage) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Execute tusk run --cloud --validate-suite --print
-	args := []string{"run", "--cloud", "--validate-suite", "--print"}
+	args := []string{"drift", "run", "--cloud", "--validate-suite", "--print"}
 	if params.SandboxMode != "" {
 		args = append(args, "--sandbox-mode", params.SandboxMode)
 	}

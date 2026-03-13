@@ -24,7 +24,7 @@ Generate a final report documenting the cloud setup and list of next steps.
    - Attempted: Yes/No
    - Success: Yes/No
    - Tests in Suite: {count}
-   - If no tests in suite, explain how to validate manually with `tusk run --cloud --validate-suite`
+   - If no tests in suite, explain how to validate manually with `tusk drift run --cloud --validate-suite`
 
 5. **API Key Status**:
    - Created: Yes/No/Already existed
@@ -58,7 +58,7 @@ Generate a final report documenting the cloud setup and list of next steps.
 
    **Step 4: Verify traces are recording**
    After deploying, confirm traces are being uploaded:
-   - Run `tusk list --cloud` to see cloud traces
+   - Run `tusk drift list --cloud` to see cloud traces
    - Or check the Tusk dashboard: <https://app.usetusk.ai>
 
    **Step 5: Set up a CI workflow**
