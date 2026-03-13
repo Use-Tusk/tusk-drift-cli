@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 )
 
 type (
@@ -34,7 +33,7 @@ func (c *TuskClient) makeJSONRequest(ctx context.Context, method string, path st
 	}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		return fmt.Errorf("http %d: %s", httpResp.StatusCode, strings.TrimSpace(string(body)))
+		return newApiError(httpResp.StatusCode, body)
 	}
 
 	if out == nil || len(body) == 0 {

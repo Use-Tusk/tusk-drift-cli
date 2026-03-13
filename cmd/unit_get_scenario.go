@@ -34,7 +34,7 @@ var unitGetScenarioCmd = &cobra.Command{
 			authOptions,
 		)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 
 		return printJSON(result)

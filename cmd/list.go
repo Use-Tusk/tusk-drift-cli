@@ -90,7 +90,7 @@ func listTests(cmd *cobra.Command, args []string) error {
 	if cloud {
 		client, authOptions, cfg, err = api.SetupCloud(context.Background(), true)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 
 		all, err := api.FetchAllTraceTestsWithCache(
@@ -102,7 +102,7 @@ func listTests(cmd *cobra.Command, args []string) error {
 			false,
 		)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 		tests = runner.ConvertTraceTestsToRunnerTests(all)
 	} else {

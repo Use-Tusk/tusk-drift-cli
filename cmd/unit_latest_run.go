@@ -29,7 +29,7 @@ var unitLatestRunCmd = &cobra.Command{
 
 		result, err := client.GetLatestUnitTestRun(context.Background(), repo, branch, authOptions)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 
 		result["next_steps"] = buildLatestRunNextSteps(result)

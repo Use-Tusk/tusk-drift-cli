@@ -19,7 +19,7 @@ var unitGetDiffsCmd = &cobra.Command{
 
 		result, err := client.GetUnitTestRunFiles(context.Background(), args[0], authOptions)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 
 		return printJSON(result)

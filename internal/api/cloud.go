@@ -15,7 +15,10 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 		return nil, AuthOptions{}, nil, fmt.Errorf("failed to load config: %w", cfgErr)
 	}
 	if requireServiceID && cfg.Service.ID == "" {
-		return nil, AuthOptions{}, nil, fmt.Errorf("Service ID is required. Set config.service.id in '.tusk/config.yaml'")
+		if !config.HasConfigFile() {
+			return nil, AuthOptions{}, nil, fmt.Errorf("no config file found. Run `tusk drift setup` to get started.")
+		}
+		return nil, AuthOptions{}, nil, fmt.Errorf("service.id in '.tusk/config.yaml' is required. Run `tusk drift setup` to get started.")
 	}
 
 	authenticator, aerr := auth.NewAuthenticator()
@@ -39,14 +42,13 @@ func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOp
 	case cliconfig.AuthMethodAPIKey:
 		apiKey = cliconfig.GetAPIKey()
 	case cliconfig.AuthMethodNone:
-		// Provide context-specific error messages
 		switch methodEnv {
 		case "jwt":
-			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'jwt' selected, but no valid JWT found. Run `tusk auth login`")
+			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. No valid JWT found.\nRun `tusk auth login` or set TUSK_API_KEY.\nGet started: %s", DocsSetupURL)
 		case "api_key":
-			return nil, AuthOptions{}, nil, fmt.Errorf("auth method 'api_key' selected, but TUSK_API_KEY is not set")
+			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. TUSK_API_KEY is not set.\nRun `tusk auth login` or set TUSK_API_KEY.\nGet started: %s", DocsSetupURL)
 		case "auto":
-			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. Either run `tusk auth login` or set TUSK_API_KEY")
+			return nil, AuthOptions{}, nil, fmt.Errorf("not authenticated. Run `tusk auth login` or set TUSK_API_KEY.\nGet started: %s", DocsSetupURL)
 		default:
 			return nil, AuthOptions{}, nil, fmt.Errorf("invalid TUSK_AUTH_METHOD '%s'. Valid values: auth0|jwt, api_key, auto", methodEnv)
 		}

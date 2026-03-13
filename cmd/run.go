@@ -186,7 +186,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		client, authOptions, cfg, err = api.SetupCloud(context.Background(), true)
 		if err != nil {
 			cmd.SilenceUsage = true
-			return err
+			return formatApiError(err)
 		}
 
 		// Check for validation mode
@@ -202,7 +202,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			}
 			info, err := client.GetObservableServiceInfo(context.Background(), infoReq, authOptions)
 			if err != nil {
-				return fmt.Errorf("failed to get observable service info: %w", err)
+				return formatApiError(fmt.Errorf("failed to get observable service info: %w", err))
 			}
 
 			// Check if we're on the default branch
@@ -265,8 +265,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 					utils.CIWarning("Tusk Drift skipped: " + err.Error())
 					return nil
 				}
-				// TODO: make this more user-friendly, this is probably a server side issue, but could be wrong url set.
-				return fmt.Errorf("failed to create drift run: %w", err)
+				return formatApiError(fmt.Errorf("failed to create drift run: %w", err))
 			}
 
 			driftRunID = id
@@ -411,7 +410,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				if isValidation {
 					updateStatusToFailure(context.Background(), client, driftRunID, authOptions, fmt.Sprintf("Failed to fetch tests: %v", err))
 				}
-				return fmt.Errorf("failed to load cloud tests: %w", err)
+				return formatApiError(fmt.Errorf("failed to load cloud tests: %w", err))
 			}
 			return fmt.Errorf("failed to load tests: %w", err)
 		}
@@ -588,7 +587,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				preloadedTests, err = loadCloudTests(context.Background(), client, authOptions, cfg.Service.ID, driftRunID, traceTestID, allCloudTraceTests || !ci, quiet)
 			}
 			if err != nil {
-				return fmt.Errorf("failed to load cloud tests: %w", err)
+				return formatApiError(fmt.Errorf("failed to load cloud tests: %w", err))
 			}
 			if filter != "" {
 				preloadedTests, err = runner.FilterTests(preloadedTests, filter)

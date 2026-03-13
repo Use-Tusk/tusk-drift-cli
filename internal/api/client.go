@@ -179,7 +179,7 @@ func (c *TuskClient) makeProtoRequest(ctx context.Context, serviceAPIPath string
 		return err
 	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		return fmt.Errorf("http %d: %s", httpResp.StatusCode, string(body))
+		return newApiError(httpResp.StatusCode, body)
 	}
 
 	if err := proto.Unmarshal(body, resp); err != nil {
@@ -212,10 +212,8 @@ func (c *TuskClient) makeProtoRequestWithRetryConfig(ctx context.Context, servic
 			return nil
 		}
 
-		// Check if error is retryable (502, 503, 504, network errors)
-		if strings.Contains(err.Error(), "http 502") ||
-			strings.Contains(err.Error(), "http 503") ||
-			strings.Contains(err.Error(), "http 504") {
+		var apiErr *ApiError
+		if errors.As(err, &apiErr) && (apiErr.StatusCode == 502 || apiErr.StatusCode == 503 || apiErr.StatusCode == 504) {
 			lastErr = err
 			continue
 		}

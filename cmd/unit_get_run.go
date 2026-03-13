@@ -20,7 +20,7 @@ var unitGetRunCmd = &cobra.Command{
 
 		result, err := client.GetUnitTestRun(context.Background(), args[0], authOptions)
 		if err != nil {
-			return err
+			return formatApiError(err)
 		}
 
 		result["next_steps"] = buildNextSteps(result)
