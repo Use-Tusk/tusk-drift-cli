@@ -365,6 +365,12 @@ func TestShouldIgnoreField_EpochTimestamp(t *testing.T) {
 		"1773268785165",
 		"1773268785162",
 		"test-epoch-8"))
+
+	// Seconds vs milliseconds mismatch - should NOT be ignored (different units = real deviation)
+	require.False(t, matcher.ShouldIgnoreField("ts",
+		float64(1773268785),
+		float64(1773268785165),
+		"test-epoch-9"))
 }
 
 func TestShouldIgnoreField_EpochTimestamp_Disabled(t *testing.T) {
@@ -381,45 +387,45 @@ func TestShouldIgnoreField_EpochTimestamp_Disabled(t *testing.T) {
 		"test-epoch-disabled"))
 }
 
-func TestIsEpochTimestamp(t *testing.T) {
+func TestEpochTimestampUnit(t *testing.T) {
 	// Epoch seconds (10-digit)
-	require.True(t, isEpochTimestamp(float64(1773268785)))
-	require.True(t, isEpochTimestamp(float64(1000000000)))
-	require.True(t, isEpochTimestamp(float64(4102444800)))
+	require.Equal(t, epochUnitSeconds, epochTimestampUnit(float64(1773268785)))
+	require.Equal(t, epochUnitSeconds, epochTimestampUnit(float64(1000000000)))
+	require.Equal(t, epochUnitSeconds, epochTimestampUnit(float64(4102444800)))
 
 	// Epoch milliseconds (13-digit)
-	require.True(t, isEpochTimestamp(float64(1773268785165)))
-	require.True(t, isEpochTimestamp(float64(1000000000000)))
-	require.True(t, isEpochTimestamp(float64(4102444800000)))
+	require.Equal(t, epochUnitMillis, epochTimestampUnit(float64(1773268785165)))
+	require.Equal(t, epochUnitMillis, epochTimestampUnit(float64(1000000000000)))
+	require.Equal(t, epochUnitMillis, epochTimestampUnit(float64(4102444800000)))
 
 	// Too small
-	require.False(t, isEpochTimestamp(float64(0)))
-	require.False(t, isEpochTimestamp(float64(42)))
-	require.False(t, isEpochTimestamp(float64(999999999)))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(float64(0)))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(float64(42)))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(float64(999999999)))
 
 	// In the gap between seconds max and millis min
-	require.False(t, isEpochTimestamp(float64(10_000_000_000)))
-	require.False(t, isEpochTimestamp(float64(100_000_000_000)))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(float64(10_000_000_000)))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(float64(100_000_000_000)))
 
 	// Too large
-	require.False(t, isEpochTimestamp(float64(9_999_999_999_999)))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(float64(9_999_999_999_999)))
 
 	// Numeric strings
-	require.True(t, isEpochTimestamp("1773268785165"))
-	require.True(t, isEpochTimestamp("1773268785"))
-	require.False(t, isEpochTimestamp("42"))
-	require.False(t, isEpochTimestamp("not-a-number"))
+	require.Equal(t, epochUnitMillis, epochTimestampUnit("1773268785165"))
+	require.Equal(t, epochUnitSeconds, epochTimestampUnit("1773268785"))
+	require.Equal(t, epochUnitNone, epochTimestampUnit("42"))
+	require.Equal(t, epochUnitNone, epochTimestampUnit("not-a-number"))
 
 	// Non-numeric types
-	require.False(t, isEpochTimestamp(true))
-	require.False(t, isEpochTimestamp(nil))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(true))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(nil))
 
 	// Float with fractional part - not an epoch
-	require.False(t, isEpochTimestamp(float64(1773268785.5)))
+	require.Equal(t, epochUnitNone, epochTimestampUnit(float64(1773268785.5)))
 
 	// Integer types
-	require.True(t, isEpochTimestamp(int(1773268785)))
-	require.True(t, isEpochTimestamp(int64(1773268785165)))
+	require.Equal(t, epochUnitSeconds, epochTimestampUnit(int(1773268785)))
+	require.Equal(t, epochUnitMillis, epochTimestampUnit(int64(1773268785165)))
 }
 
 func TestShouldIgnoreField_JWT_DefaultEnabled(t *testing.T) {

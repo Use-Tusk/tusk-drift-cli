@@ -138,11 +138,15 @@ func (m *DynamicFieldMatcher) ShouldIgnoreField(fieldName string, expectedValue,
 		return true
 	}
 
-	// Check for numeric epoch timestamps (Unix seconds or milliseconds) - BOTH values must be in range
-	if m.ignoreEpoch && isEpochTimestamp(expectedValue) && isEpochTimestamp(actualValue) {
-		log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (epoch timestamp): expected=%v, actual=%v", fieldName, expectedValue, actualValue))
-		log.Debug("Field ignored by epoch timestamp range", "field", fieldName, "expected", expectedValue, "actual", actualValue)
-		return true
+	// Check for numeric epoch timestamps - BOTH values must be in the same unit (seconds or milliseconds)
+	if m.ignoreEpoch {
+		expectedUnit := epochTimestampUnit(expectedValue)
+		actualUnit := epochTimestampUnit(actualValue)
+		if expectedUnit != epochUnitNone && expectedUnit == actualUnit {
+			log.TestLog(testID, fmt.Sprintf("🔄 Ignoring field '%s' (epoch %s): expected=%v, actual=%v", fieldName, expectedUnit, expectedValue, actualValue))
+			log.Debug("Field ignored by epoch timestamp range", "field", fieldName, "unit", expectedUnit, "expected", expectedValue, "actual", actualValue)
+			return true
+		}
 	}
 
 	// Check custom patterns - BOTH values must match the pattern
@@ -246,11 +250,19 @@ func decodeJWTPayload(token string) (map[string]any, error) {
 	return payload, nil
 }
 
-// isEpochTimestamp returns true if the value is a number in a plausible
-// Unix timestamp range — either seconds (10-digit) or milliseconds (13-digit).
-// JSON numbers arrive as float64 from encoding/json; integer types and
-// numeric strings (e.g. "1773268785165") are also handled.
-func isEpochTimestamp(v any) bool {
+type epochUnit string
+
+const (
+	epochUnitNone    epochUnit = ""
+	epochUnitSeconds epochUnit = "seconds"
+	epochUnitMillis  epochUnit = "milliseconds"
+)
+
+// epochTimestampUnit returns which epoch unit the value falls in, or
+// epochUnitNone if it isn't a plausible epoch timestamp. JSON numbers
+// arrive as float64 from encoding/json; integer types and numeric
+// strings (e.g. "1773268785165") are also handled.
+func epochTimestampUnit(v any) epochUnit {
 	var n float64
 	switch val := v.(type) {
 	case float64:
@@ -264,24 +276,29 @@ func isEpochTimestamp(v any) bool {
 	case json.Number:
 		f, err := val.Float64()
 		if err != nil {
-			return false
+			return epochUnitNone
 		}
 		n = f
 	case string:
 		f, err := strconv.ParseFloat(val, 64)
 		if err != nil {
-			return false
+			return epochUnitNone
 		}
 		n = f
 	default:
-		return false
+		return epochUnitNone
 	}
 
 	// Reject fractional numbers — real epoch timestamps are always whole numbers
 	if n != float64(int64(n)) {
-		return false
+		return epochUnitNone
 	}
 
-	return (n >= epochSecondsMin && n <= epochSecondsMax) ||
-		(n >= epochMillisMin && n <= epochMillisMax)
+	if n >= epochSecondsMin && n <= epochSecondsMax {
+		return epochUnitSeconds
+	}
+	if n >= epochMillisMin && n <= epochMillisMax {
+		return epochUnitMillis
+	}
+	return epochUnitNone
 }
