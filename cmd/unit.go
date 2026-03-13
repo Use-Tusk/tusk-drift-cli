@@ -25,6 +25,7 @@ func init() {
 func printJSON(value any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
 	if err := enc.Encode(value); err != nil {
 		return fmt.Errorf("encode json: %w", err)
 	}

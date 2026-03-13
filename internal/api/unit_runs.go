@@ -26,6 +26,7 @@ func (c *TuskClient) makeJSONRequest(ctx context.Context, method string, path st
 		return err
 	}
 	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("X-Tusk-Source", "cli")
 
 	body, httpResp, err := c.executeRequest(httpReq)
 	if err != nil {
@@ -62,6 +63,17 @@ func (c *TuskClient) GetLatestUnitTestRun(ctx context.Context, repo string, bran
 func (c *TuskClient) GetUnitTestRun(ctx context.Context, runID string, auth AuthOptions) (UnitTestRunDetails, error) {
 	var out UnitTestRunDetails
 	if err := c.makeJSONRequest(ctx, http.MethodGet, "/api/v1/unit_test_run/"+url.PathEscape(runID), nil, &out, auth); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type UnitTestRunFiles map[string]any
+
+func (c *TuskClient) GetUnitTestRunFiles(ctx context.Context, runID string, auth AuthOptions) (UnitTestRunFiles, error) {
+	var out UnitTestRunFiles
+	path := fmt.Sprintf("/api/v1/unit_test_run/%s/diffs", url.PathEscape(runID))
+	if err := c.makeJSONRequest(ctx, http.MethodGet, path, nil, &out, auth); err != nil {
 		return nil, err
 	}
 	return out, nil
