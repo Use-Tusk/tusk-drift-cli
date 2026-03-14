@@ -34,29 +34,30 @@ const (
 )
 
 type Executor struct {
-	serviceURL             string
-	parallel               int
-	testTimeout            time.Duration
-	serviceCmd             *exec.Cmd
-	server                 *Server
-	serviceLogFile         *os.File
-	enableServiceLogs      bool
-	servicePort            int
-	resultsDir             string
-	ResultsFile            string // Will be set by the run command if --save-results is true
-	OnTestCompleted        func(TestResult, Test)
-	suiteSpans             []*core.Span
-	globalSpans            []*core.Span // Explicitly marked global spans for cross-trace matching
-	allowSuiteWideMatching bool         // When true, allows cross-trace matching from any suite span
-	cancelTests            context.CancelFunc
-	sandboxBypass          bool // Internal runtime bypass used by auto-mode fallback retry
-	sandboxMode            string
-	lastServiceSandboxed   bool
-	debug                  bool
-	fenceManager           *fence.Manager
-	requireInboundReplay   bool
-	replayComposeOverride  string
-	replayEnvVars          map[string]string
+	serviceURL              string
+	parallel                int
+	testTimeout             time.Duration
+	serviceCmd              *exec.Cmd
+	server                  *Server
+	serviceLogFile          *os.File
+	enableServiceLogs       bool
+	servicePort             int
+	resultsDir              string
+	ResultsFile             string // Will be set by the run command if --save-results is true
+	OnTestCompleted         func(TestResult, Test)
+	suiteSpans              []*core.Span
+	globalSpans             []*core.Span // Explicitly marked global spans for cross-trace matching
+	allowSuiteWideMatching  bool         // When true, allows cross-trace matching from any suite span
+	cancelTests             context.CancelFunc
+	sandboxBypass           bool // Internal runtime bypass used by auto-mode fallback retry
+	sandboxMode             string
+	lastServiceSandboxed    bool
+	debug                   bool
+	fenceManager            *fence.Manager
+	requireInboundReplay    bool
+	replayComposeOverride   string
+	replayEnvVars           map[string]string
+	replaySandboxConfigPath string
 }
 
 func NewExecutor() *Executor {
@@ -119,6 +120,16 @@ func (e *Executor) getReplayEnvVars() map[string]string {
 		copied[key] = value
 	}
 	return copied
+}
+
+// SetReplaySandboxConfigPath configures an optional user-provided sandbox config
+// to merge with the built-in replay sandbox policy.
+func (e *Executor) SetReplaySandboxConfigPath(path string) {
+	e.replaySandboxConfigPath = path
+}
+
+func (e *Executor) getReplaySandboxConfigPath() string {
+	return e.replaySandboxConfigPath
 }
 
 func (e *Executor) SetResultsOutput(dir string) {

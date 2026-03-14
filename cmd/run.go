@@ -39,6 +39,7 @@ var (
 	saveResults       bool
 	resultsDir        string
 	sandboxMode       string
+	sandboxConfigPath string
 
 	// Cloud mode
 	cloud              bool
@@ -97,6 +98,7 @@ func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
 	cmd.Flags().StringVar(&resultsDir, "results-dir", "", "Path to directory to save results (only works with --save-results). Default is '.tusk/results'")
 	cmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "", "Replay sandbox mode: auto (default), strict, or off")
+	cmd.Flags().StringVar(&sandboxConfigPath, "sandbox-config", "", "Path to a Fence config file to merge into the replay sandbox policy")
 
 	// Cloud mode
 	cmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "[Cloud] Use Tusk Drift Cloud backend for orchestration/reporting")
@@ -133,6 +135,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		"save-results", saveResults,
 		"results-dir", resultsDir,
 		"sandbox-mode", sandboxMode,
+		"sandbox-config", sandboxConfigPath,
 		"cloud", cloud,
 		"ci", ci,
 		"commitSha", commitSha,
@@ -161,12 +164,18 @@ func runTests(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
+	if getConfigErr == nil && cfg.Replay.Sandbox.ConfigPath != "" {
+		executor.SetReplaySandboxConfigPath(cfg.Replay.Sandbox.ConfigPath)
+	}
 
 	if cmd.Flags().Changed("sandbox-mode") {
 		if err := executor.SetSandboxMode(sandboxMode); err != nil {
 			cmd.SilenceUsage = true
 			return err
 		}
+	}
+	if cmd.Flags().Changed("sandbox-config") {
+		executor.SetReplaySandboxConfigPath(sandboxConfigPath)
 	}
 
 	if traceDir != "" {

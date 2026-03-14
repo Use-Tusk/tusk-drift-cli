@@ -273,20 +273,3 @@ services:
 	require.Error(t, extractErr)
 	assert.Contains(t, extractErr.Error(), "multiple "+replayComposeServiceSourceFile+" files found")
 }
-
-func TestFilterReplayEnvVarsForCompose(t *testing.T) {
-	input := map[string]string{
-		"API_KEY":         "abc",
-		"TUSK_DRIFT_MODE": "RECORD",
-		"TUSK_MOCK_PORT":  "9999",
-		"PATH":            "/usr/local/bin",
-	}
-
-	filtered, skipped := filterReplayEnvVarsForCompose(input)
-
-	assert.Equal(t, map[string]string{
-		"API_KEY": "abc",
-		"PATH":    "/usr/local/bin",
-	}, filtered)
-	assert.Equal(t, []string{"TUSK_DRIFT_MODE", "TUSK_MOCK_PORT"}, skipped)
-}

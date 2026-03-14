@@ -103,7 +103,8 @@ type ReplaySandboxConfig struct {
 	// - auto:   start with sandbox, retry once without sandbox on startup failure
 	// - strict: always use sandbox (no fallback)
 	// - off:    never use sandbox
-	Mode string `koanf:"mode"`
+	Mode       string `koanf:"mode"`
+	ConfigPath string `koanf:"config_path"`
 }
 
 type TracesConfig struct {

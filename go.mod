@@ -3,7 +3,7 @@ module github.com/Use-Tusk/tusk-drift-cli
 go 1.25.0
 
 require (
-	github.com/Use-Tusk/fence v0.1.16
+	github.com/Use-Tusk/fence v0.1.33
 	github.com/Use-Tusk/tusk-drift-schemas v0.1.30
 	github.com/agnivade/levenshtein v1.0.3
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
@@ -26,7 +26,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/mod v0.27.0
-	golang.org/x/term v0.32.0
+	golang.org/x/term v0.33.0
 	google.golang.org/protobuf v1.36.9
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0

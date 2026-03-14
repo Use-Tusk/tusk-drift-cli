@@ -71,7 +71,17 @@ func (e *Executor) StartService() error {
 			log.UserWarn("⚠️  Sandbox unavailable: sandbox not supported on this platform")
 			log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
 		} else {
-			fenceCfg := createReplayFenceConfig()
+			sandboxConfigPath := cfg.Replay.Sandbox.ConfigPath
+			if e.getReplaySandboxConfigPath() != "" {
+				sandboxConfigPath = e.getReplaySandboxConfigPath()
+			}
+			fenceCfg, err := createReplayFenceConfig(sandboxConfigPath)
+			if err != nil {
+				return fmt.Errorf("failed to prepare replay sandbox config: %w", err)
+			}
+			if sandboxConfigPath != "" {
+				log.ServiceLog(fmt.Sprintf("🔧 Merged custom Fence config into replay sandbox: %s", utils.ResolveTuskPath(sandboxConfigPath)))
+			}
 			e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
 			e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
 
@@ -166,9 +176,32 @@ func (e *Executor) StartService() error {
 	return nil
 }
 
-// createReplayFenceConfig creates fence config for replay mode.
+// createReplayFenceConfig creates the effective fence config for replay mode.
 // This blocks localhost outbound connections to force the service to use SDK mocks.
-func createReplayFenceConfig() *fence.Config {
+func createReplayFenceConfig(userConfigPath string) (*fence.Config, error) {
+	cfg := baseReplayFenceConfig()
+	if userConfigPath == "" {
+		return cfg, nil
+	}
+
+	resolvedPath := utils.ResolveTuskPath(userConfigPath)
+	userCfg, err := fence.LoadConfigResolved(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("load custom fence config %q: %w", resolvedPath, err)
+	}
+	if userCfg == nil {
+		return nil, fmt.Errorf("custom fence config not found: %s", resolvedPath)
+	}
+	if err := validateReplayFenceConfig(userCfg); err != nil {
+		return nil, err
+	}
+
+	merged := fence.MergeConfigs(cfg, userCfg)
+	applyReplayFenceInvariants(merged)
+	return merged, nil
+}
+
+func baseReplayFenceConfig() *fence.Config {
 	f := false
 	return &fence.Config{
 		Network: fence.NetworkConfig{
@@ -187,39 +220,70 @@ func createReplayFenceConfig() *fence.Config {
 	}
 }
 
-// getAllowedWriteDirs returns the list of directories that should be writable
-// during replay mode. This includes common directories for both Node.js and Python
-// projects to ensure broad compatibility.
+func validateReplayFenceConfig(cfg *fence.Config) error {
+	if cfg == nil {
+		return nil
+	}
+
+	requiredDomains := []string{"localhost", "127.0.0.1"}
+	for _, deniedDomain := range cfg.Network.DeniedDomains {
+		for _, requiredDomain := range requiredDomains {
+			if strings.EqualFold(deniedDomain, requiredDomain) {
+				return fmt.Errorf("custom replay fence config cannot deny %q because replay health checks require it", requiredDomain)
+			}
+		}
+	}
+
+	return nil
+}
+
+func applyReplayFenceInvariants(cfg *fence.Config) {
+	if cfg == nil {
+		return
+	}
+
+	f := false
+	cfg.Network.AllowedDomains = mergeUniqueStrings(
+		cfg.Network.AllowedDomains,
+		[]string{"localhost", "127.0.0.1"},
+	)
+	cfg.Network.AllowLocalBinding = true
+	cfg.Network.AllowLocalOutbound = &f
+	cfg.Network.AllowAllUnixSockets = true
+	cfg.Filesystem.AllowWrite = mergeUniqueStrings(cfg.Filesystem.AllowWrite, getAllowedWriteDirs())
+}
+
+func mergeUniqueStrings(existing, required []string) []string {
+	if len(required) == 0 {
+		return existing
+	}
+
+	seen := make(map[string]struct{}, len(existing)+len(required))
+	merged := make([]string, 0, len(existing)+len(required))
+	for _, value := range existing {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		merged = append(merged, value)
+	}
+	for _, value := range required {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		merged = append(merged, value)
+	}
+	return merged
+}
+
+// getAllowedWriteDirs returns the default writable paths for replay mode.
+// We allow broad local writes by default. Note that Fence still enforces
+// mandatory dangerous-path protections (see
+// https://github.com/Use-Tusk/fence/blob/main/internal/sandbox/dangerous.go).
 func getAllowedWriteDirs() []string {
 	return []string{
-		// Common directories
-		".",
-		".tusk",
-		"/tmp",
-		"~/.npm",
-		"~/.cache",
-		"~/.npm/_cacache",
-		"~/.cache",
-		"~/.bun/**",
-		"~/.local/share/**",
-
-		// Node.js specific
-		"node_modules",
-
-		// Python specific
-		".venv",
-		"venv",
-		".virtualenv",
-		"__pycache__",
-		".pytest_cache",
-		".mypy_cache",
-		".ruff_cache",
-		"*.egg-info",
-		"dist",
-		"build",
-
-		// Common build/cache directories
-		".cache",
+		"/",
 	}
 }
 
