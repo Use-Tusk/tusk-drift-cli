@@ -31,11 +31,12 @@ var replayProcessEnvVarPrefixesToSkip = []string{
 }
 
 func shouldSkipReplayEnvVarForProcess(key string) bool {
-	if _, ok := replayProcessEnvVarKeysToSkip[key]; ok {
+	normalizedKey := strings.ToUpper(key)
+	if _, ok := replayProcessEnvVarKeysToSkip[normalizedKey]; ok {
 		return true
 	}
 	for _, prefix := range replayProcessEnvVarPrefixesToSkip {
-		if strings.HasPrefix(key, prefix) {
+		if strings.HasPrefix(normalizedKey, prefix) {
 			return true
 		}
 	}
@@ -65,7 +66,7 @@ func filterReplayEnvVarsForCompose(envVars map[string]string) (map[string]string
 	skipped := make([]string, 0)
 
 	for key, value := range envVars {
-		if strings.HasPrefix(key, "TUSK_") || shouldSkipReplayEnvVarForProcess(key) {
+		if strings.HasPrefix(strings.ToUpper(key), "TUSK_") || shouldSkipReplayEnvVarForProcess(key) {
 			skipped = append(skipped, key)
 			continue
 		}
