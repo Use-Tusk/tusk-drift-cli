@@ -90,7 +90,8 @@ func PrepareReplayEnvironmentGroup(executor *Executor, group *EnvironmentGroup) 
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
-	executor.SetReplayEnvVars(group.EnvVars)
+	filteredProcessEnvVars, skippedProcessEnvVars := filterReplayEnvVarsForProcess(group.EnvVars)
+	executor.SetReplayEnvVars(filteredProcessEnvVars)
 	cleanup = chainCleanup(func() {
 		executor.SetReplayEnvVars(nil)
 	}, func() {
@@ -101,7 +102,14 @@ func PrepareReplayEnvironmentGroup(executor *Executor, group *EnvironmentGroup) 
 	log.Debug("Replay env diagnostics",
 		"environment", group.Name,
 		"recorded_env_vars", len(group.EnvVars),
+		"process_env_vars", len(filteredProcessEnvVars),
+		"skipped_process_env_vars", len(skippedProcessEnvVars),
 		"compose_start_command", isComposeStart)
+	if len(skippedProcessEnvVars) > 0 {
+		log.Debug("Ignoring host-specific replay env vars for local process startup",
+			"environment", group.Name,
+			"skipped_env_vars", skippedProcessEnvVars)
+	}
 
 	if len(group.EnvVars) == 0 {
 		log.Debug("No recorded env vars found; skipping replay env override",
@@ -110,14 +118,14 @@ func PrepareReplayEnvironmentGroup(executor *Executor, group *EnvironmentGroup) 
 	}
 
 	if !isComposeStart {
-		log.Debug("Replay env vars applied to process only (start command is not Docker Compose)",
+		log.Debug("Replay env vars applied to process only after filtering (start command is not Docker Compose)",
 			"environment", group.Name)
 		return cleanup, nil
 	}
 
 	filteredEnvVars, skippedEnvVars := filterReplayEnvVarsForCompose(group.EnvVars)
 	if len(skippedEnvVars) > 0 {
-		log.Debug("Excluding internal TUSK_* env vars from Docker Compose override",
+		log.Debug("Excluding host-specific and internal runtime env vars from Docker Compose override",
 			"environment", group.Name,
 			"skipped_env_vars", skippedEnvVars)
 	}

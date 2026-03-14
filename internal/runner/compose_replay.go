@@ -311,21 +311,3 @@ func sanitizePathComponent(input string) string {
 	}
 	return strings.Trim(b.String(), "-")
 }
-
-// filterReplayEnvVarsForCompose removes internal runtime keys that should be
-// controlled by replay startup logic (not by recorded env snapshots).
-func filterReplayEnvVarsForCompose(envVars map[string]string) (map[string]string, []string) {
-	filtered := make(map[string]string, len(envVars))
-	skipped := make([]string, 0)
-
-	for key, value := range envVars {
-		if strings.HasPrefix(key, "TUSK_") {
-			skipped = append(skipped, key)
-			continue
-		}
-		filtered[key] = value
-	}
-
-	sort.Strings(skipped)
-	return filtered, skipped
-}
