@@ -38,9 +38,9 @@ For more details, check `tusk --help`.
 
 The `runner` package implements logic to manage the lifecycle of trace replays. The key components are:
 
-- [**Executor**](../internal/runner/executor.go): Loads tests, starts environment, runs tests, compares results, outputs/streams results.
-- [**Server**](../internal/runner/server.go): Unix socket listener via protobuf protocol, responds to mock requests from the SDK, records match events and inbound replay spans.
-- [**Mock matcher**](../internal/runner/mock_matcher.go): Priority‑based matching over per‑trace and suite‑wide spans.
+- [**Executor**](../../internal/runner/executor.go): Loads tests, starts environment, runs tests, compares results, outputs/streams results.
+- [**Server**](../../internal/runner/server.go): Unix socket listener via protobuf protocol, responds to mock requests from the SDK, records match events and inbound replay spans.
+- [**Mock matcher**](../../internal/runner/mock_matcher.go): Priority‑based matching over per‑trace and suite‑wide spans.
 
 ### TUI
 
@@ -52,7 +52,7 @@ The interactive UI orchestrates execution around the `Executor`, surfaces live l
   - Right/Bottom: Log panel (shows service logs or the selected test’s logs).
   - Adaptive layout (horizontal/vertical) based on terminal width; compact header on narrow terminals.
   
-  ![Run result view](/assets/tui-run-result.png)
+  ![Run result view](../../assets/tui-run-result.png)
 
 - **Logging model**
   - Service logs and per‑test logs are captured separately.
@@ -173,7 +173,7 @@ Tusk will leave a comment on your pull request with a summary of test results.
 
 ## Matching Mocks
 
-When SUT encounters an outbound request over the lifetime of a trace, SDK intercepts this and requests a mock span from traces loaded in the CLI. We implement a mock matching algorithm to fulfill this ([`internal/runner/mock_matcher.go`](../internal/runner/mock_matcher.go)).
+When SUT encounters an outbound request over the lifetime of a trace, SDK intercepts this and requests a mock span from traces loaded in the CLI. We implement a mock matching algorithm to fulfill this ([`internal/runner/mock_matcher.go`](../../internal/runner/mock_matcher.go)).
 
 Spans are first considered per trace, then suite‑wide fallback.
 
