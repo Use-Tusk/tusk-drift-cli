@@ -219,7 +219,7 @@ func parseAndValidate() (*Config, error) {
 		cfg.Recording.EnableEnvVarRecording = &defaultEnableEnvVarRecording
 	}
 	if cfg.Replay.Sandbox.Mode == "" {
-		cfg.Replay.Sandbox.Mode = "auto"
+		cfg.Replay.Sandbox.Mode = "strict"
 	}
 	if cfg.Results.Dir == "" {
 		cfg.Results.Dir = ".tusk/results"

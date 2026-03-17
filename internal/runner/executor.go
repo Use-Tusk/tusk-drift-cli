@@ -65,7 +65,7 @@ func NewExecutor() *Executor {
 		serviceURL:           "http://localhost:3000",
 		parallel:             5,
 		testTimeout:          30 * time.Second,
-		sandboxMode:          SandboxModeAuto,
+		sandboxMode:          SandboxModeStrict,
 		requireInboundReplay: isTruthyEnv(os.Getenv(requireInboundReplaySpanEnvVar)),
 	}
 }
@@ -85,7 +85,7 @@ func (e *Executor) SetSandboxMode(mode string) error {
 // GetSandboxMode returns the configured replay sandbox mode.
 func (e *Executor) GetSandboxMode() string {
 	if e.sandboxMode == "" {
-		return SandboxModeAuto
+		return SandboxModeStrict
 	}
 	return e.sandboxMode
 }

@@ -97,7 +97,7 @@ func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
 	cmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
 	cmd.Flags().StringVar(&resultsDir, "results-dir", "", "Path to directory to save results (only works with --save-results). Default is '.tusk/results'")
-	cmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "", "Replay sandbox mode: auto (default), strict, or off")
+	cmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "", "Replay sandbox mode: strict (default), auto, or off")
 	cmd.Flags().StringVar(&sandboxConfigPath, "sandbox-config", "", "Path to a Fence config file to merge into the replay sandbox policy")
 
 	// Cloud mode

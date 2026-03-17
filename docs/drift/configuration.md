@@ -357,7 +357,7 @@ This will not affect CLI behavior. See SDK for more details:
     <tr>
       <td><code>replay.sandbox.mode</code></td>
       <td>string</td>
-      <td><code>auto</code></td>
+      <td><code>strict</code></td>
       <td>Replay sandbox strategy: <code>auto</code> (start sandboxed, retry once without sandbox if startup fails), <code>strict</code> (require sandbox; fail if sandbox cannot be initialized/applied), <code>off</code> (never sandbox).</td>
     </tr>
     <tr>
