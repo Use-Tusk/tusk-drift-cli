@@ -65,7 +65,6 @@ func NewExecutor() *Executor {
 		serviceURL:           "http://localhost:3000",
 		parallel:             5,
 		testTimeout:          30 * time.Second,
-		sandboxMode:          SandboxModeAuto,
 		requireInboundReplay: isTruthyEnv(os.Getenv(requireInboundReplaySpanEnvVar)),
 	}
 }
@@ -83,11 +82,21 @@ func (e *Executor) SetSandboxMode(mode string) error {
 }
 
 // GetSandboxMode returns the configured replay sandbox mode.
+// An empty string means the user did not explicitly configure a mode.
 func (e *Executor) GetSandboxMode() string {
-	if e.sandboxMode == "" {
-		return SandboxModeAuto
-	}
 	return e.sandboxMode
+}
+
+// GetEffectiveSandboxMode returns the runtime sandbox mode after applying the
+// platform-aware default for unset configs/flags.
+func (e *Executor) GetEffectiveSandboxMode() string {
+	if e.sandboxMode != "" {
+		return e.sandboxMode
+	}
+	if fence.IsSupported() {
+		return SandboxModeStrict
+	}
+	return SandboxModeAuto
 }
 
 // SetDebug enables debug mode for fence sandbox

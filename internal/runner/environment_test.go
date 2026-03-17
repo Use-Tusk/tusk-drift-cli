@@ -26,7 +26,7 @@ func TestStartEnvironment(t *testing.T) {
 		{
 			name: "successful_start_all_components_with_mock_sdk",
 			setupFunc: func(t *testing.T) (*Executor, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				// Create a test config
 				tempDir := t.TempDir()
 				configPath := filepath.Join(tempDir, "tusk.yaml")
@@ -88,7 +88,7 @@ service:
 		{
 			name: "failure_service_start_cleans_up_server",
 			setupFunc: func(t *testing.T) (*Executor, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				// Create config with invalid command
 				tempDir := t.TempDir()
 				configPath := filepath.Join(tempDir, "tusk.yaml")
@@ -457,7 +457,7 @@ func TestWaitForSDKAcknowledgement(t *testing.T) {
 func TestStartServerWithSuiteSpans(t *testing.T) {
 	config.Invalidate()
 
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 
 	// Add suite spans before starting server
 	testSpans := []*core.Span{
@@ -515,7 +515,7 @@ service:
 	err = config.Load(configPath)
 	require.NoError(t, err)
 
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 
 	// Should fail because TCP port is in use
 	err = e.StartServer()

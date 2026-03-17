@@ -76,7 +76,7 @@ During replay mode, the CLI uses [Fence](https://github.com/Use-Tusk/fence) to s
 - Allows Unix socket communication for SDK <-> mock server protocol
 - Preserves localhost inbound for health checks
 
-Sandboxing is enabled by default when the platform supports it (macOS/Linux). Use `--sandbox-mode off` to bypass if needed. In `strict` mode, replay fails if sandbox setup cannot be initialized/applied.
+When no sandbox mode is configured, replay defaults to `strict` on platforms where Fence is supported (macOS/Linux) and otherwise warns and runs without sandboxing. Use `--sandbox-mode strict` to require sandboxing explicitly, `--sandbox-mode auto` to allow a one-time fallback without sandbox on startup failure, or `--sandbox-mode off` to bypass sandboxing entirely.
 
 ### Backend client
 
