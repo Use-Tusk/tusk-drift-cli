@@ -13,7 +13,7 @@ If `tusk drift setup` (AI-powered setup) fails or doesn't support your project:
 ## Connection Issues
 
 - **SDK Connection Failure**: Ensure your service uses the Tusk Drift SDK and is started by the CLI (so it sees `TUSK_MOCK_SOCKET`).
-- **Docker Services**: If your service starts using a Docker container, refer to [Docker configuration](docs/configuration.md#docker-support).
+- **Docker Services**: If your service starts using a Docker container, refer to [Docker configuration](configuration.md#docker-support).
 - **TCP Port Issues**: If using TCP to connect with SDK (usually for Docker setups), ensure `service.communication.tcp_port` is not in use.
 
 ## Configuration Issues

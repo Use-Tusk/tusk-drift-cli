@@ -1,7 +1,5 @@
 ![Tusk CLI Banner](assets/tusk-banner.png)
 
-Tusk Drift is an API test record/replay system that lets you run realistic tests generated from real traffic. This CLI orchestrates local and CI test runs, coordinating with a Tusk Drift SDK and Tusk Drift Cloud.
-
 <div align="center">
 
 ![GitHub Release](https://img.shields.io/github/v/release/Use-Tusk/tusk-drift-cli)
@@ -16,25 +14,34 @@ Tusk Drift is an API test record/replay system that lets you run realistic tests
 
 </div>
 
-SDKs:
+The Tusk CLI provides tools for automated testing workflows. It supports two products:
 
-- [Node.js](https://github.com/Use-Tusk/drift-node-sdk)
-- [Python](https://github.com/Use-Tusk/drift-python-sdk)
-- ...more to come!
+- **[Tusk Drift](docs/drift/)** - Live traffic record/replay as API tests
+- **[Tusk Unit](docs/unit/)** - Automated unit tests
 
-## Features
+## Tusk Drift — API Record/Replay Testing
 
-- Replay recorded traces against your service under test
-- Deterministic outbound I/O via local mock server
-- JSON response comparison with dynamic field rules (UUIDs, timestamps, dates, etc.)
-- Tusk Drift Cloud: fetch and replay tests stored with Tusk, and upload test results for intelligent classification of regressions in CI/CD checks
+Record real API traffic and replay it as deterministic tests. Works locally and in CI/CD with Tusk Drift Cloud.
 
-<div align="center">
+```bash
+tusk drift setup          # AI setup agent
+tusk drift run            # Replay recorded traces
+tusk drift run --cloud    # Run against Tusk Drift Cloud
+```
 
-![Demo](assets/demo.gif)
-<p><a href="https://github.com/Use-Tusk/drift-node-demo">Try it on a demo repo →</a></p>
+[Get started with Tusk Drift →](docs/drift/)
 
-</div>
+## Tusk Unit — Automated Unit Tests
+
+View, review, and apply unit tests from Tusk directly from your terminal or automation pipeline.
+
+```bash
+tusk unit latest-run                    # Latest run for current branch
+tusk unit get-run <run-id>              # Full run details
+tusk unit get-diffs <run-id>            # Get diffs to apply
+```
+
+[Get started with Tusk Unit →](docs/unit/)
 
 ## Install
 
@@ -60,7 +67,7 @@ Linux additional dependencies (for replay sandboxing):
 - Fedora/RHEL: `sudo dnf install bubblewrap socat`
 - Arch: `sudo pacman -S bubblewrap socat`
 
-Without these, sandboxing is disabled and replays run without network isolation. See [Architecture - Sandboxing](docs/architecture.md#sandboxing-with-fence).
+Without these, sandboxing is disabled and replays run without network isolation. See [Architecture - Sandboxing](docs/drift/architecture.md#sandboxing-with-fence).
 
 **Homebrew:**
 
@@ -106,7 +113,7 @@ Download the latest release from [GitHub Releases](https://github.com/Use-Tusk/t
    tusk --version
    ```
 
-Note: Windows requires additional configuration for running tests. See [Windows Support](docs/configuration.md#windows-support) for details on TCP communication mode setup.
+Note: Windows requires additional configuration for running tests. See [Windows Support](docs/drift/configuration.md#windows-support) for details on TCP communication mode setup.
 </details>
 
 ### Manual Download
@@ -124,124 +131,6 @@ make build
 
 tusk --help
 ```
-
-## Quick start
-
-### AI-powered setup (recommended)
-
-Use our AI agent to automatically set up Tusk Drift for your service:
-
-```bash
-cd path/to/your/service
-tusk drift setup
-```
-
-The agent will analyze your codebase, instrument the SDK, create configuration files, and test the setup with recording and replay. Supported languages: Python and Node.js.
-
-### Manual setup
-
-Alternatively, use the interactive wizard:
-
-```bash
-cd path/to/your/service
-tusk drift init
-```
-
-This will guide you to create your `.tusk/config.yaml` config file. You can also create the `.tusk` directory and config file manually. See [configuration docs](/docs/configuration.md).
-
-You will need to record traces for your service. See your respective SDK's guide for more details. Once you have traces recorded, you can replay them with the `tusk drift run` command.
-
-Local traces (default):
-
-```bash
-# Run all tests from local traces
-tusk drift run
-
-# Or specify source
-tusk drift run --trace-dir .tusk/traces
-tusk drift run --trace-file path/to/trace.jsonl
-tusk drift run --trace-id <traceId>
-
-# Common flags
-tusk drift run --filter '^/api/users' --concurrency 10 --enable-service-logs
-tusk drift run --save-results --results-dir .tusk/results
-tusk drift run --sandbox-mode auto   # default: auto (choices: auto|strict|off)
-```
-
-## ✨ Tusk Drift Cloud
-
-<div align="center">
-
-![Tusk Drift Animated Diagram](assets/tusk-drift-animated-diagram-light.gif#gh-light-mode-only)
-![Tusk Drift Animated Diagram](assets/tusk-drift-animated-diagram-dark.gif#gh-dark-mode-only)
-
-</div>
-
-You can use Tusk Drift as API tests in your CI/CD pipeline by running your test suite against commits in your pull requests. Tusk Drift Cloud offers storage of these tests alongside an additional layer of intelligence on deviations detected:
-
-- Automatic recording of traces based on live traffic in your environment of choice
-- Securely store these traces as test suites
-- Analyze deviations (classification of intended vs unintended deviations), root cause of deviations against your code changes, and suggested fixes.
-
-If you used `tusk drift setup`, cloud configuration is included. Otherwise, run the cloud onboarding wizard:
-
-```bash
-tusk drift init-cloud
-```
-
-For more details, dive into [Tusk Drift Cloud docs](./docs/cloud/).
-
-## Usage
-
-List traces:
-
-```bash
-# Local traces
-tusk drift list
-tusk drift list --trace-dir .tusk/traces
-
-# With Tusk Drift Cloud
-tusk drift list --cloud
-```
-
-Interactive TUI (default when attached to a terminal):
-
-```bash
-tusk drift run
-
-# Run against Tusk Drift Cloud
-tusk drift run --cloud
-tusk drift run --cloud --trace-test-id <id>           # single test from backend
-tusk drift run --cloud --all-cloud-trace-tests        # run all tests for service
-```
-
-The TUI is best viewed in a window size of at least 150 x 40.
-
-Run headless mode with JSON output for a single test:
-
-```bash
-tusk drift run --trace-id <id> --print --output-format=json
-```
-
-How this program uses your `.tusk` directory:
-
-- Recordings of your app's traffic will be stored in `.tusk/traces` by default.
-Specify `traces.dir` in your `.tusk/config.yaml` to override.
-- If `--save-results` is provided, results will be stored in `.tusk/results` by default. Specify `results.dir` in your `.tusk/config.yaml` to override.
-- If `--enable-service-logs` or `--debug` is used, trace replay service logs will be stored in `.tusk/logs`.
-
-We recommend adding to your `.gitignore`:
-
-- `.tusk/results`
-- `.tusk/logs`
-- `.tusk/setup`
-- `.tusk/traces` (if you primarily intend to use Tusk Drift Cloud)
-
-## Resources
-
-- [Architecture overview](docs/architecture.md)
-- [Configuration](docs/configuration.md)
-- [Troubleshooting](docs/troubleshooting.md)
 
 ## Community
 

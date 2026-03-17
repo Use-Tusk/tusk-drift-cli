@@ -149,7 +149,7 @@ func (m *Model) saveConfig() error {
 	data := formatYAMLWithBlankLines(raw)
 
 	// Prepend header comment with link to documentation
-	header := []byte("# Tusk Drift configuration\n# For all configuration options, see:\n# https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md\n\n")
+	header := []byte("# Tusk Drift configuration\n# For all configuration options, see:\n# https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/drift/configuration.md\n\n")
 	data = append(header, data...)
 
 	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
@@ -160,7 +160,7 @@ func (m *Model) saveConfig() error {
 		if err := m.createDockerComposeOverrideFile(); err != nil {
 			log.UserWarn(fmt.Sprintf("Warning: Could not create docker-compose override file: %v", err))
 			log.UserWarn("You will need to manually create docker-compose.tusk-override.yml.")
-			log.UserWarn(fmt.Sprintf("Refer to: %s", styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md#docker-support")))
+			log.UserWarn(fmt.Sprintf("Refer to: %s", styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/drift/configuration.md#docker-support")))
 		}
 	}
 	return nil
