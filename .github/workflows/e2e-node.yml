@@ -54,7 +54,7 @@ jobs:
       - name: Run Node.js E2E tests Non-Interactive
         working-directory: ../drift-node-demo
         run: |
-          $GITHUB_WORKSPACE/tusk drift run --print
+          $GITHUB_WORKSPACE/tusk --debug drift run --print --enable-service-logs
           # Exits non-zero if any test has deviations
 
       # CI environments don't have a TTY, so the CLI falls back to headless mode by default.
@@ -64,4 +64,23 @@ jobs:
         working-directory: ../drift-node-demo
         env:
           TUSK_TUI_CI_MODE: "1"
-        run: $GITHUB_WORKSPACE/tusk drift run
+        run: $GITHUB_WORKSPACE/tusk --debug drift run --enable-service-logs
+
+      - name: Dump Drift service logs on failure
+        if: failure()
+        working-directory: ../drift-node-demo
+        run: |
+          if [ ! -d .tusk/logs ]; then
+            echo "No .tusk/logs directory found"
+            exit 0
+          fi
+
+          echo "=== .tusk/logs contents ==="
+          ls -R .tusk/logs
+
+          shopt -s nullglob
+          for file in .tusk/logs/*; do
+            echo "::group::$file"
+            sed -n '1,200p' "$file"
+            echo "::endgroup::"
+          done
