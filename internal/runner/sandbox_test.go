@@ -10,9 +10,7 @@ import (
 // service startup/shutdown behavior rather than sandbox availability.
 func newExecutorForServiceLifecycleTests() *Executor {
 	e := NewExecutor()
-	if !fence.IsSupported() {
-		_ = e.SetSandboxMode(SandboxModeOff)
-	}
+	_ = e.SetSandboxMode(SandboxModeOff)
 	return e
 }
 
