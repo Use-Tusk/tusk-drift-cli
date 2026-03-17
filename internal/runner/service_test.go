@@ -82,7 +82,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "successful_start_without_readiness_check",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				// Use environment variable to speed up tests
 				origVal := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
 				_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", "100ms")
@@ -100,7 +100,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "successful_start_with_readiness_check",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				configPath := createTestConfig(t, 13002, getSimpleSleepCommand(), "true")
 				return e, configPath, func() {}
 			},
@@ -109,7 +109,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "fail_when_no_start_command",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				configPath := createTestConfig(t, 13003, "", "")
 				return e, configPath, func() {}
 			},
@@ -119,7 +119,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "fail_when_port_already_in_use",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				// Start a listener on the port to simulate it being in use
 				listener, err := net.Listen("tcp", ":13004") // #nosec G102
 				require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "start_with_server_socket",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				// Speed up test
 				origVal := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
 				_ = os.Setenv("TUSK_TEST_DEFAULT_WAIT", "100ms")
@@ -177,7 +177,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "fail_when_socket_doesnt_exist",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				// Create a server but don't create the socket file
 				testServiceConfig := &config.ServiceConfig{
 					ID:   "test-service",
@@ -207,7 +207,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "fail_when_readiness_check_times_out",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				configPath := createTestConfig(t, 13007, "sleep 2", "false")
 				return e, configPath, func() {}
 			},
@@ -217,7 +217,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "service_logging_enabled",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				e.SetEnableServiceLogs(true)
 				// Speed up test and use temp directory for logs
 				origWait := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
@@ -247,7 +247,7 @@ func TestStartService(t *testing.T) {
 		{
 			name: "service_logging_disabled",
 			setupFunc: func(t *testing.T) (*Executor, string, func()) {
-				e := NewExecutor()
+				e := newExecutorForServiceLifecycleTests()
 				e.SetEnableServiceLogs(false)
 				// Speed up test
 				origVal := os.Getenv("TUSK_TEST_DEFAULT_WAIT")
@@ -315,7 +315,7 @@ func TestStartServiceWithTCPMode(t *testing.T) {
 		},
 	}
 
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 
 	server, err := NewServer("test-tcp-service", testServiceConfig)
 	require.NoError(t, err)
@@ -443,7 +443,7 @@ service:
 	err = config.Load(configPath)
 	require.NoError(t, err)
 
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 
 	err = e.StartService()
 	require.NoError(t, err)
@@ -490,7 +490,7 @@ service:
 	err = config.Load(configPath)
 	require.NoError(t, err)
 
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 	e.SetReplayEnvVars(map[string]string{replayKey: replayValue})
 
 	err = e.StartService()
@@ -770,7 +770,7 @@ service:
 }
 
 func TestSetEnableServiceLogs(t *testing.T) {
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 
 	e.SetEnableServiceLogs(true)
 	assert.True(t, e.enableServiceLogs)
@@ -780,7 +780,7 @@ func TestSetEnableServiceLogs(t *testing.T) {
 }
 
 func TestSetReplayEnvVarsCopiesInput(t *testing.T) {
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 	input := map[string]string{
 		"TMPDIR": "/tmp/original",
 	}
@@ -898,7 +898,7 @@ func TestSetupServiceLogging(t *testing.T) {
 }
 
 func TestCleanupLogFiles(t *testing.T) {
-	e := NewExecutor()
+	e := newExecutorForServiceLifecycleTests()
 
 	// Test with no log file
 	e.cleanupLogFiles()

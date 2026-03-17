@@ -218,9 +218,6 @@ func parseAndValidate() (*Config, error) {
 		defaultEnableEnvVarRecording := false
 		cfg.Recording.EnableEnvVarRecording = &defaultEnableEnvVarRecording
 	}
-	if cfg.Replay.Sandbox.Mode == "" {
-		cfg.Replay.Sandbox.Mode = "strict"
-	}
 	if cfg.Results.Dir == "" {
 		cfg.Results.Dir = ".tusk/results"
 	}
@@ -289,7 +286,7 @@ func (cfg *Config) Validate() error {
 	}
 
 	validSandboxModes := map[string]bool{"auto": true, "strict": true, "off": true}
-	if !validSandboxModes[cfg.Replay.Sandbox.Mode] {
+	if cfg.Replay.Sandbox.Mode != "" && !validSandboxModes[cfg.Replay.Sandbox.Mode] {
 		errs = append(errs, fmt.Errorf("replay.sandbox.mode must be 'auto', 'strict', or 'off', got %s", cfg.Replay.Sandbox.Mode))
 	}
 

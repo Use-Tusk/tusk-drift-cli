@@ -54,7 +54,7 @@ jobs:
       - name: Run Node.js E2E tests Non-Interactive
         working-directory: ../drift-node-demo
         run: |
-          $GITHUB_WORKSPACE/tusk run --print
+          $GITHUB_WORKSPACE/tusk drift run --print
           # Exits non-zero if any test has deviations
 
       # CI environments don't have a TTY, so the CLI falls back to headless mode by default.
@@ -64,4 +64,4 @@ jobs:
         working-directory: ../drift-node-demo
         env:
           TUSK_TUI_CI_MODE: "1"
-        run: $GITHUB_WORKSPACE/tusk run
+        run: $GITHUB_WORKSPACE/tusk drift run
