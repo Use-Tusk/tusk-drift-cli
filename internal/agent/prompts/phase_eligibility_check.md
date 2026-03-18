@@ -105,6 +105,16 @@ For EACH I/O package, follow these steps IN ORDER:
                      - They're utility libraries with no I/O
 ```
 
+#### How to Evaluate Version Compatibility
+
+The manifest's `supportedVersions` field uses **standard semver range notation**. You MUST interpret these ranges correctly:
+
+- **`>=X.Y.Z`** means "any version X.Y.Z **or higher**" — this includes ALL higher major versions.
+  - Example: `>=4.0.0` matches `4.0.0`, `4.5.2`, `5.0.5`, `6.1.0`, `99.0.0`, etc.
+  - Example: `>=3.2.0` matches `3.2.0`, `3.9.1`, `4.0.0`, `5.0.0`, etc.
+- **`>=X.Y.Z, <A.B.C`** means "version X.Y.Z or higher, but below A.B.C"
+- **`*`** means "any version" — always compatible.
+
 **IMPORTANT**: Web frameworks (flask, fastapi, express, etc.) ARE in the manifest and should be classified as SUPPORTED, not UNKNOWN.
 
 #### High-Risk Packages (require explicit SDK instrumentation)
@@ -210,17 +220,13 @@ Call `transition_phase` with:
           }
         },
         "./services/auth": {
-          "status": "partially_compatible",
-          "status_reasoning": "Python service with FastAPI. Redis is unsupported but only used for optional caching in minority of endpoints",
+          "status": "compatible",
+          "status_reasoning": "Python service with FastAPI. All I/O packages are covered: fastapi, requests, psycopg2 are in the manifest, and redis>=5.0.0 is compatible with manifest range >=4.0.0.",
           "runtime": "python",
           "framework": "fastapi",
           "supported_packages": {
-            "packages": ["fastapi==0.109.0", "requests==2.31.0", "psycopg2==2.9.9"],
-            "reasoning": "fastapi (web framework), requests (HTTP client), and psycopg2 (PostgreSQL driver) are in the Python SDK manifest"
-          },
-          "unsupported_packages": {
-            "packages": ["redis==5.0.0"],
-            "reasoning": "redis is a high-risk cache driver not in the SDK manifest, but only used for optional caching (non-critical)"
+            "packages": ["fastapi==0.109.0", "requests==2.31.0", "psycopg2==2.9.9", "redis==5.0.0"],
+            "reasoning": "fastapi (web framework), requests (HTTP client), psycopg2 (PostgreSQL driver), and redis (cache client, 5.0.0 satisfies manifest range >=4.0.0) are all in the Python SDK manifest with compatible versions"
           },
           "unknown_packages": {
             "packages": ["boto3==1.34.0"],
@@ -250,8 +256,8 @@ Call `transition_phase` with:
       },
       "summary": {
         "total_services": 4,
-        "compatible": 1,
-        "partially_compatible": 1,
+        "compatible": 2,
+        "partially_compatible": 0,
         "not_compatible": 2
       }
     }
