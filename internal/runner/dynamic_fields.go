@@ -55,7 +55,7 @@ const (
 func NewDynamicFieldMatcher() *DynamicFieldMatcher {
 	return &DynamicFieldMatcher{
 		uuidRegex:      regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`),
-		timestampRegex: regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$`),
+		timestampRegex: regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$`),
 		dateRegex:      regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}$|^\d{2}-\d{2}-\d{4}$`),
 		ignoreFields:   make(map[string]bool),
 		ignoreJWT:      true,
