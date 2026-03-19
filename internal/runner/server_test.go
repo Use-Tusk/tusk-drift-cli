@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -127,7 +128,7 @@ func TestServerUnixMode(t *testing.T) {
 	socketPath, tcpPort := server.GetConnectionInfo()
 	assert.NotEmpty(t, socketPath, "Unix mode should have socket path")
 	assert.Equal(t, 0, tcpPort, "Unix mode should have zero TCP port")
-	assert.Contains(t, socketPath, "tusk-connect.sock")
+	assert.Contains(t, socketPath, filepath.Join(unixSocketDirName, unixSocketName))
 }
 
 func TestDetermineCommunicationType(t *testing.T) {

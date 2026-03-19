@@ -33,8 +33,11 @@ import (
 type CommunicationType string
 
 const (
-	CommunicationUnix CommunicationType = "unix"
-	CommunicationTCP  CommunicationType = "tcp"
+	CommunicationUnix  CommunicationType = "unix"
+	CommunicationTCP   CommunicationType = "tcp"
+	unixSocketDirName  string            = ".tusk"
+	unixSocketName     string            = ".s"
+	fallbackSocketName string            = ".t.sock"
 )
 
 // Server handles Unix socket communication with the SDK
@@ -197,16 +200,38 @@ func (ms *Server) GetAnalyticsClient() *analytics.Client {
 }
 
 func (ms *Server) startUnix() error {
-	ms.socketPath = filepath.Join(os.TempDir(), "tusk-connect.sock")
-	_ = os.Remove(ms.socketPath)
-
-	listener, err := net.Listen("unix", ms.socketPath)
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to create Unix socket listener: %w", err)
+		return fmt.Errorf("failed to determine working directory for Unix socket: %w", err)
+	}
+	candidates := []string{
+		filepath.Join(cwd, unixSocketDirName, unixSocketName),
+		filepath.Join(cwd, fallbackSocketName),
 	}
 
-	ms.listener = listener
-	log.Debug("Mock server started with Unix socket", "socket", ms.socketPath)
+	var listenErrs []string
+	for _, candidate := range candidates {
+		if err := os.MkdirAll(filepath.Dir(candidate), 0o750); err != nil {
+			listenErrs = append(listenErrs, fmt.Sprintf("%s: create parent dir: %v", candidate, err))
+			continue
+		}
+		_ = os.Remove(candidate)
+
+		listener, err := net.Listen("unix", candidate)
+		if err != nil {
+			listenErrs = append(listenErrs, fmt.Sprintf("%s: %v", candidate, err))
+			continue
+		}
+
+		ms.socketPath = candidate
+		ms.listener = listener
+		log.Debug("Mock server started with Unix socket", "socket", ms.socketPath)
+		break
+	}
+
+	if ms.listener == nil {
+		return fmt.Errorf("failed to create Unix socket listener: %s", strings.Join(listenErrs, "; "))
+	}
 
 	// Verify the socket file exists and is accessible
 	if _, err := os.Stat(ms.socketPath); err != nil {
