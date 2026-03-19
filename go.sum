@@ -1,7 +1,7 @@
 github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ4pzQ=
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
-github.com/Use-Tusk/fence v0.1.35 h1:gnicM/foE/gumn8D5e5qdQCtCsHUaUY5pWkVGX2ICMw=
-github.com/Use-Tusk/fence v0.1.35/go.mod h1:YkowBDzXioVKJE16vg9z3gSVC6vhzkIZZw2dFf7MW/o=
+github.com/Use-Tusk/fence v0.1.36 h1:8S15y8cp3X+xXukx6AN0Ky/aX9/dZyW3fLw5XOQ8YtE=
+github.com/Use-Tusk/fence v0.1.36/go.mod h1:YkowBDzXioVKJE16vg9z3gSVC6vhzkIZZw2dFf7MW/o=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.30 h1:A45pJ/Za6BLIfTLF53BhuzKHHSJ9L7dXEisnuKT5dTc=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.30/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
 github.com/agnivade/levenshtein v1.0.3 h1:M5ZnqLOoZR8ygVq0FfkXsNOKzMCk0xRiow0R5+5VkQ0=
