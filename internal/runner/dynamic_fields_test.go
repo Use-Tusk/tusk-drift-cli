@@ -161,6 +161,30 @@ func TestShouldIgnoreField_TimestampPattern(t *testing.T) {
 		"2024-02-02T12:34:56",
 		"test-1"))
 
+	// With microseconds and +00:00 timezone offset
+	require.True(t, matcher.ShouldIgnoreField("updated_at",
+		"2026-03-19T19:47:38.428061+00:00",
+		"2026-03-19T19:47:38.342955+00:00",
+		"test-1"))
+
+	// With microseconds and Z suffix
+	require.True(t, matcher.ShouldIgnoreField("updated_at",
+		"2023-01-01T00:00:00.123456Z",
+		"2024-02-02T12:34:56.654321Z",
+		"test-1"))
+
+	// With non-UTC timezone offset
+	require.True(t, matcher.ShouldIgnoreField("created_at",
+		"2023-01-01T00:00:00+05:30",
+		"2024-02-02T12:34:56-04:00",
+		"test-1"))
+
+	// With milliseconds and timezone offset
+	require.True(t, matcher.ShouldIgnoreField("modified_at",
+		"2023-01-01T00:00:00.123+00:00",
+		"2024-02-02T12:34:56.789-07:00",
+		"test-1"))
+
 	// Only one value is timestamp - should not ignore
 	require.False(t, matcher.ShouldIgnoreField("createdAt",
 		"2023-01-01T00:00:00Z",
