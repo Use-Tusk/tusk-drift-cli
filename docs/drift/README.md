@@ -109,7 +109,7 @@ You will be guided to:
 
 #### GitHub
 
-- For GitHub Actions, we recommend using `Use-Tusk/drift-action` first. It handles CLI installation and common Linux sandbox bootstrap/repair automatically.
+- For GitHub Actions workflows, we recommend using [`Use-Tusk/drift-action`](https://github.com/Use-Tusk/drift-action). It handles CLI installation and common Linux sandbox bootstrap/repair automatically.
 - Add your `TUSK_API_KEY` to your GitHub secrets.
 - Refer to an [example GitHub Actions workflow](./cloud/github-workflow-example.yml). Adapt this accordingly for your service.
 
