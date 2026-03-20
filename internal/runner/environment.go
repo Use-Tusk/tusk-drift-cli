@@ -33,9 +33,9 @@ func (e *Executor) StartEnvironment() error {
 
 			// Write separator so the user can see where the retry begins
 			if e.enableServiceLogs && savedLogFile != nil {
-				_, _ = savedLogFile.WriteString("\n⚠️  Retrying without sandbox...\n\n")
+				_, _ = savedLogFile.WriteString("⚠️  Retrying without sandbox...\n")
 			} else if e.startupLogBuffer != nil {
-				_, _ = e.startupLogBuffer.Write([]byte("\n⚠️  Retrying without sandbox...\n\n"))
+				_, _ = e.startupLogBuffer.Write([]byte("⚠️  Retrying without sandbox...\n"))
 			}
 
 			e.sandboxBypass = true

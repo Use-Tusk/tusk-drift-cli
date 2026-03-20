@@ -1161,17 +1161,17 @@ func (m *testExecutorModel) executeTest(index int) tea.Cmd {
 				}
 			}
 
-			// Determine if there are more tests to run
+			// Determine if there are more tests to run (including pending retries)
 			hasMoreTests := false
 			if m.inRetryPhase {
 				// In retry phase, check if there are more tests in the retry queue
 				hasMoreTests = m.currentEnvTestsStarted < len(m.currentEnvTestIndices)
 			} else {
-				// In normal phase, check if there are more tests overall
-				hasMoreTests = index < len(m.tests)-1
+				// In normal phase, check if there are more tests overall OR tests queued for retry
+				hasMoreTests = index < len(m.tests)-1 || len(m.testsToRetry) > 0
 			}
 
-			// Attempt to restart the server for next test
+			// Attempt to restart the server for next test (or pending retries)
 			if hasMoreTests {
 				m.addServiceLog("🔄 Restarting server...")
 				if restartErr := m.executor.RestartServerWithRetry(0); restartErr != nil {

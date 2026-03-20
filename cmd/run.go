@@ -391,6 +391,9 @@ func runTests(cmd *cobra.Command, args []string) error {
 	var tests []runner.Test
 	var err error
 
+	// Track overall timing for print mode (includes test loading)
+	overallStart := time.Now()
+
 	// Step 3: Load tests - in cloud mode, fetch from backend; otherwise use local files
 	deferLoadTests := interactive
 	if deferLoadTests {
@@ -452,9 +455,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 		return nil
 	}
-
-	// Track overall timing for print mode
-	overallStart := time.Now()
 
 	if !interactive && !quiet {
 		if isValidation {
@@ -846,10 +846,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	_ = os.Stdout.Sync()
 	time.Sleep(1 * time.Millisecond)
-
-	if !interactive && !quiet {
-		log.Stderrln(fmt.Sprintf("✓ Tests completed (%.1fs)", time.Since(testPhaseStart).Seconds()))
-	}
 
 	var outputErr error
 	if !interactive {
