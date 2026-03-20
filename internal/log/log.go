@@ -2,6 +2,7 @@
 package log
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -90,15 +91,24 @@ func (l *Logger) process() {
 
 func (l *Logger) handleLogMessage(msg logMessage) {
 	tuiPtr := l.tuiLogger.Load()
-	if tuiPtr == nil {
+	if tuiPtr != nil {
+		tui := *tuiPtr
+		switch msg.msgType {
+		case logTypeService:
+			tui.LogToService(msg.message)
+		case logTypeTest:
+			tui.LogToCurrentTest(msg.testID, msg.message)
+		}
 		return
 	}
-	tui := *tuiPtr
+
+	// No TUI active (print mode). Route through slog so messages respect
+	// the configured log level and use the standard slog format.
 	switch msg.msgType {
 	case logTypeService:
-		tui.LogToService(msg.message)
+		slog.Debug(msg.message)
 	case logTypeTest:
-		tui.LogToCurrentTest(msg.testID, msg.message)
+		slog.Debug(msg.message, "testID", msg.testID)
 	}
 }
 
@@ -259,6 +269,15 @@ func TestLog(testID, msg string) {
 		// Queue full - log to stderr as fallback
 		slog.Debug("TUI log queue full, dropping message", "testID", testID, "message", msg)
 	}
+}
+
+// TestDebug logs a debug-level message to a specific test's log panel.
+// Only emits when debug logging is enabled (--debug flag).
+func TestDebug(testID, msg string) {
+	if !slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	TestLog(testID, msg)
 }
 
 // TestOrServiceLog tries to log to test, falls back to service if testID is empty

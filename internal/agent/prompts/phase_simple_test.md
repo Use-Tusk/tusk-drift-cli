@@ -44,9 +44,10 @@ TuskDrift.initialize({
 Run tusk_run to replay the trace.
 If it fails:
 
-- Run with `debug: true` (keep running it in debug mode until it passes)
-- If startup fails in sandbox (for example secret manager bootstrapping), retry with `sandbox_mode: "off"`
-- Check for errors in the output or in the logs (in .tusk/logs/). Logs only appear if `debug: true` is set.
+- Check the service startup logs for errors (always shown on startup failure)
+- If the service starts but a test replay fails, run with `debug: true` to see runtime logs (keep running it in debug mode until it passes)
+- If you need more detail from the SDK itself, set `logLevel: "debug"` in the SDK initialization to see SDK-level diagnostics
+- If startup fails in sandbox (for example secret manager bootstrapping), retry with `sandbox_mode: "off"` and if that works, add a comment in config.yaml explaining why sandbox was disabled (e.g., `# sandbox disabled: service requires external secret manager during startup`)
 - If you see config-related errors (e.g., "no start command"), run `tusk_validate_config` to check for config issues
 - Try to fix issues and retry (max 3 attempts)
 - If still failing, ask the user for help

@@ -453,11 +453,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Track overall timing for print mode
+	overallStart := time.Now()
+
 	if !interactive && !quiet {
 		if isValidation {
 			log.Stderrln(fmt.Sprintf("\n➤ Found %d traces to validate", len(tests)))
 		} else if !cloud {
-			log.Stderrln(fmt.Sprintf("\n➤ Loaded %d tests from local traces", len(tests)))
+			log.Stderrln(fmt.Sprintf("\n➤ Loaded %d tests from local traces (%.1fs)", len(tests), time.Since(overallStart).Seconds()))
 		}
 	}
 
@@ -732,12 +735,24 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 4: Run tests by environment
+	testPhaseStart := time.Now()
 	var results []runner.TestResult
 	if groupResult != nil && len(groupResult.Groups) > 0 {
 		// Use environment-based replay
 		results, err = runner.ReplayTestsByEnvironment(context.Background(), executor, groupResult.Groups)
 		if err != nil {
 			cmd.SilenceUsage = true
+
+			// Dump startup logs so user can diagnose startup failures
+			startupLogs := executor.GetStartupLogs()
+			if startupLogs != "" {
+				log.Stderrln("\n📋 Service startup logs:")
+				for _, line := range strings.Split(strings.TrimRight(startupLogs, "\n"), "\n") {
+					log.Stderrln("  " + line)
+				}
+				log.Stderrln("")
+			}
+			log.Stderr(executor.GetStartupFailureHelpMessage())
 
 			// Update CI status to FAILURE if in cloud mode
 			if cloud && client != nil && (ci || isValidation) {
@@ -780,6 +795,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 				}
 			}
 
+			startupLogs := executor.GetStartupLogs()
+			if startupLogs != "" {
+				log.Stderrln("\n📋 Service startup logs:")
+				for _, line := range strings.Split(strings.TrimRight(startupLogs, "\n"), "\n") {
+					log.Stderrln("  " + line)
+				}
+				log.Stderrln("")
+			}
 			log.Stderr(executor.GetStartupFailureHelpMessage())
 			return fmt.Errorf("failed to start environment: %w", err)
 		}
@@ -790,7 +813,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}()
 
 		if !interactive && !quiet {
-			log.Stderrln("  ✓ Environment ready")
+			log.Stderrln(fmt.Sprintf("  ✓ Environment ready (%.1fs)", time.Since(testPhaseStart).Seconds()))
 			log.Stderrln(fmt.Sprintf("➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency()))
 		}
 
@@ -824,10 +847,18 @@ func runTests(cmd *cobra.Command, args []string) error {
 	_ = os.Stdout.Sync()
 	time.Sleep(1 * time.Millisecond)
 
+	if !interactive && !quiet {
+		log.Stderrln(fmt.Sprintf("✓ Tests completed (%.1fs)", time.Since(testPhaseStart).Seconds()))
+	}
+
 	var outputErr error
 	if !interactive {
 		// Results already streamed, just print summary
 		outputErr = runner.OutputResultsSummary(results, outputFormat, quiet)
+	}
+
+	if !interactive && !quiet {
+		log.Stderrln(fmt.Sprintf("Total elapsed: %.1fs", time.Since(overallStart).Seconds()))
 	}
 
 	// Step 5: Upload results to backend if in cloud mode

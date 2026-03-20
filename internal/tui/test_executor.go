@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"slices"
@@ -245,6 +246,13 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 	// Register this model as the global test logger
 	log.SetTUILogger(m)
 
+	// Redirect stderr to the TUI service log panel.
+	// Libraries like fence write directly to os.Stderr with fmt.Fprintf,
+	// which corrupts the Bubble Tea alt screen. This pipe captures those
+	// writes and routes them through the TUI log panel instead.
+	stderrRestore := redirectStderrToTUI(m)
+	defer stderrRestore()
+
 	// Prepend initial service logs
 	if opts != nil && len(opts.InitialServiceLogs) > 0 {
 		for _, line := range opts.InitialServiceLogs {
@@ -268,6 +276,48 @@ func RunTestsInteractiveWithOpts(tests []runner.Test, executor *runner.Executor,
 
 	log.SetTUILogger(nil)
 	return m.results, nil
+}
+
+// redirectStderrToTUI replaces os.Stderr with a pipe that routes lines to the
+// TUI service log panel. Returns a function that restores the original stderr.
+// This prevents libraries that write directly to os.Stderr (e.g. fence) from
+// corrupting the Bubble Tea alt screen.
+func redirectStderrToTUI(m *testExecutorModel) func() {
+	origStderr := os.Stderr
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		// If pipe fails, don't redirect — better to have some corruption than crash
+		return func() {}
+	}
+	os.Stderr = pw
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := pr.Read(buf)
+			if n > 0 {
+				lines := strings.Split(strings.TrimRight(string(buf[:n]), "\n"), "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if line != "" {
+						m.addServiceLog(line)
+					}
+				}
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+
+	return func() {
+		os.Stderr = origStderr
+		_ = pw.Close()
+		<-done // wait for reader goroutine to drain
+		_ = pr.Close()
+	}
 }
 
 func newTestExecutorModel(tests []runner.Test, executor *runner.Executor, opts *InteractiveOpts) *testExecutorModel {
@@ -306,10 +356,57 @@ func (m *testExecutorModel) setupTUILogging() {
 		level = slog.LevelDebug
 	}
 
-	handler := slog.NewTextHandler(tuiWriter, &slog.HandlerOptions{
-		Level: level,
-	})
+	handler := &tuiSlogHandler{
+		level:  level,
+		writer: tuiWriter,
+	}
 	slog.SetDefault(slog.New(handler))
+}
+
+// tuiSlogHandler formats slog records cleanly for the TUI (no time/level prefix).
+// It extracts just the message and key=value pairs.
+type tuiSlogHandler struct {
+	level  slog.Level
+	writer io.Writer
+	attrs  []slog.Attr
+	group  string
+}
+
+func (h *tuiSlogHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= h.level
+}
+
+func (h *tuiSlogHandler) Handle(_ context.Context, r slog.Record) error {
+	var b strings.Builder
+	b.WriteString(r.Message)
+	// Append pre-set attrs
+	for _, a := range h.attrs {
+		b.WriteString(" ")
+		b.WriteString(a.Key)
+		b.WriteString("=")
+		b.WriteString(fmt.Sprintf("%v", a.Value.Any()))
+	}
+	// Append record attrs
+	r.Attrs(func(a slog.Attr) bool {
+		b.WriteString(" ")
+		b.WriteString(a.Key)
+		b.WriteString("=")
+		b.WriteString(fmt.Sprintf("%v", a.Value.Any()))
+		return true
+	})
+	_, err := h.writer.Write([]byte(b.String()))
+	return err
+}
+
+func (h *tuiSlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	newAttrs := make([]slog.Attr, len(h.attrs)+len(attrs))
+	copy(newAttrs, h.attrs)
+	copy(newAttrs[len(h.attrs):], attrs)
+	return &tuiSlogHandler{level: h.level, writer: h.writer, attrs: newAttrs, group: h.group}
+}
+
+func (h *tuiSlogHandler) WithGroup(name string) slog.Handler {
+	return &tuiSlogHandler{level: h.level, writer: h.writer, attrs: h.attrs, group: name}
 }
 
 func (m *testExecutorModel) loadTestsIfNeeded() tea.Cmd {
@@ -922,6 +1019,15 @@ func (m *testExecutorModel) startNextEnvironmentGroup() tea.Cmd {
 		// Start environment
 		if err := m.executor.StartEnvironment(); err != nil {
 			m.groupCleanup()
+
+			startupLogs := m.executor.GetStartupLogs()
+			if startupLogs != "" {
+				m.addServiceLog("📋 Service startup logs:")
+				for _, line := range strings.Split(strings.TrimRight(startupLogs, "\n"), "\n") {
+					m.addServiceLog(line)
+				}
+			}
+
 			m.addServiceLog(fmt.Sprintf("❌ Failed to start environment for %s: %v", group.Name, err))
 
 			helpMsg := m.executor.GetStartupFailureHelpMessage()

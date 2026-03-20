@@ -147,15 +147,19 @@ func (e *Executor) StartService() error {
 	env = append(env, "TUSK_DRIFT_MODE=REPLAY")
 	e.serviceCmd.Env = env
 
-	// Dump service logs to file in .tusk/logs instead of suppressing
-	// TODO: provide option whether to store these logs
+	// Always capture service logs during startup.
+	// When --enable-service-logs is set, logs go to a file.
+	// Otherwise, logs go to an in-memory buffer that is shown on failure and discarded on success.
 	if err := e.setupServiceLogging(); err != nil {
 		log.Debug("Failed to setup service logging, suppressing output", "error", err)
 		e.serviceCmd.Stdout = nil
 		e.serviceCmd.Stderr = nil
-	} else {
+	} else if e.enableServiceLogs {
 		e.serviceCmd.Stdout = e.serviceLogFile
 		e.serviceCmd.Stderr = e.serviceLogFile
+	} else {
+		e.serviceCmd.Stdout = e.startupLogBuffer
+		e.serviceCmd.Stderr = e.startupLogBuffer
 	}
 
 	if err := e.serviceCmd.Start(); err != nil {
@@ -165,6 +169,12 @@ func (e *Executor) StartService() error {
 		}
 		return fmt.Errorf("failed to start service: %w", err)
 	}
+
+	// Monitor process for early exit so waitForReadiness can fail fast
+	e.processExitCh = make(chan error, 1)
+	go func() {
+		e.processExitCh <- e.serviceCmd.Wait()
+	}()
 
 	if err := e.waitForReadiness(cfg); err != nil {
 		_ = e.StopService()
@@ -400,8 +410,13 @@ func (e *Executor) waitForReadiness(cfg *config.Config) error {
 				waitTime = parsed
 			}
 		}
-		time.Sleep(waitTime)
-		return nil
+		// Wait for the specified duration, but fail fast if the process exits
+		select {
+		case exitErr := <-e.processExitCh:
+			return fmt.Errorf("service process exited during startup: %w", exitErr)
+		case <-time.After(waitTime):
+			return nil
+		}
 	}
 
 	timeout := 10 * time.Second
@@ -421,13 +436,25 @@ func (e *Executor) waitForReadiness(cfg *config.Config) error {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
+		// Check for early process exit before each readiness attempt
+		select {
+		case exitErr := <-e.processExitCh:
+			return fmt.Errorf("service process exited during startup: %w", exitErr)
+		default:
+		}
+
 		cmd := createReadinessCommand(cfg.Service.Readiness.Command)
 		cmd.Env = e.buildCommandEnv()
 		if err := cmd.Run(); err == nil {
 			return nil
 		}
 
-		time.Sleep(interval)
+		// Wait for the interval, but fail fast if the process exits
+		select {
+		case exitErr := <-e.processExitCh:
+			return fmt.Errorf("service process exited during startup: %w", exitErr)
+		case <-time.After(interval):
+		}
 	}
 
 	return fmt.Errorf("service failed to become ready within %v. You can increase the timeout in .tusk/config.yaml under service.readiness.timeout", timeout)
@@ -438,33 +465,36 @@ func (e *Executor) SetEnableServiceLogs(enable bool) {
 	e.enableServiceLogs = enable
 }
 
-// setupServiceLogging creates a log file for service stdout and stderr if service logging is not disabled.
+// setupServiceLogging prepares log capture for the service process.
+// When --enable-service-logs is set, logs are written to a file in .tusk/logs/.
+// Otherwise, an in-memory buffer captures startup output (shown on failure, discarded on success).
 func (e *Executor) setupServiceLogging() error {
-	if !e.enableServiceLogs {
-		return fmt.Errorf("service logging disabled")
+	if e.enableServiceLogs {
+		// Allow tests to override the logs directory
+		logsDir := utils.GetLogsDir()
+		if testLogsDir := os.Getenv("TUSK_TEST_LOGS_DIR"); testLogsDir != "" {
+			logsDir = testLogsDir
+		}
+
+		if err := os.MkdirAll(logsDir, 0o750); err != nil {
+			return fmt.Errorf("failed to create logs directory: %w", err)
+		}
+
+		timestamp := time.Now().Format("20060102-150405")
+
+		logPath := filepath.Join(logsDir, fmt.Sprintf("tusk-replay-%s.log", timestamp))
+		logFile, err := os.Create(logPath) // #nosec G304
+		if err != nil {
+			return fmt.Errorf("failed to create service log file: %w", err)
+		}
+
+		e.serviceLogFile = logFile
+		log.ServiceLog(fmt.Sprintf("Service logs will be written to: %s", logPath))
+	} else if e.startupLogBuffer == nil {
+		// Only create a new buffer if one doesn't already exist.
+		// During sandbox retry, the existing buffer preserves the first attempt's logs.
+		e.startupLogBuffer = &syncBuffer{}
 	}
-
-	// Allow tests to override the logs directory
-	logsDir := utils.GetLogsDir()
-	if testLogsDir := os.Getenv("TUSK_TEST_LOGS_DIR"); testLogsDir != "" {
-		logsDir = testLogsDir
-	}
-
-	if err := os.MkdirAll(logsDir, 0o750); err != nil {
-		return fmt.Errorf("failed to create logs directory: %w", err)
-	}
-
-	timestamp := time.Now().Format("20060102-150405")
-
-	logPath := filepath.Join(logsDir, fmt.Sprintf("tusk-replay-%s.log", timestamp))
-	logFile, err := os.Create(logPath) // #nosec G304
-	if err != nil {
-		return fmt.Errorf("failed to create service log file: %w", err)
-	}
-
-	e.serviceLogFile = logFile
-
-	log.ServiceLog(fmt.Sprintf("Service logs will be written to: %s", logPath))
 
 	return nil
 }

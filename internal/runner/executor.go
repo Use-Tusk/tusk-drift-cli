@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Use-Tusk/fence/pkg/fence"
@@ -33,6 +34,24 @@ const (
 	SandboxModeOff    = "off"
 )
 
+// syncBuffer is a thread-safe buffer for capturing service stdout/stderr concurrently.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
 type Executor struct {
 	serviceURL              string
 	parallel                int
@@ -40,6 +59,8 @@ type Executor struct {
 	serviceCmd              *exec.Cmd
 	server                  *Server
 	serviceLogFile          *os.File
+	startupLogBuffer        *syncBuffer // in-memory buffer when --enable-service-logs is off
+	processExitCh           chan error   // signals early process exit
 	enableServiceLogs       bool
 	servicePort             int
 	resultsDir              string
@@ -511,24 +532,43 @@ func countPassedTests(results []TestResult) int {
 	return count
 }
 
-// GetStartupFailureHelpMessage returns a user-friendly help message when the service fails to start.
-// It explains how to use --enable-service-logs and shows where logs will be saved.
-func (e *Executor) GetStartupFailureHelpMessage() string {
-	var msg strings.Builder
-
-	msg.WriteString("\n")
-	msg.WriteString("💡 Tip: Use --enable-service-logs to see detailed service logs and diagnose startup issues.\n")
-	msg.WriteString("   Service logs show the stdout/stderr output from your service, which can help identify why the service failed to start.\n")
-
-	// Always show where logs would be saved
-	logsDir := utils.GetLogsDir()
+// GetStartupLogs returns the captured service startup logs.
+// When --enable-service-logs is set, it reads back from the log file.
+// Otherwise, it returns the contents of the in-memory startup buffer.
+func (e *Executor) GetStartupLogs() string {
 	if e.enableServiceLogs && e.serviceLogFile != nil {
-		msg.WriteString(fmt.Sprintf("📄 Service logs are available at: %s\n", e.serviceLogFile.Name()))
-	} else {
-		msg.WriteString(fmt.Sprintf("📁 Service logs will be saved to: %s/\n", logsDir))
+		data, err := os.ReadFile(e.serviceLogFile.Name())
+		if err != nil {
+			return ""
+		}
+		return string(data)
 	}
+	if e.startupLogBuffer != nil {
+		return e.startupLogBuffer.String()
+	}
+	return ""
+}
 
-	return msg.String()
+// DiscardStartupBuffer detaches the in-memory startup log buffer from the service process
+// and discards it. This is called after the service starts successfully to avoid unbounded
+// memory growth during the test run. Has no effect when --enable-service-logs is set
+// (file-based logging persists for the full run).
+func (e *Executor) DiscardStartupBuffer() {
+	if !e.enableServiceLogs && e.startupLogBuffer != nil {
+		if e.serviceCmd != nil {
+			e.serviceCmd.Stdout = io.Discard
+			e.serviceCmd.Stderr = io.Discard
+		}
+		e.startupLogBuffer = nil
+	}
+}
+
+// GetStartupFailureHelpMessage returns a user-friendly help message when the service fails to start.
+func (e *Executor) GetStartupFailureHelpMessage() string {
+	if e.enableServiceLogs && e.serviceLogFile != nil {
+		return fmt.Sprintf("\n📄 Service logs are available at: %s\n", e.serviceLogFile.Name())
+	}
+	return ""
 }
 
 // RunSingleTest replays a single trace on the service under test.
