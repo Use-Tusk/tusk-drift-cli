@@ -10,8 +10,9 @@ import (
 
 // createTestCommand creates a test command that can be gracefully killed
 func createTestCommand(ctx context.Context, duration string) *exec.Cmd {
-	// Windows: use timeout command (similar to sleep, but in seconds)
-	cmd := exec.CommandContext(ctx, "cmd.exe", "/c", "timeout /t "+duration+" /nobreak >nul")
+	// Windows: use ping for delay (timeout command fails in non-interactive CI)
+	// ping -n <duration+1> gives roughly <duration> seconds of delay
+	cmd := exec.CommandContext(ctx, "cmd.exe", "/c", "ping -n "+duration+" 127.0.0.1 >nul")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
 	}
@@ -31,18 +32,18 @@ func createUnkillableTestCommand(ctx context.Context, duration string) *exec.Cmd
 
 // getLongRunningCommand returns a shell command that runs indefinitely
 func getLongRunningCommand() string {
-	// Windows: infinite loop with timeout
-	return "cmd.exe /c :loop & timeout /t 1 /nobreak >nul & goto loop"
+	// Windows: infinite loop with ping delay (timeout command fails in non-interactive CI)
+	return "cmd.exe /c :loop & ping -n 2 127.0.0.1 >nul & goto loop"
 }
 
 // getSimpleSleepCommand returns a simple sleep command for testing
 func getSimpleSleepCommand() string {
-	// Windows: 1 second timeout (timeout is in seconds, minimum is 1)
-	return "cmd.exe /c timeout /t 1 /nobreak >nul"
+	// Windows: use ping for ~1 second delay (timeout command fails in non-interactive CI)
+	return "cmd.exe /c ping -n 2 127.0.0.1 >nul"
 }
 
 // getMediumSleepCommand returns a medium duration sleep for integration tests
 func getMediumSleepCommand() string {
-	// Windows: 1 second is minimum, but this is acceptable for medium duration
-	return "cmd.exe /c timeout /t 2 /nobreak >nul"
+	// Windows: use ping for ~2 second delay (timeout command fails in non-interactive CI)
+	return "cmd.exe /c ping -n 3 127.0.0.1 >nul"
 }
