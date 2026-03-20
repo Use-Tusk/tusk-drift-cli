@@ -25,19 +25,16 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install Linux sandbox dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap socat uidmap
-          # Configure subuid/subgid for the runner user (required for unprivileged user namespaces)
-          echo "$(whoami):100000:65536" | sudo tee -a /etc/subuid
-          echo "$(whoami):100000:65536" | sudo tee -a /etc/subgid
-          # Make bwrap setuid so it can create namespaces as non-root user
-          sudo chmod u+s $(which bwrap)
-
       - name: Build CLI
         run: make build
+
+      - name: Put local CLI on PATH
+        run: echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+
+      - name: Run CI bootstrap example
+        # Reuse the docs bootstrap path while keeping the locally built CLI from
+        # this PR on PATH so the E2E job still validates the current branch.
+        run: bash "$GITHUB_WORKSPACE/docs/drift/cloud/ci-bootstrap-example.sh"
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -54,7 +51,7 @@ jobs:
       - name: Run Node.js E2E tests Non-Interactive
         working-directory: ../drift-node-demo
         run: |
-          $GITHUB_WORKSPACE/tusk drift run --print
+          tusk drift run --print
           # Exits non-zero if any test has deviations
 
       # CI environments don't have a TTY, so the CLI falls back to headless mode by default.
@@ -64,4 +61,4 @@ jobs:
         working-directory: ../drift-node-demo
         env:
           TUSK_TUI_CI_MODE: "1"
-        run: $GITHUB_WORKSPACE/tusk drift run
+        run: tusk drift run

@@ -109,8 +109,13 @@ You will be guided to:
 
 #### GitHub
 
-- We recommend adding your `TUSK_API_KEY` to your GitHub secrets.
+- For GitHub Actions, we recommend using `Use-Tusk/drift-action` first. It handles CLI installation and common Linux sandbox bootstrap/repair automatically.
+- Add your `TUSK_API_KEY` to your GitHub secrets.
 - Refer to an [example GitHub Actions workflow](./cloud/github-workflow-example.yml). Adapt this accordingly for your service.
+
+#### Other CI providers
+
+- If your CI provider cannot use `Use-Tusk/drift-action`, copy [the example bootstrap script](./cloud/ci-bootstrap-example.sh) into your repo. It installs the CLI, repairs common Linux sandbox prerequisites (`bubblewrap`, `socat`, `uidmap`, `/etc/subuid`, `/etc/subgid`, `bwrap` setuid), and can optionally exec your `tusk run ...` command.
 
 ## Usage
 
