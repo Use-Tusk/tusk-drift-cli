@@ -58,7 +58,7 @@ jobs:
         working-directory: ../drift-python-demo
         run: |
           source venv/bin/activate
-          $GITHUB_WORKSPACE/tusk run --print
+          $GITHUB_WORKSPACE/tusk drift run --print
           # Exits non-zero if any test has deviations
 
       # CI environments don't have a TTY, so the CLI falls back to headless mode by default.
@@ -70,4 +70,4 @@ jobs:
           TUSK_TUI_CI_MODE: "1"
         run: |
           source venv/bin/activate
-          $GITHUB_WORKSPACE/tusk run
+          $GITHUB_WORKSPACE/tusk drift run

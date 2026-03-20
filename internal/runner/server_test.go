@@ -1,6 +1,9 @@
 package runner
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,7 +130,58 @@ func TestServerUnixMode(t *testing.T) {
 	socketPath, tcpPort := server.GetConnectionInfo()
 	assert.NotEmpty(t, socketPath, "Unix mode should have socket path")
 	assert.Equal(t, 0, tcpPort, "Unix mode should have zero TCP port")
-	assert.Contains(t, socketPath, "tusk-connect.sock")
+	assert.Contains(t, socketPath, filepath.Join(unixSocketDirName, unixSocketName))
+}
+
+func TestServerUnixMode_FallsBackForLongPaths(t *testing.T) {
+	config.Invalidate()
+
+	testServiceConfig := &config.ServiceConfig{
+		ID:   "test-unix-service-long-path",
+		Port: 3000,
+		Start: config.StartConfig{
+			Command: "npm run dev",
+		},
+		Communication: config.CommunicationConfig{
+			Type:    "unix",
+			TCPPort: 9001,
+		},
+	}
+
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+
+	baseDir := t.TempDir()
+	deepDir := baseDir
+	for len(filepath.Join(deepDir, unixSocketDirName, unixSocketName)) <= 140 {
+		deepDir = filepath.Join(deepDir, "nested-segment-1234567890")
+	}
+	require.NoError(t, os.MkdirAll(deepDir, 0o750))
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(deepDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+	workingDir, err := os.Getwd()
+	require.NoError(t, err)
+
+	server, err := NewServer("test-unix-service-long-path", testServiceConfig)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Stop() })
+
+	err = server.Start()
+	require.NoError(t, err)
+
+	socketPath, tcpPort := server.GetConnectionInfo()
+	assert.NotEmpty(t, socketPath, "Unix mode should have socket path")
+	assert.Equal(t, 0, tcpPort, "Unix mode should have zero TCP port")
+	assert.NotEqual(t, filepath.Join(workingDir, unixSocketDirName, unixSocketName), socketPath)
+	assert.NotEqual(t, filepath.Join(workingDir, fallbackSocketName), socketPath)
+	assert.Contains(t, unixSocketCandidates(workingDir), socketPath)
+	assert.True(t, strings.HasPrefix(filepath.Base(socketPath), ".t-"), "expected fallback to use the short ancestor socket name: %s", socketPath)
+	assert.Less(t, len(socketPath), len(filepath.Join(workingDir, fallbackSocketName)), "expected fallback to shorten the socket path: %s", socketPath)
 }
 
 func TestDetermineCommunicationType(t *testing.T) {

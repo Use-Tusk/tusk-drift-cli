@@ -33,7 +33,7 @@ If you have any questions, feel free to open an issue or email [support@usetusk.
 
 ## Local replay (developer service)
 
-1) Create `.tusk/config.yaml` in your service repo (see `docs/configuration.md`).
+1) Create `.tusk/config.yaml` in your service repo (see [`docs/drift/configuration.md`](docs/drift/configuration.md)).
 2) Ensure `service.start.command` and `service.port` are correct.
 3) Run:
 
@@ -66,7 +66,7 @@ If you have any questions, feel free to open an issue or email [support@usetusk.
 ## Style and conventions
 
 - Keep edits focused and covered by tests where possible.
-- Update [`docs/architecture.md`](docs/architecture.md) and/or [`docs/configuration.md`](docs/configuration.md) when adding flags or config.
+- Update [`docs/drift/architecture.md`](docs/drift/architecture.md) and/or [`docs/drift/configuration.md`](docs/drift/configuration.md) when adding flags or config.
 - Prefer small, reviewable PRs with a clear rationale.
 - Use meaningful slog fields (avoid logging sensitive values).
 

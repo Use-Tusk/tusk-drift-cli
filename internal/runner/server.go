@@ -33,8 +33,11 @@ import (
 type CommunicationType string
 
 const (
-	CommunicationUnix CommunicationType = "unix"
-	CommunicationTCP  CommunicationType = "tcp"
+	CommunicationUnix  CommunicationType = "unix"
+	CommunicationTCP   CommunicationType = "tcp"
+	unixSocketDirName  string            = ".tusk"
+	unixSocketName     string            = ".s"
+	fallbackSocketName string            = ".t.sock"
 )
 
 // Server handles Unix socket communication with the SDK
@@ -197,16 +200,35 @@ func (ms *Server) GetAnalyticsClient() *analytics.Client {
 }
 
 func (ms *Server) startUnix() error {
-	ms.socketPath = filepath.Join(os.TempDir(), "tusk-connect.sock")
-	_ = os.Remove(ms.socketPath)
-
-	listener, err := net.Listen("unix", ms.socketPath)
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to create Unix socket listener: %w", err)
+		return fmt.Errorf("failed to determine working directory for Unix socket: %w", err)
+	}
+	candidates := unixSocketCandidates(cwd)
+
+	var listenErrs []string
+	for _, candidate := range candidates {
+		if err := os.MkdirAll(filepath.Dir(candidate), 0o750); err != nil {
+			listenErrs = append(listenErrs, fmt.Sprintf("%s: create parent dir: %v", candidate, err))
+			continue
+		}
+		_ = os.Remove(candidate)
+
+		listener, err := net.Listen("unix", candidate)
+		if err != nil {
+			listenErrs = append(listenErrs, fmt.Sprintf("%s: %v", candidate, err))
+			continue
+		}
+
+		ms.socketPath = candidate
+		ms.listener = listener
+		log.Debug("Mock server started with Unix socket", "socket", ms.socketPath)
+		break
 	}
 
-	ms.listener = listener
-	log.Debug("Mock server started with Unix socket", "socket", ms.socketPath)
+	if ms.listener == nil {
+		return fmt.Errorf("failed to create Unix socket listener: %s", strings.Join(listenErrs, "; "))
+	}
 
 	// Verify the socket file exists and is accessible
 	if _, err := os.Stat(ms.socketPath); err != nil {
@@ -223,6 +245,42 @@ func (ms *Server) startUnix() error {
 	log.Debug("Mock server ready to accept connections", "socket", ms.socketPath)
 
 	return nil
+}
+
+func unixSocketCandidates(cwd string) []string {
+	candidates := []string{
+		filepath.Join(cwd, unixSocketDirName, unixSocketName),
+		filepath.Join(cwd, fallbackSocketName),
+	}
+
+	shortFallbackName := unixSocketShortFallbackName(cwd)
+	for dir := filepath.Dir(cwd); ; dir = filepath.Dir(dir) {
+		candidates = append(candidates, filepath.Join(dir, shortFallbackName))
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	deduped := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		deduped = append(deduped, candidate)
+	}
+
+	return deduped
+}
+
+func unixSocketShortFallbackName(cwd string) string {
+	hash := utils.GenerateDeterministicHash(cwd)
+	if len(hash) > 12 {
+		hash = hash[:12]
+	}
+	return ".t-" + hash
 }
 
 func (ms *Server) startTCP() error {

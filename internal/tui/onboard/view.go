@@ -135,7 +135,7 @@ func (m *Model) View() string {
 2. A docker-compose.tusk-override.yml file has been created for you.
    Review it and uncomment extra_hosts if you're on Linux.
    See: %s
-`, styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md#docker-support"))
+`, styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/drift/configuration.md#docker-support"))
 			case dockerTypeFile:
 				next += `
 2. Review the Docker run command in your config.
@@ -216,7 +216,7 @@ func (m *Model) confirmIntroText() string {
 	b.WriteString("Some configurations are pre-filled.\n")
 	b.WriteString("You may adjust them in the config file later if necesssary.\n")
 	b.WriteString("Refer to the documentation for more details:\n")
-	b.WriteString(styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/configuration.md") + "\n\n")
+	b.WriteString(styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/blob/main/docs/drift/configuration.md") + "\n\n")
 	return b.String()
 }
 

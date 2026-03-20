@@ -58,12 +58,13 @@ func (e *Executor) StartService() error {
 			log.ServiceLog("❌ Replay env override was prepared but not injected (unsupported Docker Compose command shape)")
 		}
 	}
-	if e.GetSandboxMode() == SandboxModeOff || e.sandboxBypass {
+	effectiveSandboxMode := e.GetEffectiveSandboxMode()
+	if effectiveSandboxMode == SandboxModeOff || e.sandboxBypass {
 		log.ServiceLog("⚠️  Replay sandbox disabled (real outbound connections allowed)")
 	}
 
-	requireSandbox := e.GetSandboxMode() == SandboxModeStrict
-	if e.GetSandboxMode() != SandboxModeOff && !e.sandboxBypass {
+	requireSandbox := effectiveSandboxMode == SandboxModeStrict
+	if effectiveSandboxMode != SandboxModeOff && !e.sandboxBypass {
 		if !fence.IsSupported() {
 			if requireSandbox {
 				return fmt.Errorf("strict replay sandbox unavailable: sandbox not supported on this platform")

@@ -357,8 +357,8 @@ This will not affect CLI behavior. See SDK for more details:
     <tr>
       <td><code>replay.sandbox.mode</code></td>
       <td>string</td>
-      <td><code>auto</code></td>
-      <td>Replay sandbox strategy: <code>auto</code> (start sandboxed, retry once without sandbox if startup fails), <code>strict</code> (require sandbox; fail if sandbox cannot be initialized/applied), <code>off</code> (never sandbox).</td>
+      <td><em>unset</em></td>
+      <td>Replay sandbox strategy: if unset, replay defaults to <code>strict</code> on platforms that support Fence and otherwise runs without sandboxing after a warning. <code>auto</code> starts sandboxed and retries once without sandbox if startup fails, <code>strict</code> requires sandboxing and fails if sandbox cannot be initialized/applied, and <code>off</code> never uses sandboxing.</td>
     </tr>
     <tr>
       <td><code>replay.sandbox.config_path</code></td>
