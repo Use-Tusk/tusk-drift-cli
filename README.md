@@ -2,12 +2,12 @@
 
 <div align="center">
 
-![GitHub Release](https://img.shields.io/github/v/release/Use-Tusk/tusk-drift-cli)
-[![Build and test](https://github.com/Use-Tusk/tusk-drift-cli/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/Use-Tusk/tusk-drift-cli/actions/workflows/main.yml)
+![GitHub Release](https://img.shields.io/github/v/release/Use-Tusk/tusk-cli)
+[![Build and test](https://github.com/Use-Tusk/tusk-cli/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/Use-Tusk/tusk-cli/actions/workflows/main.yml)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11340/badge)](https://www.bestpractices.dev/projects/11340)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Use-Tusk/tusk-drift-cli/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Use-Tusk/tusk-drift-cli)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Use-Tusk/tusk-cli/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Use-Tusk/tusk-cli)
 <br>
-[![Go Report Card](https://goreportcard.com/badge/github.com/Use-Tusk/tusk-drift-cli)](https://goreportcard.com/report/github.com/Use-Tusk/tusk-drift-cli)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Use-Tusk/tusk-cli)](https://goreportcard.com/report/github.com/Use-Tusk/tusk-cli)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![X URL](https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2Fusetusk&style=flat&logo=x&label=Tusk&color=BF40BF)](https://x.com/usetusk)
 [![Slack URL](https://img.shields.io/badge/slack-badge?style=flat&logo=slack&label=Tusk&color=BF40BF)](https://join.slack.com/t/tusk-community/shared_invite/zt-3fve1s7ie-NAAUn~UpHsf1m_2tdoGjsQ)
@@ -88,9 +88,9 @@ We recommend using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) 
 
 <details>
 <summary><b>Installation steps</b></summary>
-Download the latest release from [GitHub Releases](https://github.com/Use-Tusk/tusk-drift-cli/releases/latest):
+Download the latest release from [GitHub Releases](https://github.com/Use-Tusk/tusk-cli/releases/latest):
 
-1. Download `tusk-drift-cli_*_Windows_x86_64.zip` (or `arm64` for ARM-based Windows)
+1. Download `tusk-cli_*_Windows_x86_64.zip` (or `arm64` for ARM-based Windows)
 2. Extract the ZIP file
 3. Move `tusk.exe` to a directory in your PATH (e.g., `C:\tools\`), or add the extracted directory to your PATH:
 
@@ -118,14 +118,14 @@ Note: Windows requires additional configuration for running tests. See [Windows 
 
 ### Manual Download
 
-Download pre-built binaries from [GitHub Releases](https://github.com/Use-Tusk/tusk-drift-cli/releases/latest).
+Download pre-built binaries from [GitHub Releases](https://github.com/Use-Tusk/tusk-cli/releases/latest).
 
 ### Build from source
 
 ```bash
 # Go 1.25+
-git clone https://github.com/Use-Tusk/tusk-drift-cli.git
-cd tusk-drift-cli
+git clone https://github.com/Use-Tusk/tusk-cli.git
+cd tusk-cli
 make deps
 make build
 

@@ -48,3 +48,43 @@ func TestIsHomebrewPath(t *testing.T) {
 		})
 	}
 }
+
+func TestGetDownloadURLLinuxAMD64(t *testing.T) {
+	t.Parallel()
+
+	originalGoos := runtimeGOOS
+	originalGoarch := runtimeGOARCH
+	runtimeGOOS = "linux"
+	runtimeGOARCH = "amd64"
+	defer func() {
+		runtimeGOOS = originalGoos
+		runtimeGOARCH = originalGoarch
+	}()
+
+	got := getDownloadURL("v1.2.3")
+	want := "https://github.com/Use-Tusk/tusk-cli/releases/download/v1.2.3/tusk-cli_1.2.3_Linux_x86_64.tar.gz"
+
+	if got != want {
+		t.Fatalf("getDownloadURL() = %q, want %q", got, want)
+	}
+}
+
+func TestGetDownloadURLDarwinARM64(t *testing.T) {
+	t.Parallel()
+
+	originalGoos := runtimeGOOS
+	originalGoarch := runtimeGOARCH
+	runtimeGOOS = "darwin"
+	runtimeGOARCH = "arm64"
+	defer func() {
+		runtimeGOOS = originalGoos
+		runtimeGOARCH = originalGoarch
+	}()
+
+	got := getDownloadURL("v1.2.3")
+	want := "https://github.com/Use-Tusk/tusk-cli/releases/download/v1.2.3/tusk-cli_1.2.3_Darwin_arm64.tar.gz"
+
+	if got != want {
+		t.Fatalf("getDownloadURL() = %q, want %q", got, want)
+	}
+}
