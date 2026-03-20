@@ -204,10 +204,7 @@ func (ms *Server) startUnix() error {
 	if err != nil {
 		return fmt.Errorf("failed to determine working directory for Unix socket: %w", err)
 	}
-	candidates := []string{
-		filepath.Join(cwd, unixSocketDirName, unixSocketName),
-		filepath.Join(cwd, fallbackSocketName),
-	}
+	candidates := unixSocketCandidates(cwd)
 
 	var listenErrs []string
 	for _, candidate := range candidates {
@@ -248,6 +245,42 @@ func (ms *Server) startUnix() error {
 	log.Debug("Mock server ready to accept connections", "socket", ms.socketPath)
 
 	return nil
+}
+
+func unixSocketCandidates(cwd string) []string {
+	candidates := []string{
+		filepath.Join(cwd, unixSocketDirName, unixSocketName),
+		filepath.Join(cwd, fallbackSocketName),
+	}
+
+	shortFallbackName := unixSocketShortFallbackName(cwd)
+	for dir := filepath.Dir(cwd); ; dir = filepath.Dir(dir) {
+		candidates = append(candidates, filepath.Join(dir, shortFallbackName))
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	deduped := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		deduped = append(deduped, candidate)
+	}
+
+	return deduped
+}
+
+func unixSocketShortFallbackName(cwd string) string {
+	hash := utils.GenerateDeterministicHash(cwd)
+	if len(hash) > 12 {
+		hash = hash[:12]
+	}
+	return ".t-" + hash
 }
 
 func (ms *Server) startTCP() error {
