@@ -60,7 +60,7 @@ type Executor struct {
 	server                  *Server
 	serviceLogFile          *os.File
 	startupLogBuffer        *syncBuffer // in-memory buffer when --enable-service-logs is off
-	processExitCh           chan error   // signals early process exit
+	processExitCh           chan error  // signals early process exit
 	enableServiceLogs       bool
 	servicePort             int
 	resultsDir              string

@@ -878,10 +878,11 @@ func TestSetupServiceLogging(t *testing.T) {
 
 			err := e.setupServiceLogging()
 
-			if tt.expectError {
+			switch {
+			case tt.expectError:
 				assert.Error(t, err)
 				assert.Nil(t, e.serviceLogFile)
-			} else if tt.enableServiceLogs {
+			case tt.enableServiceLogs:
 				assert.NoError(t, err)
 				assert.NotNil(t, e.serviceLogFile)
 
@@ -892,7 +893,7 @@ func TestSetupServiceLogging(t *testing.T) {
 
 				_ = e.serviceLogFile.Close()
 				_ = os.Remove(e.serviceLogFile.Name())
-			} else {
+			default:
 				// Logging disabled: no error, no file, but buffer is created
 				assert.NoError(t, err)
 				assert.Nil(t, e.serviceLogFile)
