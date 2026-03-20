@@ -30,8 +30,8 @@ If `tusk drift setup` (AI-powered setup) fails or doesn't support your project:
 
 ## Linux Issues
 
-- **Sandboxing disabled warning**: Install `bubblewrap` and `socat` for replay isolation. Without these, your service may hit real databases during replay instead of using mocks. Run `sudo apt install bubblewrap socat` (Debian/Ubuntu) or equivalent for your distro.
-- **Strict sandbox mode fails immediately**: If `replay.sandbox.mode` is `strict`, replay will fail when sandbox dependencies are missing or cannot be applied. Install `bubblewrap` and `socat`, or use `auto`/`off` mode.
+- **Sandboxing disabled warning**: Install `bubblewrap`, `socat`, and `uidmap` for replay isolation. On many CI runners you also need `/etc/subuid`, `/etc/subgid`, and the `bwrap` setuid bit, otherwise strict sandbox startup can still fail. See [the example CI bootstrap script](./cloud/ci-bootstrap-example.sh) for a copy-pasteable setup.
+- **Strict sandbox mode fails immediately**: If `replay.sandbox.mode` is `strict`, replay will fail when sandbox dependencies are missing or cannot be applied. Install `bubblewrap`, `socat`, and `uidmap`, ensure the CI user has entries in `/etc/subuid` and `/etc/subgid`, ensure `bwrap` is setuid, or use `auto`/`off` mode.
 
 ## Windows Issues
 

@@ -1,11 +1,14 @@
 name: Tusk Drift
 
+# In this example, `<repo_root>/backend/` is the service
+# root directory to be tested by Tusk Drift.
+
 on:
   pull_request:
     paths:
       - "backend/**"
-  # Push to main is required for --validate-suite-if-default-branch to validate
-  # new traces before adding them to the test suite
+  # Push to main is required for validating new traces
+  # before adding them to the test suite.
   push:
     branches:
       - main
@@ -29,16 +32,11 @@ jobs:
         run: npm ci
         working-directory: ./backend
 
-      - name: Install Tusk Drift CLI
-        run: |
-          curl -fsSL https://cli.usetusk.ai/install.sh | sh
-          tusk --version
-
       - name: Run Tusk Drift trace tests
-        # CLI automatically picks up commit SHA, PR number, branch name,
-        # and external check run ID from CI environment variables.
-        run: |
-          tusk run -c -p --ci --validate-suite-if-default-branch
-        working-directory: ./backend
-        env:
-          TUSK_API_KEY: ${{ secrets.TUSK_API_KEY }}
+        # The action installs the CLI, sets up depedencies, and runs:
+        # tusk run -c -p --ci --validate-suite-if-default-branch
+        uses: Use-Tusk/drift-action@v1
+        with:
+          working-directory: ./backend
+          cache-key: ${{ runner.os }}-tusk-drift-${{ hashFiles('backend/.tusk/config.yaml') }}
+          api-key: ${{ secrets.TUSK_API_KEY }}
