@@ -32,29 +32,33 @@ have() {
   command -v "$1" >/dev/null 2>&1
 }
 
-require_sudo() {
-  if have sudo; then
+run_privileged() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
     return 0
   fi
 
-  log "sudo is required to install or repair Linux sandbox prerequisites."
+  if have sudo; then
+    sudo "$@"
+    return 0
+  fi
+
+  log "root privileges are required to install or repair Linux sandbox prerequisites."
   return 1
 }
 
 apt_install() {
-  require_sudo
-
   if ! have apt-get; then
     log "apt-get is unavailable, so install these packages manually: $*"
     return 1
   fi
 
   if [ "$APT_UPDATED" -eq 0 ]; then
-    sudo apt-get update
+    run_privileged apt-get update
     APT_UPDATED=1
   fi
 
-  sudo apt-get install -y "$@"
+  run_privileged apt-get install -y "$@"
 }
 
 ensure_curl() {
@@ -131,14 +135,13 @@ ensure_subid_entry() {
 
   user_name="$(id -un)"
 
-  require_sudo
-  sudo touch "$file_path"
-  if sudo grep -q "^${user_name}:" "$file_path"; then
+  run_privileged touch "$file_path"
+  if run_privileged grep -q "^${user_name}:" "$file_path"; then
     return 0
   fi
 
   start="$(
-    sudo awk -F: -v block_size="$block_size" -v min_start="$min_start" '
+    run_privileged awk -F: -v block_size="$block_size" -v min_start="$min_start" '
       BEGIN { max = min_start - 1 }
       NF >= 3 {
         start = $2 + 0
@@ -149,21 +152,21 @@ ensure_subid_entry() {
         }
       }
       END {
-        next = max + 1
-        if (next < min_start) {
-          next = min_start
+        candidate_start = max + 1
+        if (candidate_start < min_start) {
+          candidate_start = min_start
         }
-        rem = next % block_size
+        rem = candidate_start % block_size
         if (rem != 0) {
-          next += block_size - rem
+          candidate_start += block_size - rem
         }
-        print next
+        print candidate_start
       }
     ' "$file_path"
   )"
 
   log "Adding ${user_name} entry to ${file_path}"
-  printf '%s\n' "${user_name}:${start}:${block_size}" | sudo tee -a "$file_path" >/dev/null
+  printf '%s\n' "${user_name}:${start}:${block_size}" | run_privileged tee -a "$file_path" >/dev/null
 }
 
 ensure_bwrap_setuid() {
@@ -179,9 +182,8 @@ ensure_bwrap_setuid() {
     return 0
   fi
 
-  require_sudo
   log "Enabling setuid on ${bwrap_path}"
-  sudo chmod u+s "$bwrap_path"
+  run_privileged chmod u+s "$bwrap_path"
 }
 
 ensure_linux_sandbox() {
