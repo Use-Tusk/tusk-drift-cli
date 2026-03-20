@@ -36,13 +36,17 @@ const (
 
 // syncBuffer is a thread-safe buffer for capturing service stdout/stderr concurrently.
 type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	discard bool
 }
 
 func (s *syncBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.discard {
+		return len(p), nil
+	}
 	return s.buf.Write(p)
 }
 
@@ -50,6 +54,14 @@ func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.buf.String()
+}
+
+// Discard makes future writes no-ops and frees the buffer memory.
+func (s *syncBuffer) Discard() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.discard = true
+	s.buf.Reset()
 }
 
 type Executor struct {
@@ -558,16 +570,17 @@ func (e *Executor) GetStartupLogs() string {
 	return ""
 }
 
-// DiscardStartupBuffer detaches the in-memory startup log buffer from the service process
-// and discards it. This is called after the service starts successfully to avoid unbounded
-// memory growth during the test run. Has no effect when --enable-service-logs is set
-// (file-based logging persists for the full run).
+// DiscardStartupBuffer makes the in-memory startup log buffer discard future writes
+// and frees its memory. This is called after the service starts successfully to avoid
+// unbounded memory growth during the test run. Has no effect when --enable-service-logs
+// is set (file-based logging persists for the full run).
+//
+// Note: we can't swap cmd.Stdout after Start() because Go's exec package captures the
+// writer by reference in an internal goroutine at Start() time. Instead, we set a flag
+// on the buffer itself to make Write a no-op.
 func (e *Executor) DiscardStartupBuffer() {
 	if !e.enableServiceLogs && e.startupLogBuffer != nil {
-		if e.serviceCmd != nil {
-			e.serviceCmd.Stdout = io.Discard
-			e.serviceCmd.Stderr = io.Discard
-		}
+		e.startupLogBuffer.Discard()
 		e.startupLogBuffer = nil
 	}
 }
