@@ -14,6 +14,9 @@
 
 </div>
 
+> [!IMPORTANT]
+> Previously used `tusk-drift-cli`? This repo has moved to `tusk-cli`, and older installed CLI versions may not auto-update across the rename. Please reinstall using the current install instructions below.
+
 The Tusk CLI provides tools for automated testing workflows. It supports two products:
 
 - **[Tusk Drift](docs/drift/)** - Live traffic record/replay as API tests

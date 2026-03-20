@@ -27,11 +27,6 @@ const (
 	homebrewUpgradeCmd = "brew upgrade use-tusk/tap/tusk"
 )
 
-var (
-	runtimeGOOS   = runtime.GOOS
-	runtimeGOARCH = runtime.GOARCH
-)
-
 // LatestRelease represents the response from the version check endpoint.
 type LatestRelease struct {
 	Version     string `json:"version"`
@@ -253,11 +248,15 @@ func isHomebrewPath(execPath string) bool {
 
 // getDownloadURL builds the download URL for the current platform.
 func getDownloadURL(version string) string {
+	return getDownloadURLForPlatform(version, runtime.GOOS, runtime.GOARCH)
+}
+
+func getDownloadURLForPlatform(version, goos, goarch string) string {
 	// Strip 'v' prefix for the filename (goreleaser uses version without 'v' in filename)
 	ver := strings.TrimPrefix(version, "v")
 
 	// Map Go OS names to goreleaser names
-	osName := runtimeGOOS
+	osName := goos
 	switch osName {
 	case "darwin":
 		osName = "Darwin"
@@ -268,14 +267,14 @@ func getDownloadURL(version string) string {
 	}
 
 	// Map Go arch names to goreleaser names
-	arch := runtimeGOARCH
+	arch := goarch
 	if arch == "amd64" {
 		arch = "x86_64"
 	}
 
 	// Extension based on OS
 	ext := "tar.gz"
-	if runtimeGOOS == "windows" {
+	if goos == "windows" {
 		ext = "zip"
 	}
 
