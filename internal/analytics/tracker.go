@@ -3,7 +3,7 @@ package analytics
 import (
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

@@ -15,11 +15,11 @@ import (
 
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/runner"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/components"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 // spanTreeNode represents a span in the tree hierarchy

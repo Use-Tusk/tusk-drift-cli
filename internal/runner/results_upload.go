@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/components"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/components"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"

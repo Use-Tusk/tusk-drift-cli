@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 	"gopkg.in/yaml.v3"
 	"mvdan.cc/sh/v3/syntax"
 )

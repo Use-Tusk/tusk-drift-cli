@@ -3,7 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 )
 
 var versionCmd = &cobra.Command{

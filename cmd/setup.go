@@ -7,12 +7,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/agent"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/agent"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

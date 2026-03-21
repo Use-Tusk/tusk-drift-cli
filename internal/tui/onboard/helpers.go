@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
 )
 
 func getSupportMessage() string {

@@ -20,9 +20,9 @@ import (
 
 	"github.com/google/uuid"
 
-	agenttools "github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	agenttools "github.com/Use-Tusk/tusk-cli/internal/agent/tools"
+	"github.com/Use-Tusk/tusk-cli/internal/analytics"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 )
 
 const (

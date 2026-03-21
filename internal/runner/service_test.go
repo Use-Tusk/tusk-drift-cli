@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

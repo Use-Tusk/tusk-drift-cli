@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	tea "github.com/charmbracelet/bubbletea"
 )

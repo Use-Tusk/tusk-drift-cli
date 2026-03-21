@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/Use-Tusk/tusk-drift-cli/cmd"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
+	"github.com/Use-Tusk/tusk-cli/cmd"
+	"github.com/Use-Tusk/tusk-cli/internal/analytics"
 )
 
 func main() {

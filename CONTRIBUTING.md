@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve the Tusk Drift CLI!
+Thanks for helping improve the Tusk CLI!
 
 If you have any questions, feel free to open an issue or email [support@usetusk.ai](support@usetusk.ai).
 
@@ -179,9 +179,9 @@ BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 GIT_COMMIT=$(git rev-parse HEAD)
 
 go build \
-  -ldflags "-X github.com/Use-Tusk/tusk-drift-cli/internal/version.Version=${VERSION} \
-            -X github.com/Use-Tusk/tusk-drift-cli/internal/version.BuildTime=${BUILD_TIME} \
-            -X github.com/Use-Tusk/tusk-drift-cli/internal/version.GitCommit=${GIT_COMMIT}" \
+  -ldflags "-X github.com/Use-Tusk/tusk-cli/internal/version.Version=${VERSION} \
+            -X github.com/Use-Tusk/tusk-cli/internal/version.BuildTime=${BUILD_TIME} \
+            -X github.com/Use-Tusk/tusk-cli/internal/version.GitCommit=${GIT_COMMIT}" \
   -o tusk
 ```
 

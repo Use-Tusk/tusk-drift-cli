@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 )
 
 // ReplayTestsByEnvironment orchestrates environment-based test replay

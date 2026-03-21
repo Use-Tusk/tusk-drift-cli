@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/onboard"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/onboard"
 	"github.com/spf13/cobra"
 )
 

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"

@@ -1,4 +1,4 @@
-module github.com/Use-Tusk/tusk-drift-cli
+module github.com/Use-Tusk/tusk-cli
 
 go 1.25.0
 

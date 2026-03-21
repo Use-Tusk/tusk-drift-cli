@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Claude Code Web Environment Setup for tusk-drift-cli
+# Claude Code Web Environment Setup for tusk-cli
 # This script runs on SessionStart in remote environments
 
 # Only run in remote (web) environments
@@ -10,7 +10,7 @@ if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
   exit 0
 fi
 
-echo "=== Setting up tusk-drift-cli development environment ==="
+echo "=== Setting up tusk-cli development environment ==="
 echo "Started at: $(date)"
 
 echo ""

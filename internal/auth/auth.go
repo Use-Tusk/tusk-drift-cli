@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 type Token struct {

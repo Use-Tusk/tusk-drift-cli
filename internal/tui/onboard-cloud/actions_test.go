@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -3,7 +3,7 @@ package log
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
 )
 
 // DeviationStyle is orange for deviation messages

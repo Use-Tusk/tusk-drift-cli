@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

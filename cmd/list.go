@@ -10,11 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/runner"
+	"github.com/Use-Tusk/tusk-cli/internal/tui"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 //go:embed short_docs/list.md

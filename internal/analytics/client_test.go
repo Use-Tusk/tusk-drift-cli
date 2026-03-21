@@ -3,7 +3,7 @@ package analytics
 import (
 	"testing"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
 )
 
 func TestBackfillJWTIdentity_ShortCircuitsWhenUserIDSet(t *testing.T) {

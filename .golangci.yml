@@ -7,11 +7,11 @@ linters-settings:
     sections:
       - standard
       - default
-      - prefix(github.com/Use-Tusk/tusk-drift-cli)
+      - prefix(github.com/Use-Tusk/tusk-cli)
   gofmt:
     simplify: true
   goimports:
-    local-prefixes: github.com/Use-Tusk/tusk-drift-cli
+    local-prefixes: github.com/Use-Tusk/tusk-cli
   gocritic:
     disabled-checks:
       - singleCaseSwitch

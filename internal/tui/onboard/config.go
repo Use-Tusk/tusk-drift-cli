@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
 	"gopkg.in/yaml.v3"
 )
 

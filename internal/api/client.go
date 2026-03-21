@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"google.golang.org/protobuf/proto"
 )

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	"github.com/spf13/cobra"
 )

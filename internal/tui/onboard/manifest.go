@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/sdk"
+	"github.com/Use-Tusk/tusk-cli/internal/sdk"
 )
 
 // Manifest represents the SDK instrumentation manifest structure

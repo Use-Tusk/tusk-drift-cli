@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/runner"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

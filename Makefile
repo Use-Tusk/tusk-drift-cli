@@ -21,7 +21,7 @@ build-ci:
 	$(eval VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev"))
 	$(eval BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ'))
 	$(eval GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown"))
-	$(GOBUILD) -ldflags "-X github.com/Use-Tusk/tusk-drift-cli/internal/version.Version=$(VERSION) -X github.com/Use-Tusk/tusk-drift-cli/internal/version.BuildTime=$(BUILD_TIME) -X github.com/Use-Tusk/tusk-drift-cli/internal/version.GitCommit=$(GIT_COMMIT)" -o $(BINARY_NAME) -v .
+	$(GOBUILD) -ldflags "-X github.com/Use-Tusk/tusk-cli/internal/version.Version=$(VERSION) -X github.com/Use-Tusk/tusk-cli/internal/version.BuildTime=$(BUILD_TIME) -X github.com/Use-Tusk/tusk-cli/internal/version.GitCommit=$(GIT_COMMIT)" -o $(BINARY_NAME) -v .
 
 test: 
 	@echo "🧪 Running tests..."

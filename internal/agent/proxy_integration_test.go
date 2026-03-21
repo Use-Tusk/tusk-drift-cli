@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 )
 
 // TestSystemPromptAcceptedByBackend verifies that the current system prompt

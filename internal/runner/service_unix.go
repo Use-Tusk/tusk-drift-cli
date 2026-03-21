@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 )
 
 // createServiceCommand creates a shell command for Unix systems
