@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# Tusk Drift CLI Installer (Linux/macOS only)
+# Tusk CLI Installer (Linux/macOS only)
 # For Windows, see: https://github.com/Use-Tusk/tusk-cli#install
 # Usage (latest):
 #   curl -fsSL https://cli.usetusk.ai/install.sh | sh
@@ -97,7 +97,7 @@ chmod +x "$INSTALL_DIR/$BINARY_NAME"
 cd - > /dev/null
 rm -rf "$TMP_DIR"
 
-echo "Tusk Drift CLI $VERSION_TAG installed successfully!"
+echo "Tusk CLI $VERSION_TAG installed successfully!"
 echo ""
 echo "Run 'tusk --help' to get started."
 
