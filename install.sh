@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# Tusk CLI Installer (Linux/macOS only)
+# Tusk Drift CLI Installer (Linux/macOS only)
 # For Windows, see: https://github.com/Use-Tusk/tusk-cli#install
 # Usage (latest):
 #   curl -fsSL https://cli.usetusk.ai/install.sh | sh
@@ -11,6 +11,7 @@ set -e
 #   curl -fsSL https://cli.usetusk.ai/install.sh | TUSK_VERSION=0.10.0 sh
 
 REPO="Use-Tusk/tusk-cli"
+ARTIFACT_PREFIX="tusk-cli"
 BINARY_NAME="tusk"
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -47,7 +48,6 @@ if [ -n "$REQUESTED_VERSION" ]; then
     *)  VERSION_TAG="v$REQUESTED_VERSION" ;;
   esac
 else
-  # Try manifest first (fast, no rate limits)
   VERSION_TAG=$(curl -sL "https://cli.usetusk.ai/latest.txt" 2>/dev/null || echo "")
   
   # Fallback to GitHub API if manifest fails
@@ -69,7 +69,7 @@ case "$OS" in
   *)      OS_TITLE="$OS" ;;
 esac
 
-DOWNLOAD_URL="https://github.com/$REPO/releases/download/${VERSION_TAG}/tusk-cli_${VERSION_NUMBER}_${OS_TITLE}_${ARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/${VERSION_TAG}/${ARTIFACT_PREFIX}_${VERSION_NUMBER}_${OS_TITLE}_${ARCH}.tar.gz"
 
 TMP_DIR=$(mktemp -d)
 cd "$TMP_DIR"
