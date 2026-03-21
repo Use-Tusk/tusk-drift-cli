@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	latestVersionURL   = "https://use-tusk.github.io/tusk-drift-cli/latest.json"
-	releaseURLFormat   = "https://github.com/Use-Tusk/tusk-drift-cli/releases/download/%s/tusk-drift-cli_%s_%s_%s.%s"
+	latestVersionURL   = "https://cli.usetusk.ai/latest.json"
+	releaseURLFormat   = "https://github.com/Use-Tusk/tusk-cli/releases/download/%s/tusk-cli_%s_%s_%s.%s"
 	homebrewUpgradeCmd = "brew upgrade use-tusk/tap/tusk"
 )
 
@@ -248,11 +248,15 @@ func isHomebrewPath(execPath string) bool {
 
 // getDownloadURL builds the download URL for the current platform.
 func getDownloadURL(version string) string {
+	return getDownloadURLForPlatform(version, runtime.GOOS, runtime.GOARCH)
+}
+
+func getDownloadURLForPlatform(version, goos, goarch string) string {
 	// Strip 'v' prefix for the filename (goreleaser uses version without 'v' in filename)
 	ver := strings.TrimPrefix(version, "v")
 
 	// Map Go OS names to goreleaser names
-	osName := runtime.GOOS
+	osName := goos
 	switch osName {
 	case "darwin":
 		osName = "Darwin"
@@ -263,14 +267,14 @@ func getDownloadURL(version string) string {
 	}
 
 	// Map Go arch names to goreleaser names
-	arch := runtime.GOARCH
+	arch := goarch
 	if arch == "amd64" {
 		arch = "x86_64"
 	}
 
 	// Extension based on OS
 	ext := "tar.gz"
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		ext = "zip"
 	}
 

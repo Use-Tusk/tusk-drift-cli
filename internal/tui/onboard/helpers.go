@@ -13,7 +13,7 @@ func getSupportMessage() string {
 		"Help us prioritize and bring Tusk Drift to your service!\n" +
 		"Fill up this form to request support: " + styles.LinkStyle.Render("https://tally.so/r/w456Xo") + "\n\n" +
 		"You may also:\n" +
-		"  • create an issue at " + styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-drift-cli/issues") + "\n" +
+		"  • create an issue at " + styles.LinkStyle.Render("https://github.com/Use-Tusk/tusk-cli/issues") + "\n" +
 		"  • contact " + styles.LinkStyle.Render("support@usetusk.ai")
 }
 

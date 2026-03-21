@@ -146,7 +146,7 @@ Once the tag is pushed, GitHub Actions will automatically:
 - Generate checksums
 - Create a GitHub release with changelog
 - Upload all artifacts
-- Update the latest version manifest on [GitHub Pages](https://use-tusk.github.io/tusk-drift-cli/).
+- Update the latest version manifest on [cli.usetusk.ai](https://cli.usetusk.ai/latest.json).
 
 #### Supported platforms
 
