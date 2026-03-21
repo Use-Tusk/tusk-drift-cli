@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# Tusk Drift CLI Installer (Linux/macOS only)
-# For Windows, see: https://github.com/Use-Tusk/tusk-drift-cli#install
+# Tusk CLI Installer (Linux/macOS only)
+# For Windows, see: https://github.com/Use-Tusk/tusk-cli#install
 # Usage (latest):
 #   curl -fsSL https://cli.usetusk.ai/install.sh | sh
 # Usage (specific version):
@@ -10,7 +10,7 @@ set -e
 # Or via env var:
 #   curl -fsSL https://cli.usetusk.ai/install.sh | TUSK_VERSION=0.10.0 sh
 
-REPO="Use-Tusk/tusk-drift-cli"
+REPO="Use-Tusk/tusk-cli"
 BINARY_NAME="tusk"
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -21,7 +21,7 @@ case "$OS" in
   darwin*) OS="darwin" ;;
   mingw*|msys*|cygwin*)
     echo "Error: This script is for Linux/macOS only."
-    echo "For Windows installation, see: https://github.com/Use-Tusk/tusk-drift-cli#install"
+    echo "For Windows installation, see: https://github.com/Use-Tusk/tusk-cli#install"
     exit 1
     ;;
   *)
@@ -69,7 +69,7 @@ case "$OS" in
   *)      OS_TITLE="$OS" ;;
 esac
 
-DOWNLOAD_URL="https://github.com/$REPO/releases/download/${VERSION_TAG}/tusk-drift-cli_${VERSION_NUMBER}_${OS_TITLE}_${ARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/${VERSION_TAG}/tusk-cli_${VERSION_NUMBER}_${OS_TITLE}_${ARCH}.tar.gz"
 
 TMP_DIR=$(mktemp -d)
 cd "$TMP_DIR"
