@@ -29,7 +29,7 @@ Follow the same process as the simple test:
 4. Wait 3 seconds for trace to be written
 5. Stop the service
 6. Run tusk_list to verify trace was recorded
-7. Run tusk_run to replay (try with `debug: true` on failure; if startup fails in sandbox, retry with `sandbox_mode: "off"`)
+7. Run tusk_run to replay (startup logs are always shown on startup failure; if a test replay fails, retry with `debug: true` for runtime logs; if startup fails in sandbox, retry with `sandbox_mode: "off"` and if that works, add a comment in config.yaml explaining why)
 
 ### Step 3: Save to Cache
 

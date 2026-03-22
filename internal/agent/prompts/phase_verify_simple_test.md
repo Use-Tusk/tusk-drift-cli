@@ -32,8 +32,10 @@ If no traces appear, this is a verification failure.
 Run tusk_run to replay the trace.
 If it fails:
 
-- Run with `debug: true` once more
-- If startup fails in sandbox, retry with `sandbox_mode: "off"`
+- Check the service startup logs for errors (always shown on startup failure)
+- If the service starts but a test replay fails, retry with `debug: true` to see runtime logs
+- If you need more detail from the SDK, set `logLevel: "debug"` in the SDK initialization
+- If startup fails in sandbox, retry with `sandbox_mode: "off"` and if that works, add a comment in config.yaml explaining why sandbox was disabled
 - If still failing, mark as failed
 
 ### Step 5: Save to Cache

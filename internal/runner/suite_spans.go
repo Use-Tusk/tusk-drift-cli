@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
@@ -134,17 +135,19 @@ func PrepareAndSetSuiteSpans(
 	opts SuiteSpanOptions,
 	currentTests []Test,
 ) error {
+	buildStart := time.Now()
 	result, err := BuildSuiteSpansForRun(ctx, opts, currentTests)
 	if err != nil {
 		return err
 	}
+	buildDuration := time.Since(buildStart).Seconds()
 	if opts.Interactive {
 		log.ServiceLog(fmt.Sprintf(
 			"Loading %d suite spans for matching (%d unique traces, %d pre-app-start)",
 			len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount,
 		))
 	} else if !opts.Quiet {
-		log.UserProgress(fmt.Sprintf("  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start)", len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount))
+		log.UserProgress(fmt.Sprintf("  ↳ Loaded %d suite spans (%d unique traces, %d pre-app-start) (%.1fs)", len(result.SuiteSpans), result.UniqueTraceCount, result.PreAppStartCount, buildDuration))
 	}
 	log.Debug("Prepared suite spans for matching",
 		"count", len(result.SuiteSpans),

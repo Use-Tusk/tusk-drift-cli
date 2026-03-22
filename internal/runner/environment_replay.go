@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
 	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
@@ -24,6 +26,8 @@ func ReplayTestsByEnvironment(
 	allResults := make([]TestResult, 0)
 
 	for i, group := range groups {
+		envStart := time.Now()
+
 		log.Debug("Starting replay for environment group",
 			"environment", group.Name,
 			"test_count", len(group.Tests),
@@ -40,10 +44,23 @@ func ReplayTestsByEnvironment(
 		}
 
 		// 2. Start environment (server + service)
+		envStartTime := time.Now()
 		if err := executor.StartEnvironment(); err != nil {
+			// Dump startup logs before returning so the caller's help message makes sense
+			startupLogs := executor.GetStartupLogs()
+			if startupLogs != "" {
+				log.ServiceLog("📋 Service startup logs:")
+				for _, line := range strings.Split(strings.TrimRight(startupLogs, "\n"), "\n") {
+					log.ServiceLog(line)
+				}
+			}
 			cleanup() // Restore env vars before returning
 			return allResults, fmt.Errorf("failed to start environment for %s: %w", group.Name, err)
 		}
+
+		envStartDuration := time.Since(envStartTime).Seconds()
+		log.ServiceLog(fmt.Sprintf("✓ Environment ready (%.1fs)", envStartDuration))
+		log.Stderrln(fmt.Sprintf("✓ Environment ready (%.1fs)", envStartDuration))
 
 		// 3. Run tests for this environment
 		results, err := executor.RunTests(group.Tests)
@@ -68,9 +85,11 @@ func ReplayTestsByEnvironment(
 		// 6. Restore environment variables
 		cleanup()
 
+		envDuration := time.Since(envStart).Seconds()
 		log.Debug("Completed replay for environment group",
 			"environment", group.Name,
-			"results_count", len(results))
+			"results_count", len(results),
+			"duration_seconds", envDuration)
 	}
 
 	log.Debug("Completed all environment group replays",

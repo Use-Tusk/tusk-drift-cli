@@ -1085,11 +1085,7 @@ func (ms *Server) handleInstrumentationVersionMismatchAlert(alert *core.Instrume
 }
 
 func (ms *Server) handleUnpatchedDependencyAlert(alert *core.UnpatchedDependencyAlert) {
-	log.Info("Unpatched dependency alert",
-		"traceTestServerSpanId", alert.TraceTestServerSpanId,
-		"stackTrace", alert.StackTrace,
-		"sdkVersion", alert.SdkVersion,
-	)
+	log.TestDebug(alert.TraceTestServerSpanId, fmt.Sprintf("Unpatched dependency alert (sdk %s)\n%s", alert.SdkVersion, alert.StackTrace))
 
 	// Send to PostHog
 	if client := ms.GetAnalyticsClient(); client != nil {

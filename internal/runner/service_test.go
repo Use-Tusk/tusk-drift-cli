@@ -820,10 +820,10 @@ func TestSetupServiceLogging(t *testing.T) {
 		expectError       bool
 	}{
 		{
-			name:              "logging_disabled",
+			name:              "logging_disabled_creates_buffer",
 			enableServiceLogs: false,
 			setupFunc:         noopCleanup,
-			expectError:       true,
+			expectError:       false,
 		},
 		{
 			name:              "logging_enabled_creates_file",
@@ -878,10 +878,11 @@ func TestSetupServiceLogging(t *testing.T) {
 
 			err := e.setupServiceLogging()
 
-			if tt.expectError {
+			switch {
+			case tt.expectError:
 				assert.Error(t, err)
 				assert.Nil(t, e.serviceLogFile)
-			} else {
+			case tt.enableServiceLogs:
 				assert.NoError(t, err)
 				assert.NotNil(t, e.serviceLogFile)
 
@@ -892,6 +893,11 @@ func TestSetupServiceLogging(t *testing.T) {
 
 				_ = e.serviceLogFile.Close()
 				_ = os.Remove(e.serviceLogFile.Name())
+			default:
+				// Logging disabled: no error, no file, but buffer is created
+				assert.NoError(t, err)
+				assert.Nil(t, e.serviceLogFile)
+				assert.NotNil(t, e.startupLogBuffer)
 			}
 		})
 	}
