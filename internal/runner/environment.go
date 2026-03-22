@@ -24,18 +24,18 @@ func (e *Executor) StartEnvironment() error {
 	if err := e.StartService(); err != nil {
 		if e.GetEffectiveSandboxMode() == SandboxModeAuto && e.lastServiceSandboxed {
 			log.ServiceLog("⚠️  Service failed to start in sandbox; retrying once without sandbox...")
-
-			// Preserve log file/buffer across the retry so startup logs accumulate
-			savedLogFile := e.serviceLogFile
-			e.serviceLogFile = nil // prevent StopService → cleanupLogFiles from closing it
 			_ = e.StopService()
-			e.serviceLogFile = savedLogFile
 
-			// Write separator so the user can see where the retry begins
-			if e.enableServiceLogs && savedLogFile != nil {
-				_, _ = savedLogFile.WriteString("⚠️  Retrying without sandbox...\n")
+			// Write separator so the user can see where the retry begins.
+			// The in-memory buffer survives StopService; the file path persists
+			// via serviceLogPath and setupServiceLogging will reopen in append mode.
+			if e.enableServiceLogs && e.serviceLogPath != "" {
+				if f, err := os.OpenFile(e.serviceLogPath, os.O_APPEND|os.O_WRONLY, 0o600); err == nil { // #nosec G304
+					_, _ = f.WriteString("⚠️ Retrying without sandbox...\n")
+					_ = f.Close()
+				}
 			} else if e.startupLogBuffer != nil {
-				_, _ = e.startupLogBuffer.Write([]byte("⚠️  Retrying without sandbox...\n"))
+				_, _ = e.startupLogBuffer.Write([]byte("⚠️ Retrying without sandbox...\n"))
 			}
 
 			e.sandboxBypass = true

@@ -176,8 +176,9 @@ func (e *Executor) StartService() error {
 	// this goroutine still sends to the original one (not the new one).
 	e.processExitCh = make(chan error, 1)
 	exitCh := e.processExitCh
+	cmd := e.serviceCmd
 	go func() {
-		exitCh <- e.serviceCmd.Wait()
+		exitCh <- cmd.Wait()
 	}()
 
 	if err := e.waitForReadiness(cfg); err != nil {
@@ -474,26 +475,36 @@ func (e *Executor) SetEnableServiceLogs(enable bool) {
 // Otherwise, an in-memory buffer captures startup output (shown on failure, discarded on success).
 func (e *Executor) setupServiceLogging() error {
 	if e.enableServiceLogs {
-		// Allow tests to override the logs directory
-		logsDir := utils.GetLogsDir()
-		if testLogsDir := os.Getenv("TUSK_TEST_LOGS_DIR"); testLogsDir != "" {
-			logsDir = testLogsDir
+		// Reuse existing log file across sandbox retries (same as the buffer path guard below).
+		// The file was closed by StopService → cleanupLogFiles, but we can reopen it for append.
+		if e.serviceLogPath != "" {
+			logFile, err := os.OpenFile(e.serviceLogPath, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304
+			if err != nil {
+				return fmt.Errorf("failed to reopen service log file: %w", err)
+			}
+			e.serviceLogFile = logFile
+		} else {
+			// Allow tests to override the logs directory
+			logsDir := utils.GetLogsDir()
+			if testLogsDir := os.Getenv("TUSK_TEST_LOGS_DIR"); testLogsDir != "" {
+				logsDir = testLogsDir
+			}
+
+			if err := os.MkdirAll(logsDir, 0o750); err != nil {
+				return fmt.Errorf("failed to create logs directory: %w", err)
+			}
+
+			timestamp := time.Now().Format("20060102-150405")
+			logPath := filepath.Join(logsDir, fmt.Sprintf("tusk-replay-%s.log", timestamp))
+			logFile, err := os.Create(logPath) // #nosec G304
+			if err != nil {
+				return fmt.Errorf("failed to create service log file: %w", err)
+			}
+
+			e.serviceLogFile = logFile
+			e.serviceLogPath = logPath
+			log.ServiceLog(fmt.Sprintf("Service logs will be written to: %s", logPath))
 		}
-
-		if err := os.MkdirAll(logsDir, 0o750); err != nil {
-			return fmt.Errorf("failed to create logs directory: %w", err)
-		}
-
-		timestamp := time.Now().Format("20060102-150405")
-
-		logPath := filepath.Join(logsDir, fmt.Sprintf("tusk-replay-%s.log", timestamp))
-		logFile, err := os.Create(logPath) // #nosec G304
-		if err != nil {
-			return fmt.Errorf("failed to create service log file: %w", err)
-		}
-
-		e.serviceLogFile = logFile
-		log.ServiceLog(fmt.Sprintf("Service logs will be written to: %s", logPath))
 	} else if e.startupLogBuffer == nil {
 		// Only create a new buffer if one doesn't already exist.
 		// During sandbox retry, the existing buffer preserves the first attempt's logs.

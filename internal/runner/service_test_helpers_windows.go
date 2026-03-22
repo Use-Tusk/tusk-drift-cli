@@ -4,15 +4,20 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
+	"strconv"
 	"syscall"
 )
 
 // createTestCommand creates a test command that can be gracefully killed
 func createTestCommand(ctx context.Context, duration string) *exec.Cmd {
-	// Windows: use ping for delay (timeout command fails in non-interactive CI)
-	// ping -n <duration+1> gives roughly <duration> seconds of delay
-	cmd := exec.CommandContext(ctx, "cmd.exe", "/c", "ping -n "+duration+" 127.0.0.1 >nul")
+	// Windows: use ping for delay (timeout command fails in non-interactive CI).
+	// ping -n N sends N pings with ~1s between them, so total delay ≈ N-1 seconds.
+	// Add 1 to match the requested duration.
+	n, _ := strconv.Atoi(duration)
+	pingCount := fmt.Sprintf("%d", n+1)
+	cmd := exec.CommandContext(ctx, "cmd.exe", "/c", "ping -n "+pingCount+" 127.0.0.1 >nul")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
 	}

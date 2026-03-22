@@ -71,6 +71,7 @@ type Executor struct {
 	serviceCmd              *exec.Cmd
 	server                  *Server
 	serviceLogFile          *os.File
+	serviceLogPath          string      // persists across StopService so GetStartupLogs can read it back
 	startupLogBuffer        *syncBuffer // in-memory buffer when --enable-service-logs is off
 	processExitCh           chan error  // signals early process exit
 	enableServiceLogs       bool
@@ -557,8 +558,8 @@ func countPassedTests(results []TestResult) int {
 // When --enable-service-logs is set, it reads back from the log file.
 // Otherwise, it returns the contents of the in-memory startup buffer.
 func (e *Executor) GetStartupLogs() string {
-	if e.enableServiceLogs && e.serviceLogFile != nil {
-		data, err := os.ReadFile(e.serviceLogFile.Name())
+	if e.enableServiceLogs && e.serviceLogPath != "" {
+		data, err := os.ReadFile(e.serviceLogPath)
 		if err != nil {
 			return ""
 		}
@@ -587,8 +588,8 @@ func (e *Executor) DiscardStartupBuffer() {
 
 // GetStartupFailureHelpMessage returns a user-friendly help message when the service fails to start.
 func (e *Executor) GetStartupFailureHelpMessage() string {
-	if e.enableServiceLogs && e.serviceLogFile != nil {
-		return fmt.Sprintf("\n📄 Service logs are available at: %s\n", e.serviceLogFile.Name())
+	if e.enableServiceLogs && e.serviceLogPath != "" {
+		return fmt.Sprintf("\n📄 Service logs are available at: %s\n", e.serviceLogPath)
 	}
 	return ""
 }

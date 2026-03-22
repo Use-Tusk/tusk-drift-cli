@@ -1030,9 +1030,10 @@ func (m *testExecutorModel) startNextEnvironmentGroup() tea.Cmd {
 
 			m.addServiceLog(fmt.Sprintf("❌ Failed to start environment for %s: %v", group.Name, err))
 
-			helpMsg := m.executor.GetStartupFailureHelpMessage()
-			for _, line := range strings.Split(strings.TrimSpace(helpMsg), "\n") {
-				m.addServiceLog(line)
+			if helpMsg := m.executor.GetStartupFailureHelpMessage(); helpMsg != "" {
+				for _, line := range strings.Split(strings.TrimSpace(helpMsg), "\n") {
+					m.addServiceLog(line)
+				}
 			}
 
 			return executionFailedMsg{reason: fmt.Sprintf("Failed to start environment: %v", err)}
