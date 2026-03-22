@@ -748,7 +748,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if startupLogs != "" {
 				log.Stderrln("\n📋 Service startup logs:")
 				for _, line := range strings.Split(strings.TrimRight(startupLogs, "\n"), "\n") {
-					log.Stderrln("  " + line)
+					log.Stderrln(line)
 				}
 				log.Stderrln("")
 			}
@@ -799,7 +799,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if startupLogs != "" {
 				log.Stderrln("\n📋 Service startup logs:")
 				for _, line := range strings.Split(strings.TrimRight(startupLogs, "\n"), "\n") {
-					log.Stderrln("  " + line)
+					log.Stderrln(line)
 				}
 				log.Stderrln("")
 			}

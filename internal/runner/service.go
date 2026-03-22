@@ -171,10 +171,13 @@ func (e *Executor) StartService() error {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
 
-	// Monitor process for early exit so waitForReadiness can fail fast
+	// Monitor process for early exit so waitForReadiness can fail fast.
+	// Capture the channel locally so that if a sandbox retry creates a new channel,
+	// this goroutine still sends to the original one (not the new one).
 	e.processExitCh = make(chan error, 1)
+	exitCh := e.processExitCh
 	go func() {
-		e.processExitCh <- e.serviceCmd.Wait()
+		exitCh <- e.serviceCmd.Wait()
 	}()
 
 	if err := e.waitForReadiness(cfg); err != nil {
