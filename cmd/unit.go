@@ -2,18 +2,23 @@ package cmd
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 	"github.com/spf13/cobra"
 )
+
+//go:embed short_docs/unit/overview.md
+var unitOverviewContent string
 
 var unitCmd = &cobra.Command{
 	Use:          "unit",
 	Short:        "Commands for Tusk unit test workflows",
-	Long:         "Retrieve Tusk unit test generation runs and scenarios for local review and agent workflows.",
+	Long:         utils.RenderMarkdown(unitOverviewContent),
 	SilenceUsage: true,
 }
 

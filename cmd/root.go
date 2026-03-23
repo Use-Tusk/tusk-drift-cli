@@ -30,12 +30,12 @@ var (
 )
 
 //go:embed short_docs/overview.md
-var overviewContent string
+var tuskOverviewContent string
 
 var rootCmd = &cobra.Command{
 	Use:   "tusk",
 	Short: "Tusk CLI - Unit test automation and API test record/replay system",
-	Long:  utils.RenderMarkdown(overviewContent),
+	Long:  utils.RenderMarkdown(tuskOverviewContent),
 	Run: func(cmd *cobra.Command, args []string) {
 		showASCIIArt()
 	},
