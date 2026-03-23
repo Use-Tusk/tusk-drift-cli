@@ -18,9 +18,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/Use-Tusk/tusk-drift-cli/internal/version.Version={{.Version}}
-      - -X github.com/Use-Tusk/tusk-drift-cli/internal/version.BuildTime={{.Date}}
-      - -X github.com/Use-Tusk/tusk-drift-cli/internal/version.GitCommit={{.Commit}}
+      - -X github.com/Use-Tusk/tusk-cli/internal/version.Version={{.Version}}
+      - -X github.com/Use-Tusk/tusk-cli/internal/version.BuildTime={{.Date}}
+      - -X github.com/Use-Tusk/tusk-cli/internal/version.GitCommit={{.Commit}}
     binary: tusk
 
 archives:

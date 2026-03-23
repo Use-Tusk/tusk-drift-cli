@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/runner"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 // Note: We currently use the internal `runner` package instead of direct Tusk CLI commands `tusk drift list` and `tusk drift run`.

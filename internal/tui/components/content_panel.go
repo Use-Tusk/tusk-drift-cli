@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/ansi"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 // isSoftLineBreak checks if line starts with soft line break marker

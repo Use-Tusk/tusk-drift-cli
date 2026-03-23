@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 func listGitRemotes() (map[string]string, error) {

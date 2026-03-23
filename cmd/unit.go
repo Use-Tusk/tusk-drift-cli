@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 

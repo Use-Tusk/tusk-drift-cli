@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
+	"github.com/Use-Tusk/tusk-cli/internal/agent/tools"
 )
 
 // ToolName is a type-safe identifier for tools

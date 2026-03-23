@@ -3,7 +3,7 @@ package components
 import (
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
 )
 
 // RenderScrollbar renders a vertical scrollbar given the visible height,

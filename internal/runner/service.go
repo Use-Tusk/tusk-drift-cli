@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/Use-Tusk/fence/pkg/fence"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 func (e *Executor) StartService() error {

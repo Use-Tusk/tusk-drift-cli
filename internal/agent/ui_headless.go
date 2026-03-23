@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 	"github.com/charmbracelet/lipgloss"
 )
 

@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

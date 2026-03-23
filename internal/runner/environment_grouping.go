@@ -3,7 +3,7 @@ package runner
 import (
 	"fmt"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )

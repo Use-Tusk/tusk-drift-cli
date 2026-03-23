@@ -18,12 +18,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/analytics"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 
 	"google.golang.org/protobuf/proto"

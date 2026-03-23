@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
 )
 
 // formatApiError converts raw API errors into user-friendly messages with

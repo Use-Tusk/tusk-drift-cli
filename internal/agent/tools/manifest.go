@@ -1,6 +1,6 @@
 package tools
 
-import "github.com/Use-Tusk/tusk-drift-cli/internal/sdk"
+import "github.com/Use-Tusk/tusk-cli/internal/sdk"
 
 // Re-export SDK manifest constants and functions from the shared sdk package
 // for backward compatibility with existing code.

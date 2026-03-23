@@ -14,13 +14,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/api"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/runner"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/api"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/runner"
+	"github.com/Use-Tusk/tusk-cli/internal/tui"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 )

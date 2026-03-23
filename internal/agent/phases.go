@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/agent/tools"
+	"github.com/Use-Tusk/tusk-cli/internal/agent/tools"
 )
 
 // Phase represents a distinct phase in the agent's workflow

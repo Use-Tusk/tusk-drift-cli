@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	onboardcloud "github.com/Use-Tusk/tusk-drift-cli/internal/tui/onboard-cloud"
+	onboardcloud "github.com/Use-Tusk/tusk-cli/internal/tui/onboard-cloud"
 	"github.com/spf13/cobra"
 )
 

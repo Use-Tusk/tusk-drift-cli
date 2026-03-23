@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

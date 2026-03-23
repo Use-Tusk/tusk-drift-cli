@@ -9,12 +9,12 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/analytics"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/tui/styles"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/utils"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/analytics"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/tui/styles"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 	"github.com/spf13/cobra"
 )
 

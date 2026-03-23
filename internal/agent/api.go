@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 )
 
 // APIMode represents how the client connects to the LLM

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 )
 
 const (

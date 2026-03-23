@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/auth"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/cliconfig"
-	"github.com/Use-Tusk/tusk-drift-cli/internal/config"
+	"github.com/Use-Tusk/tusk-cli/internal/auth"
+	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
+	"github.com/Use-Tusk/tusk-cli/internal/config"
 )
 
 func SetupCloud(ctx context.Context, requireServiceID bool) (*TuskClient, AuthOptions, *config.Config, error) {

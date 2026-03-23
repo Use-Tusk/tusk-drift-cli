@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Use-Tusk/tusk-drift-cli/internal/version"
+	"github.com/Use-Tusk/tusk-cli/internal/version"
 )
 
 // CloseStatus represents the final status when closing the logger
