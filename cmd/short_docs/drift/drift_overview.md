@@ -14,7 +14,7 @@ Further reading: <https://opentelemetry.io/docs/concepts/signals/traces/>
 ## Setup
 
 Setup involves creating a `.tusk/config.yaml` file in the directory of the service you wish to test.
-This lets Tusk know how to start your service and wait for it to ready during replay mode.
+This lets Tusk know how to start your service and wait for it to be ready during replay mode.
 
 You can run `tusk drift setup` to start an AI agent to automatically set up your service for Tusk Drift or `tusk drift init` to start a configuration wizard.
 
