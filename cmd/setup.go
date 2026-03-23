@@ -17,7 +17,7 @@ import (
 	"golang.org/x/term"
 )
 
-//go:embed short_docs/setup.md
+//go:embed short_docs/drift/drift_setup.md
 var setupContent string
 
 var (

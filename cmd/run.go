@@ -57,7 +57,7 @@ var (
 	validateSuite                bool
 )
 
-//go:embed short_docs/run.md
+//go:embed short_docs/drift/drift_run.md
 var runContent string
 
 var runCmd = &cobra.Command{

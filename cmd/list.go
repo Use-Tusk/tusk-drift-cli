@@ -17,10 +17,10 @@ import (
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
-//go:embed short_docs/list.md
+//go:embed short_docs/drift/drift_list.md
 var listContent string
 
-//go:embed short_docs/filter.md
+//go:embed short_docs/drift/drift_filter.md
 var filterContent string
 
 var listJSON bool
