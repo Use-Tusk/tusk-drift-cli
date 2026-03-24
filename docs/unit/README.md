@@ -23,7 +23,7 @@ tusk unit latest-run
 tusk unit latest-run --repo owner/repo --branch feature-branch
 ```
 
-Returns a summary of the latest run plus a history of recent runs on the branch.
+Returns a summary of the latest run plus a history of recent runs on the branch. History items include a readable `run_type_label`, the raw `run_type`, `commit_sha`, and `retry_feedback` when present.
 
 ### `tusk unit get-run <run-id>`
 

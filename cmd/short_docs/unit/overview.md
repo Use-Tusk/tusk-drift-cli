@@ -6,7 +6,7 @@ The data-returning `tusk unit` subcommands output JSON, which makes them work we
 
 ## Typical workflow
 
-1. Check the latest run for the current repo and branch with `tusk unit latest-run`.
+1. Check the latest run for the current repo and branch with `tusk unit latest-run` to see the latest result plus recent history, including a readable `run_type_label`, the raw `run_type`, `commit_sha`, and any `retry_feedback`.
 2. Inspect the run and its generated scenarios with `tusk unit get-run <run-id>`.
 3. Review a specific scenario with `tusk unit get-scenario --run-id <run-id> --scenario-id <scenario-id>`.
 4. Submit feedback from a file or stdin with `tusk unit feedback --run-id <run-id> --file feedback.json`.

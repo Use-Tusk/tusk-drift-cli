@@ -21,8 +21,9 @@ var unitRetryCmd = &cobra.Command{
 Use --comment for broad retry guidance when the generated mocks, symbols, or
 overall test direction were wrong for the run.
 
-Retries can take a while, so prefer small local edits when the generated tests
-are mostly correct.
+For agents: prefer small local edits when the generated tests are mostly correct. Use this
+command when the user has asked to regenerate the run, or when the required changes are too
+broad to fix locally.
 
 Example usage:
 tusk unit retry --run-id <run-id>

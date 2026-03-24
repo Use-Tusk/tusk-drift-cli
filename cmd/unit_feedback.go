@@ -24,7 +24,7 @@ var unitFeedbackCmd = &cobra.Command{
 
 The feedback payload must be JSON, provided via --file <path> or --file - for stdin.
 It must include at least one run_feedback.comment or one scenario entry.
-Use run_feedback.comment when the overall run should be retried with different guidance.
+Use run_feedback.comment when the user wants Tusk to retry the overall run with different guidance, or when the required fixes are too broad to make locally.
 
 Example usage:
 tusk unit feedback --run-id <run-id> --file feedback.json
@@ -64,11 +64,12 @@ Example payload (schema reference):
 }
 
 Notes:
+- Prefer local edits by default when the generated tests are mostly correct.
 - Use run_feedback.comment mainly for broad retry guidance, such as wrong mocks, wrong symbols, or an overall incorrect test strategy.
 - Use either positive_feedback or negative_feedback for a scenario.
 - Allowed positive_feedback values: "covers_critical_path", "valid_edge_case", "caught_a_bug", "other"
 - Allowed negative_feedback values: "incorrect_business_assumption", "duplicates_existing_test", "no_value", "incorrect_assertion", "poor_coding_practice", "other"
-- Add --retry when Tusk should start a new retry run after saving the feedback. This may a take a while. If the tests are mostly correct, prefer small local edits instead of a full retry.
+- Add --retry when the user has asked Tusk to regenerate the run, or when the changes are too large to fix locally. This may take a while.
 
 Thank you for your feedback and helping to improve Tusk!
 `,
