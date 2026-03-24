@@ -229,11 +229,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 			var req *backend.CreateDriftRunRequest
 
 			if isValidation {
-				// Validation mode: no CI metadata needed
 				req = &backend.CreateDriftRunRequest{
 					ObservableServiceId: cfg.Service.ID,
 					CliVersion:          version.Version,
 					IsValidationRun:     true,
+					CommitSha:           stringPtr(getCommitSHAFromEnv()),
+					BranchName:          stringPtr(getBranchFromEnv()),
 				}
 			} else {
 				// Regular CI mode: validate and include CI metadata
@@ -1015,15 +1016,7 @@ func validateCIMetadata(metadata CIMetadata) (CIMetadata, error) {
 	// Only populate from environment variables if in CI
 	if inCI {
 		if metadata.CommitSha == "" {
-			if isGitHub {
-				if sha := getGitHubPRHeadSHA(); sha != "" {
-					metadata.CommitSha = sha
-				} else {
-					metadata.CommitSha = os.Getenv("GITHUB_SHA")
-				}
-			} else if isGitLab {
-				metadata.CommitSha = os.Getenv("CI_COMMIT_SHA")
-			}
+			metadata.CommitSha = getCommitSHAFromEnv()
 		}
 
 		if metadata.PRNumber == "" {
@@ -1112,6 +1105,24 @@ func getGitHubPRHeadSHA() string {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+// getCommitSHAFromEnv returns the commit SHA from CI environment variables.
+// Returns empty string if no SHA can be determined from the environment.
+func getCommitSHAFromEnv() string {
+	isGitHub := os.Getenv("GITHUB_ACTIONS") == "true"
+	isGitLab := os.Getenv("GITLAB_CI") == "true"
+
+	if isGitHub {
+		if sha := getGitHubPRHeadSHA(); sha != "" {
+			return sha
+		}
+		return os.Getenv("GITHUB_SHA")
+	} else if isGitLab {
+		return os.Getenv("CI_COMMIT_SHA")
+	}
+
+	return ""
 }
 
 // getBranchFromEnv returns the branch name from CI environment variables
