@@ -49,6 +49,55 @@ Get file diffs for a unit test run. Diffs are in unified diff format, ready to a
 tusk unit get-diffs <run-id>
 ```
 
+### `tusk unit feedback`
+
+Submit feedback for one or more scenarios in a unit test run.
+
+```bash
+tusk unit feedback --run-id <run-id> --file feedback.json
+```
+
+You can also submit feedback inline with stdin:
+
+```bash
+tusk unit feedback --run-id <run-id> --file - <<'EOF'
+{
+  "scenarios": [
+    {
+      "scenario_id": "uuid",
+      "positive_feedback": ["covers_critical_path"],
+      "comment": "Good scenario and likely worth keeping.",
+      "applied_locally": true
+    },
+    {
+      "scenario_id": "uuid",
+      "negative_feedback": ["incorrect_assertion"],
+      "comment": "The generated assertion does not match the behavior we want to preserve, so we did not keep this test.",
+      "applied_locally": false
+    }
+  ]
+}
+EOF
+```
+
+Use either `positive_feedback` or `negative_feedback` for a scenario.
+
+Allowed `positive_feedback` values:
+
+- `covers_critical_path`
+- `valid_edge_case`
+- `caught_a_bug`
+- `other`
+
+Allowed `negative_feedback` values:
+
+- `incorrect_business_assumption`
+- `duplicates_existing_test`
+- `no_value`
+- `incorrect_assertion`
+- `poor_coding_practice`
+- `other`
+
 ## Typical workflow
 
 1. Check the latest run on your branch:
@@ -69,7 +118,13 @@ tusk unit get-diffs <run-id>
    tusk unit get-scenario --run-id <run-id> --scenario-id <scenario-id>
    ```
 
-4. Apply all generated tests to your working tree:
+4. Submit feedback on scenarios you kept or rejected:
+
+   ```bash
+   tusk unit feedback --run-id <run-id> --file feedback.json
+   ```
+
+5. Apply all generated tests to your working tree:
 
    ```bash
    tusk unit get-diffs <run-id> | jq -r '.files[].diff' | git apply
