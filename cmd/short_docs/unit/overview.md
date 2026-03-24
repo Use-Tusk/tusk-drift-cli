@@ -9,7 +9,10 @@ The data-returning `tusk unit` subcommands output JSON, which makes them work we
 1. Check the latest run for the current repo and branch with `tusk unit latest-run`.
 2. Inspect the run and its generated scenarios with `tusk unit get-run <run-id>`.
 3. Review a specific scenario with `tusk unit get-scenario --run-id <run-id> --scenario-id <scenario-id>`.
-4. Apply generated diffs with `tusk unit get-diffs <run-id> | jq -r '.files[].diff' | git apply`.
+4. Submit feedback from a file or stdin with `tusk unit feedback --run-id <run-id> --file feedback.json`.
+   Use `positive_feedback` or `negative_feedback` to indicate the feedback type, and `applied_locally` if you kept the change locally.
+   See `tusk unit feedback --help` for more details.
+5. Apply generated diffs with `tusk unit get-diffs <run-id> | jq -r '.files[].diff' | git apply`.
 
 ## Authentication
 
