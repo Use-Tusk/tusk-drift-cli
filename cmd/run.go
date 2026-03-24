@@ -1108,7 +1108,7 @@ func stringPtr(s string) *string {
 }
 
 // getCommitSHAFromEnv returns the commit SHA from CI environment variables.
-// Returns empty string if no SHA can be determined from environment or git.
+// Returns empty string if no SHA can be determined from the environment.
 func getCommitSHAFromEnv() string {
 	isGitHub := os.Getenv("GITHUB_ACTIONS") == "true"
 	isGitLab := os.Getenv("GITLAB_CI") == "true"
@@ -1117,22 +1117,12 @@ func getCommitSHAFromEnv() string {
 		if sha := getGitHubPRHeadSHA(); sha != "" {
 			return sha
 		}
-		if sha := os.Getenv("GITHUB_SHA"); sha != "" {
-			return sha
-		}
+		return os.Getenv("GITHUB_SHA")
 	} else if isGitLab {
-		if sha := os.Getenv("CI_COMMIT_SHA"); sha != "" {
-			return sha
-		}
+		return os.Getenv("CI_COMMIT_SHA")
 	}
 
-	// Fallback: git rev-parse
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(output))
+	return ""
 }
 
 // getBranchFromEnv returns the branch name from CI environment variables
