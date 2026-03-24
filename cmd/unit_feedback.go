@@ -14,6 +14,7 @@ import (
 var (
 	unitFeedbackRunID string
 	unitFeedbackFile  string
+	unitFeedbackRetry bool
 )
 
 var unitFeedbackCmd = &cobra.Command{
@@ -22,9 +23,12 @@ var unitFeedbackCmd = &cobra.Command{
 	Long: `Submit feedback for one or more unit test scenarios.
 
 The feedback payload must be JSON, provided via --file <path> or --file - for stdin.
+It must include at least one run_feedback.comment or one scenario entry.
+Use run_feedback.comment when the overall run should be retried with different guidance.
 
 Example usage:
 tusk unit feedback --run-id <run-id> --file feedback.json
+tusk unit feedback --run-id <run-id> --file feedback.json --retry
 tusk unit feedback --run-id <run-id> --file - <<'EOF'
 {
   "scenarios": [
@@ -40,6 +44,9 @@ EOF
 
 Example payload (schema reference):
 {
+  "run_feedback": {
+    "comment": "The run targeted the right files, but the mocks do not match the real service contracts and several scenarios are asserting on implementation details. Use simpler setup assumptions and focus on externally observable behavior."
+  },
   "scenarios": [
     {
       "scenario_id": "uuid",
@@ -57,9 +64,11 @@ Example payload (schema reference):
 }
 
 Notes:
+- Use run_feedback.comment mainly for broad retry guidance, such as wrong mocks, wrong symbols, or an overall incorrect test strategy.
 - Use either positive_feedback or negative_feedback for a scenario.
 - Allowed positive_feedback values: "covers_critical_path", "valid_edge_case", "caught_a_bug", "other"
 - Allowed negative_feedback values: "incorrect_business_assumption", "duplicates_existing_test", "no_value", "incorrect_assertion", "poor_coding_practice", "other"
+- Add --retry when Tusk should start a new retry run after saving the feedback. This may a take a while. If the tests are mostly correct, prefer small local edits instead of a full retry.
 
 Thank you for your feedback and helping to improve Tusk!
 `,
@@ -75,6 +84,13 @@ Thank you for your feedback and helping to improve Tusk!
 		payload, err := readUnitFeedbackPayload(unitFeedbackFile)
 		if err != nil {
 			return err
+		}
+		if unitFeedbackRetry {
+			obj, ok := payload.(map[string]any)
+			if !ok {
+				return fmt.Errorf("feedback payload must be a JSON object when using --retry")
+			}
+			obj["retry"] = true
 		}
 
 		client, authOptions, err := setupUnitCloud()
@@ -133,6 +149,7 @@ func init() {
 
 	unitFeedbackCmd.Flags().StringVar(&unitFeedbackRunID, "run-id", "", "Unit test run ID")
 	unitFeedbackCmd.Flags().StringVar(&unitFeedbackFile, "file", "", "Path to feedback JSON file, or `-` to read from stdin")
+	unitFeedbackCmd.Flags().BoolVar(&unitFeedbackRetry, "retry", false, "Trigger a retry after saving feedback")
 
 	_ = unitFeedbackCmd.MarkFlagRequired("run-id")
 	_ = unitFeedbackCmd.MarkFlagRequired("file")

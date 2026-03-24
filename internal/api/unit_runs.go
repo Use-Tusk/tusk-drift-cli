@@ -89,6 +89,17 @@ func (c *TuskClient) SubmitUnitTestFeedback(ctx context.Context, runID string, p
 	return out, nil
 }
 
+type UnitTestRetryResult map[string]any
+
+func (c *TuskClient) RetryUnitTestRun(ctx context.Context, runID string, payload any, auth AuthOptions) (UnitTestRetryResult, error) {
+	var out UnitTestRetryResult
+	path := fmt.Sprintf("/api/v1/unit_test_run/%s/retry", url.PathEscape(runID))
+	if err := c.makeJSONRequestWithBody(ctx, http.MethodPost, path, nil, payload, &out, auth); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *TuskClient) GetUnitTestRun(ctx context.Context, runID string, auth AuthOptions) (UnitTestRunDetails, error) {
 	var out UnitTestRunDetails
 	if err := c.makeJSONRequest(ctx, http.MethodGet, "/api/v1/unit_test_run/"+url.PathEscape(runID), nil, &out, auth); err != nil {
