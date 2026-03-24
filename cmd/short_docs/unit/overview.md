@@ -13,7 +13,7 @@ The data-returning `tusk unit` subcommands output JSON, which makes them work we
    Use `run_feedback.comment` for broad run-level guidance, `positive_feedback` or `negative_feedback` for scenario feedback, and `applied_locally` if you kept the change locally.
    See `tusk unit feedback --help` for more details.
 5. Retry with broad run-level guidance when the run was broadly wrong: `tusk unit feedback --run-id <run-id> --file feedback.json --retry` or `tusk unit retry --run-id <run-id> --comment "Wrong mocks for this run"`.
-   This may a take a while. If the tests are mostly correct, prefer small local edits instead of a full retry.
+   This may take a while. If the tests are mostly correct, prefer small local edits instead of a full retry.
 6. Apply generated diffs with `tusk unit get-diffs <run-id> | jq -r '.files[].diff' | git apply`.
 
 ## Authentication
