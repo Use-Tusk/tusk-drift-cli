@@ -23,7 +23,7 @@ tusk unit latest-run
 tusk unit latest-run --repo owner/repo --branch feature-branch
 ```
 
-Returns a summary of the latest run plus a history of recent runs on the branch.
+Returns a summary of the latest run plus a history of recent runs on the branch. History items include a readable `run_type_label`, the raw `run_type`, `commit_sha`, and `retry_feedback` when present.
 
 ### `tusk unit get-run <run-id>`
 
@@ -51,10 +51,11 @@ tusk unit get-diffs <run-id>
 
 ### `tusk unit feedback`
 
-Submit feedback for one or more scenarios in a unit test run.
+Submit run-level and/or scenario-level feedback for a unit test run. Add `--retry` to save the feedback and immediately trigger a retry.
 
 ```bash
 tusk unit feedback --run-id <run-id> --file feedback.json
+tusk unit feedback --run-id <run-id> --file feedback.json --retry
 ```
 
 You can also submit feedback inline with stdin:
@@ -62,6 +63,9 @@ You can also submit feedback inline with stdin:
 ```bash
 tusk unit feedback --run-id <run-id> --file - <<'EOF'
 {
+  "run_feedback": {
+    "comment": "The run targeted the right files, but the mocks do not match the real service contracts and several scenarios are asserting on implementation details. Use simpler setup assumptions and focus on externally observable behavior."
+  },
   "scenarios": [
     {
       "scenario_id": "uuid",
@@ -80,6 +84,7 @@ tusk unit feedback --run-id <run-id> --file - <<'EOF'
 EOF
 ```
 
+Use `run_feedback.comment` mainly for broad retry guidance, such as wrong mocks, wrong symbols, or an overall incorrect test strategy.
 Use either `positive_feedback` or `negative_feedback` for a scenario.
 
 Allowed `positive_feedback` values:
@@ -97,6 +102,15 @@ Allowed `negative_feedback` values:
 - `incorrect_assertion`
 - `poor_coding_practice`
 - `other`
+
+### `tusk unit retry`
+
+Trigger a retry for a unit test run, optionally storing a broad run-level comment first.
+
+```bash
+tusk unit retry --run-id <run-id>
+tusk unit retry --run-id <run-id> --comment "The run targeted the right files, but the mocks do not match the real service contracts and several scenarios assert on implementation details. Use simpler setup assumptions and focus on externally observable behavior."
+```
 
 ## Typical workflow
 
@@ -118,13 +132,22 @@ Allowed `negative_feedback` values:
    tusk unit get-scenario --run-id <run-id> --scenario-id <scenario-id>
    ```
 
-4. Submit feedback on scenarios you kept or rejected:
+4. Submit feedback on scenarios you kept or rejected, and optionally add broad run-level guidance:
 
    ```bash
    tusk unit feedback --run-id <run-id> --file feedback.json
    ```
 
-5. Apply all generated tests to your working tree:
+5. If the run was broadly wrong, trigger a retry with feedback instead of editing everything locally:
+
+   ```bash
+   tusk unit feedback --run-id <run-id> --file feedback.json --retry
+   tusk unit retry --run-id <run-id> --comment "Wrong mocks for this run"
+   ```
+
+   Retries may take a while. If the tests are mostly correct, prefer small local edits instead of a full retry.
+
+6. Apply all generated tests to your working tree when they are close and only need small edits:
 
    ```bash
    tusk unit get-diffs <run-id> | jq -r '.files[].diff' | git apply

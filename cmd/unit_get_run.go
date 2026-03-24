@@ -48,6 +48,9 @@ func buildNextSteps(run map[string]any) []string {
 		if hasScenarios {
 			steps = append(steps, fmt.Sprintf("Review a test scenario: `tusk unit get-scenario --run-id %s --scenario-id <scenario_id>`", runID))
 			steps = append(steps, fmt.Sprintf("Apply all diffs: `tusk unit get-diffs %s | jq -r '.files[].diff' | git apply`", runID))
+			steps = append(steps, "If the tests are mostly correct, prefer small local edits instead of a full retry.")
+			steps = append(steps, fmt.Sprintf("If the run used the wrong mocks, symbols, or overall approach, submit feedback and retry: `tusk unit feedback --run-id %s --file feedback.json --retry`", runID))
+			steps = append(steps, fmt.Sprintf("Or trigger an explicit retry with run-level guidance: `tusk unit retry --run-id %s --comment \"Wrong mocks for this run\"`", runID))
 		} else {
 			steps = append(steps, "Run completed but no test scenarios were generated.")
 		}
