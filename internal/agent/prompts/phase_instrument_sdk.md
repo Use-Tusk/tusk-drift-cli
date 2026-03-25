@@ -102,28 +102,9 @@ IMPORTANT: All code files must end with a trailing newline.
 
 NOTE: This is LOCAL setup - do NOT use any API keys. Leave apiKey undefined for local mode.
 
-**For CommonJS (module_system = "cjs"):**
+The init file is the same for both CommonJS and ESM projects. The SDK automatically registers ESM loader hooks when needed.
 
 ```typescript
-import { TuskDrift } from "@use-tusk/drift-node-sdk";
-
-TuskDrift.initialize({
-  env: process.env.NODE_ENV,
-  logLevel: "debug",
-});
-
-export { TuskDrift };
-```
-
-**For ESM (module_system = "esm"):**
-
-```typescript
-import { register } from "node:module";
-import { pathToFileURL } from "node:url";
-
-// Register the ESM loader - MUST be before importing the SDK
-register("@use-tusk/drift-node-sdk/hook.mjs", pathToFileURL("./"));
-
 import { TuskDrift } from "@use-tusk/drift-node-sdk";
 
 TuskDrift.initialize({
