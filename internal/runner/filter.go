@@ -61,13 +61,17 @@ func parseFieldedFilter(q string) ([]fieldMatcher, error) {
 		if len(val) >= 2 && ((val[0] == '\'' && val[len(val)-1] == '\'') || (val[0] == '"' && val[len(val)-1] == '"')) {
 			val = val[1 : len(val)-1]
 		}
-		re, err := regexp.Compile(val)
-		if err != nil {
-			return nil, fmt.Errorf("invalid regex for %s: %w", key, err)
-		}
 		field := normalizeFilterFieldKey(key)
 		if field == "" {
 			return nil, fmt.Errorf("unknown filter field: %s", key)
+		}
+		// suite_status values are always lowercase; make matching case-insensitive
+		if field == "suite_status" {
+			val = "(?i)" + val
+		}
+		re, err := regexp.Compile(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex for %s: %w", key, err)
 		}
 		out = append(out, fieldMatcher{field: field, re: re})
 	}
@@ -123,6 +127,8 @@ func normalizeFilterFieldKey(k string) string {
 		return "id"
 	case "file", "filename", "f":
 		return "file"
+	case "suite_status", "suite":
+		return "suite_status"
 	default:
 		return ""
 	}
@@ -155,6 +161,8 @@ func getFieldValueForFilter(t Test, field string) string {
 		return t.TraceID
 	case "file":
 		return t.FileName
+	case "suite_status":
+		return t.SuiteStatus
 	default:
 		return ""
 	}
@@ -170,6 +178,23 @@ func extractGraphQLOperationName(displayName string) string {
 		}
 	}
 	return displayName
+}
+
+// ExtractSuiteStatusFromFilter extracts the suite_status value from a filter string.
+// Returns the value and true if found, empty string and false otherwise.
+func ExtractSuiteStatusFromFilter(filter string) (string, bool) {
+	matchers, err := parseFieldedFilter(filter)
+	if err != nil {
+		return "", false
+	}
+	for _, m := range matchers {
+		if m.field == "suite_status" {
+			val := m.re.String()
+			val = strings.TrimPrefix(val, "(?i)")
+			return val, true
+		}
+	}
+	return "", false
 }
 
 // FilterLocalTestsForExecution filters out local tests with HTTP status >= 300.

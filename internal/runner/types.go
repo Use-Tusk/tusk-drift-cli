@@ -15,6 +15,7 @@ type Test struct {
 	Path        string         `json:"path"`         // Used for test execution
 	DisplayName string         `json:"display_name"` // Used for CLI display
 	Status      string         `json:"status"`
+	SuiteStatus string         `json:"suite_status,omitempty"` // Cloud only: "draft", "in_suite"
 	Duration    int            `json:"duration"`
 	Metadata    map[string]any `json:"metadata"`
 	Request     Request        `json:"request"`

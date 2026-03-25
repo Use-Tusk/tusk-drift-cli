@@ -598,7 +598,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if isValidation {
 				preloadedTests, err = fetchValidationTraceTests(context.Background(), client, authOptions, cfg.Service.ID)
 			} else {
-				preloadedTests, err = loadCloudTests(context.Background(), client, authOptions, cfg.Service.ID, driftRunID, traceTestID, allCloudTraceTests || !ci, quiet)
+				var suiteStatusFilter *backend.TraceTestStatus
+				if val, ok := runner.ExtractSuiteStatusFromFilter(filter); ok {
+					suiteStatusFilter = runner.ParseTraceTestStatusFilter(val)
+				}
+				preloadedTests, err = loadCloudTests(context.Background(), client, authOptions, cfg.Service.ID, driftRunID, traceTestID, allCloudTraceTests || !ci, quiet, suiteStatusFilter)
 			}
 			if err != nil {
 				return formatApiError(fmt.Errorf("failed to load cloud tests: %w", err))
@@ -896,7 +900,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID, driftRunID, traceTestID string, allCloud bool, quiet bool) ([]runner.Test, error) {
+func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, serviceID, driftRunID, traceTestID string, allCloud bool, quiet bool, suiteStatusFilter *backend.TraceTestStatus) ([]runner.Test, error) {
 	if traceTestID != "" {
 		req := &backend.GetTraceTestRequest{
 			ObservableServiceId: serviceID,
@@ -912,7 +916,14 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 	var all []*backend.TraceTest
 	var err error
 
-	if allCloud {
+	switch {
+	case suiteStatusFilter != nil:
+		// When filtering by suite status, bypass cache and use GetAllTraceTests
+		// with the status filter directly
+		all, err = api.FetchAllTraceTests(ctx, client, auth, serviceID, &api.FetchAllTraceTestsOptions{
+			StatusFilter: suiteStatusFilter,
+		})
+	case allCloud:
 		all, err = api.FetchAllTraceTestsWithCache(
 			ctx,
 			client,
@@ -921,7 +932,7 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 			false,
 			quiet,
 		)
-	} else {
+	default:
 		all, err = api.FetchDriftRunTraceTests(
 			ctx,
 			client,
@@ -958,7 +969,11 @@ func makeLoadTestsFunc(
 			if traceID != "" && traceTestID == "" {
 				return nil, fmt.Errorf("specify --trace-test-id to run against a single trace test in Tusk Drift Cloud")
 			}
-			tests, err = loadCloudTests(ctx, client, auth, serviceID, driftRunID, traceTestID, allCloud, quiet)
+			var suiteStatusFilter *backend.TraceTestStatus
+			if val, ok := runner.ExtractSuiteStatusFromFilter(filter); ok {
+				suiteStatusFilter = runner.ParseTraceTestStatusFilter(val)
+			}
+			tests, err = loadCloudTests(ctx, client, auth, serviceID, driftRunID, traceTestID, allCloud, quiet, suiteStatusFilter)
 			if err != nil {
 				return nil, err
 			}

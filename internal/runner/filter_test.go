@@ -120,6 +120,7 @@ func TestGetFieldValueForFilter(t *testing.T) {
 		Status:      "PASSED",
 		TraceID:     "trace-1",
 		FileName:    "users.graphql",
+		SuiteStatus: "draft",
 	}
 
 	assert.Equal(t, "/graphql/users", getFieldValueForFilter(graphQLTest, "path"))
@@ -130,11 +131,63 @@ func TestGetFieldValueForFilter(t *testing.T) {
 	assert.Equal(t, "PASSED", getFieldValueForFilter(graphQLTest, "status"))
 	assert.Equal(t, "trace-1", getFieldValueForFilter(graphQLTest, "id"))
 	assert.Equal(t, "users.graphql", getFieldValueForFilter(graphQLTest, "file"))
+	assert.Equal(t, "draft", getFieldValueForFilter(graphQLTest, "suite_status"))
 
 	fallbackType := Test{Type: "REST"}
 	assert.Equal(t, "REST", getFieldValueForFilter(fallbackType, "type"))
 
 	assert.Equal(t, "", getFieldValueForFilter(Test{}, "unknown"))
+	assert.Equal(t, "", getFieldValueForFilter(Test{}, "suite_status"))
+}
+
+func TestFilterTestsBySuiteStatus(t *testing.T) {
+	tests := []Test{
+		{Path: "/api/users", SuiteStatus: "draft", TraceID: "t-1"},
+		{Path: "/api/orders", SuiteStatus: "in_suite", TraceID: "t-2"},
+		{Path: "/api/items", SuiteStatus: "draft", TraceID: "t-3"},
+		{Path: "/api/local", SuiteStatus: "", TraceID: "t-4"}, // local test, no suite status
+	}
+
+	filtered, err := FilterTests(tests, "suite_status=draft")
+	require.NoError(t, err)
+	require.Len(t, filtered, 2)
+	assert.Equal(t, "t-1", filtered[0].TraceID)
+	assert.Equal(t, "t-3", filtered[1].TraceID)
+
+	filtered, err = FilterTests(tests, "suite_status=in_suite")
+	require.NoError(t, err)
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "t-2", filtered[0].TraceID)
+
+	// "suite" alias
+	filtered, err = FilterTests(tests, "suite=draft")
+	require.NoError(t, err)
+	require.Len(t, filtered, 2)
+
+	// Case-insensitive
+	filtered, err = FilterTests(tests, "suite_status=DRAFT")
+	require.NoError(t, err)
+	require.Len(t, filtered, 2)
+}
+
+func TestExtractSuiteStatusFromFilter(t *testing.T) {
+	val, ok := ExtractSuiteStatusFromFilter("suite_status=draft")
+	assert.True(t, ok)
+	assert.Equal(t, "draft", val)
+
+	val, ok = ExtractSuiteStatusFromFilter("suite=in_suite")
+	assert.True(t, ok)
+	assert.Equal(t, "in_suite", val)
+
+	val, ok = ExtractSuiteStatusFromFilter("type=GRAPHQL,suite_status=draft")
+	assert.True(t, ok)
+	assert.Equal(t, "draft", val)
+
+	_, ok = ExtractSuiteStatusFromFilter("type=GRAPHQL")
+	assert.False(t, ok)
+
+	_, ok = ExtractSuiteStatusFromFilter("")
+	assert.False(t, ok)
 }
 
 func TestExtractGraphQLOperationName(t *testing.T) {

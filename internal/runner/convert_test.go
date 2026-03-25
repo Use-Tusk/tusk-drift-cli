@@ -7,6 +7,7 @@ import (
 
 	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -172,6 +173,57 @@ func TestConvertTraceTestsToRunnerTests(t *testing.T) {
 	require.Len(t, got, 2)
 	require.Equal(t, ConvertTraceTestToRunnerTest(tt1), got[0])
 	require.Equal(t, ConvertTraceTestToRunnerTest(tt2), got[1])
+}
+
+func TestProtoTraceTestStatusToString(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "draft", protoTraceTestStatusToString(backend.TraceTestStatus_TRACE_TEST_STATUS_DRAFT))
+	assert.Equal(t, "in_suite", protoTraceTestStatusToString(backend.TraceTestStatus_TRACE_TEST_STATUS_IN_SUITE))
+	assert.Equal(t, "removed", protoTraceTestStatusToString(backend.TraceTestStatus_TRACE_TEST_STATUS_REMOVED))
+	assert.Equal(t, "", protoTraceTestStatusToString(backend.TraceTestStatus_TRACE_TEST_STATUS_UNSPECIFIED))
+}
+
+func TestParseTraceTestStatusFilter(t *testing.T) {
+	t.Parallel()
+
+	draft := ParseTraceTestStatusFilter("draft")
+	require.NotNil(t, draft)
+	require.Equal(t, backend.TraceTestStatus_TRACE_TEST_STATUS_DRAFT, *draft)
+
+	inSuite := ParseTraceTestStatusFilter("in_suite")
+	require.NotNil(t, inSuite)
+	require.Equal(t, backend.TraceTestStatus_TRACE_TEST_STATUS_IN_SUITE, *inSuite)
+
+	// Case insensitive
+	draftUpper := ParseTraceTestStatusFilter("DRAFT")
+	require.NotNil(t, draftUpper)
+	require.Equal(t, backend.TraceTestStatus_TRACE_TEST_STATUS_DRAFT, *draftUpper)
+
+	// Unknown returns nil
+	require.Nil(t, ParseTraceTestStatusFilter("removed"))
+	require.Nil(t, ParseTraceTestStatusFilter("unknown"))
+	require.Nil(t, ParseTraceTestStatusFilter(""))
+}
+
+func TestConvertTraceTestToRunnerTest_SuiteStatus(t *testing.T) {
+	t.Parallel()
+
+	tt := &backend.TraceTest{
+		Id:      "tt-1",
+		TraceId: "trace-1",
+		Status:  backend.TraceTestStatus_TRACE_TEST_STATUS_DRAFT,
+	}
+	got := ConvertTraceTestToRunnerTest(tt)
+	require.Equal(t, "draft", got.SuiteStatus)
+
+	tt.Status = backend.TraceTestStatus_TRACE_TEST_STATUS_IN_SUITE
+	got = ConvertTraceTestToRunnerTest(tt)
+	require.Equal(t, "in_suite", got.SuiteStatus)
+
+	tt.Status = backend.TraceTestStatus_TRACE_TEST_STATUS_UNSPECIFIED
+	got = ConvertTraceTestToRunnerTest(tt)
+	require.Equal(t, "", got.SuiteStatus)
 }
 
 func TestConvertRunnerResultToTraceTestResult(t *testing.T) {
