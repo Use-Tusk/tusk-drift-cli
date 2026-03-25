@@ -31,6 +31,7 @@ func ConvertTraceTestToRunnerTest(tt *backend.TraceTest) Test {
 		DisplayType: "HTTP", // will be overridden if we detect GraphQL/etc.
 		DisplayName: fmt.Sprintf("Trace %s", tt.TraceId),
 		Status:      "pending",
+		SuiteStatus: protoTraceTestStatusToString(tt.GetStatus()),
 	}
 
 	// Extract environment from any span that has it
@@ -285,6 +286,34 @@ func ConvertRunnerResultToTraceTestResult(result TestResult, test Test) *backend
 	}
 
 	return out
+}
+
+func protoTraceTestStatusToString(s backend.TraceTestStatus) string {
+	switch s {
+	case backend.TraceTestStatus_TRACE_TEST_STATUS_DRAFT:
+		return "draft"
+	case backend.TraceTestStatus_TRACE_TEST_STATUS_IN_SUITE:
+		return "in_suite"
+	case backend.TraceTestStatus_TRACE_TEST_STATUS_REMOVED:
+		return "removed"
+	default:
+		return ""
+	}
+}
+
+// ParseTraceTestStatusFilter converts a user-provided filter value to a proto TraceTestStatus.
+// Returns nil if the value doesn't match a known status.
+func ParseTraceTestStatusFilter(val string) *backend.TraceTestStatus {
+	switch strings.ToLower(val) {
+	case "draft":
+		s := backend.TraceTestStatus_TRACE_TEST_STATUS_DRAFT
+		return &s
+	case "in_suite":
+		s := backend.TraceTestStatus_TRACE_TEST_STATUS_IN_SUITE
+		return &s
+	default:
+		return nil
+	}
 }
 
 func getStringFromStruct(s *structpb.Struct, key string) (string, bool) {

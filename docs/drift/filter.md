@@ -16,6 +16,7 @@ Keys (case-insensitive; aliases in parentheses):
 - `status` (`s`) – test status label for display (e.g., `success`, `error`)
 - `id` (`trace`, `trace_id`) – trace ID
 - `file` (`filename`, `f`) – source file name
+- `suite_status` (`suite`) – cloud suite status: `draft` or `in_suite` (exact values only, not regex)
 
 Notes:
 
@@ -37,6 +38,11 @@ HTTP:
 - By route: `tusk drift run -f 'path=^/api/orders(/|$)'`
 - By method + route: `tusk drift run -f 'method=POST,path=/checkout'`
 - By type: `tusk drift list -f 'type=HTTP'`
+
+Suite status (cloud only):
+
+- Draft tests only: `tusk drift run --cloud -f 'suite_status=draft'`
+- In-suite tests only: `tusk drift run --cloud -f 'suite_status=in_suite'`
 
 Trace/file:
 

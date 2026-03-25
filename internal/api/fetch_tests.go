@@ -31,6 +31,9 @@ type FetchAllTraceTestsOptions struct {
 	Message string
 	// PageSize for pagination (default 25)
 	PageSize int32
+	// StatusFilter filters by trace test suite status (e.g., DRAFT, IN_SUITE).
+	// If nil, the server defaults to IN_SUITE.
+	StatusFilter *backend.TraceTestStatus
 }
 
 // FetchAllTraceTests fetches all trace tests from the cloud with a progress bar.
@@ -64,6 +67,7 @@ func FetchAllTraceTests(
 		req := &backend.GetAllTraceTestsRequest{
 			ObservableServiceId: serviceID,
 			PageSize:            opts.PageSize,
+			StatusFilter:        opts.StatusFilter,
 		}
 		if cursor != "" {
 			req.PaginationCursor = &cursor

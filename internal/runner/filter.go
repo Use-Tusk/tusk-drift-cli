@@ -123,6 +123,8 @@ func normalizeFilterFieldKey(k string) string {
 		return "id"
 	case "file", "filename", "f":
 		return "file"
+	case "suite_status", "suite":
+		return "suite_status"
 	default:
 		return ""
 	}
@@ -155,6 +157,8 @@ func getFieldValueForFilter(t Test, field string) string {
 		return t.TraceID
 	case "file":
 		return t.FileName
+	case "suite_status":
+		return t.SuiteStatus
 	default:
 		return ""
 	}
@@ -170,6 +174,21 @@ func extractGraphQLOperationName(displayName string) string {
 		}
 	}
 	return displayName
+}
+
+// ExtractSuiteStatusFromFilter extracts the suite_status value from a filter string.
+// Returns the value and true if found, empty string and false otherwise.
+func ExtractSuiteStatusFromFilter(filter string) (string, bool) {
+	matchers, err := parseFieldedFilter(filter)
+	if err != nil {
+		return "", false
+	}
+	for _, m := range matchers {
+		if m.field == "suite_status" {
+			return m.re.String(), true
+		}
+	}
+	return "", false
 }
 
 // FilterLocalTestsForExecution filters out local tests with HTTP status >= 300.

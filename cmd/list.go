@@ -15,6 +15,7 @@ import (
 	"github.com/Use-Tusk/tusk-cli/internal/runner"
 	"github.com/Use-Tusk/tusk-cli/internal/tui"
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
+	backend "github.com/Use-Tusk/tusk-drift-schemas/generated/go/backend"
 )
 
 //go:embed short_docs/drift/drift_list.md
@@ -93,14 +94,26 @@ func listTests(cmd *cobra.Command, args []string) error {
 			return formatApiError(err)
 		}
 
-		all, err := api.FetchAllTraceTestsWithCache(
-			context.Background(),
-			client,
-			authOptions,
-			cfg.Service.ID,
-			false,
-			false,
-		)
+		var all []*backend.TraceTest
+		usedStatusFilter := false
+		if val, ok := runner.ExtractSuiteStatusFromFilter(filter); ok {
+			if statusFilter := runner.ParseTraceTestStatusFilter(val); statusFilter != nil {
+				all, err = api.FetchAllTraceTests(context.Background(), client, authOptions, cfg.Service.ID, &api.FetchAllTraceTestsOptions{
+					StatusFilter: statusFilter,
+				})
+				usedStatusFilter = true
+			}
+		}
+		if !usedStatusFilter && err == nil {
+			all, err = api.FetchAllTraceTestsWithCache(
+				context.Background(),
+				client,
+				authOptions,
+				cfg.Service.ID,
+				false,
+				false,
+			)
+		}
 		if err != nil {
 			return formatApiError(err)
 		}
