@@ -61,13 +61,17 @@ func parseFieldedFilter(q string) ([]fieldMatcher, error) {
 		if len(val) >= 2 && ((val[0] == '\'' && val[len(val)-1] == '\'') || (val[0] == '"' && val[len(val)-1] == '"')) {
 			val = val[1 : len(val)-1]
 		}
-		re, err := regexp.Compile(val)
-		if err != nil {
-			return nil, fmt.Errorf("invalid regex for %s: %w", key, err)
-		}
 		field := normalizeFilterFieldKey(key)
 		if field == "" {
 			return nil, fmt.Errorf("unknown filter field: %s", key)
+		}
+		// suite_status values are always lowercase; make matching case-insensitive
+		if field == "suite_status" {
+			val = "(?i)" + val
+		}
+		re, err := regexp.Compile(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex for %s: %w", key, err)
 		}
 		out = append(out, fieldMatcher{field: field, re: re})
 	}
@@ -185,7 +189,9 @@ func ExtractSuiteStatusFromFilter(filter string) (string, bool) {
 	}
 	for _, m := range matchers {
 		if m.field == "suite_status" {
-			return m.re.String(), true
+			val := m.re.String()
+			val = strings.TrimPrefix(val, "(?i)")
+			return val, true
 		}
 	}
 	return "", false

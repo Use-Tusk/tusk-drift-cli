@@ -916,13 +916,14 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 	var all []*backend.TraceTest
 	var err error
 
-	if suiteStatusFilter != nil {
+	switch {
+	case suiteStatusFilter != nil:
 		// When filtering by suite status, bypass cache and use GetAllTraceTests
 		// with the status filter directly
 		all, err = api.FetchAllTraceTests(ctx, client, auth, serviceID, &api.FetchAllTraceTestsOptions{
 			StatusFilter: suiteStatusFilter,
 		})
-	} else if allCloud {
+	case allCloud:
 		all, err = api.FetchAllTraceTestsWithCache(
 			ctx,
 			client,
@@ -931,7 +932,7 @@ func loadCloudTests(ctx context.Context, client *api.TuskClient, auth api.AuthOp
 			false,
 			quiet,
 		)
-	} else {
+	default:
 		all, err = api.FetchDriftRunTraceTests(
 			ctx,
 			client,

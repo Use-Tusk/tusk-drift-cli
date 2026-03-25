@@ -163,6 +163,11 @@ func TestFilterTestsBySuiteStatus(t *testing.T) {
 	filtered, err = FilterTests(tests, "suite=draft")
 	require.NoError(t, err)
 	require.Len(t, filtered, 2)
+
+	// Case-insensitive
+	filtered, err = FilterTests(tests, "suite_status=DRAFT")
+	require.NoError(t, err)
+	require.Len(t, filtered, 2)
 }
 
 func TestExtractSuiteStatusFromFilter(t *testing.T) {
