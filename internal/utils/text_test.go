@@ -174,6 +174,26 @@ func TestFormatJSONDiff_DifferentValues(t *testing.T) {
 	assert.True(t, foundPlusValue2, "actual value 'value2' should appear on a line starting with '+'")
 }
 
+func TestFormatJSONDiffPlain_Identical(t *testing.T) {
+	obj := map[string]string{"a": "b"}
+	got := FormatJSONDiffPlain(obj, obj)
+	assert.Equal(t, "", got)
+}
+
+func TestFormatJSONDiffPlain_Different(t *testing.T) {
+	expected := map[string]string{"key": "value1"}
+	actual := map[string]string{"key": "value2"}
+	got := FormatJSONDiffPlain(expected, actual)
+
+	assert.NotEmpty(t, got)
+	assert.Contains(t, got, "value1")
+	assert.Contains(t, got, "value2")
+	// Should NOT contain ANSI codes or box-drawing chars
+	assert.NotContains(t, got, "\033[")
+	assert.NotContains(t, got, "╭")
+	assert.NotContains(t, got, "╰")
+}
+
 func TestTruncateWithEllipsis_NoTruncation(t *testing.T) {
 	text := "hello world"
 	got := TruncateWithEllipsis(text, 20)

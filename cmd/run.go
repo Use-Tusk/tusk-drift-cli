@@ -55,6 +55,10 @@ var (
 	// Validation mode
 	validateSuiteIfDefaultBranch bool
 	validateSuite                bool
+
+	// Agent mode
+	agentMode      bool
+	agentOutputDir string
 )
 
 //go:embed short_docs/drift/drift_run.md
@@ -100,6 +104,10 @@ func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "", "Replay sandbox mode: strict by default on supported platforms; choices: strict, auto, off")
 	cmd.Flags().StringVar(&sandboxConfigPath, "sandbox-config", "", "Path to a Fence config file to merge into the replay sandbox policy")
 
+	// Agent mode
+	cmd.Flags().BoolVar(&agentMode, "agent", false, "Write rich deviation files to .tusk/logs/ for coding agent consumption")
+	cmd.Flags().StringVar(&agentOutputDir, "agent-output-dir", "", "Override the base output directory for --agent (default: .tusk/logs/)")
+
 	// Cloud mode
 	cmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "[Cloud] Use Tusk Drift Cloud backend for orchestration/reporting")
 	cmd.Flags().BoolVar(&ci, "ci", false, "[Cloud] Create a Tusk Drift run and upload results to Tusk Drift Cloud")
@@ -143,6 +151,8 @@ func runTests(cmd *cobra.Command, args []string) error {
 		"branchName", branchName,
 		"externalCheckRunID", externalCheckRunID,
 		"clientID", clientID,
+		"agent", agentMode,
+		"agent-output-dir", agentOutputDir,
 	)
 
 	executor := runner.NewExecutor()
@@ -182,6 +192,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 		utils.SetTracesDirOverride(traceDir)
 	} else if getConfigErr == nil && cfg.Traces.Dir != "" {
 		utils.SetTracesDirOverride(cfg.Traces.Dir)
+	}
+
+	if agentOutputDir != "" && !agentMode {
+		cmd.SilenceUsage = true
+		return fmt.Errorf("--agent-output-dir requires --agent flag")
 	}
 
 	interactive := !print && (utils.IsTerminal() || utils.TUICIMode())
@@ -315,9 +330,39 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		executor.SetResultsOutput(resultsDir)
 	}
+	// Initialize agent writer if --agent flag is set
+	var agentWriter *runner.AgentWriter
+	if agentMode {
+		var agentErr error
+		agentWriter, agentErr = runner.NewAgentWriter(agentOutputDir)
+		if agentErr != nil {
+			cmd.SilenceUsage = true
+			return fmt.Errorf("failed to initialize agent writer: %w", agentErr)
+		}
+		fmt.Fprintf(os.Stderr, "Agent output directory: %s\n", agentWriter.OutputDir())
+	}
+
+	// writeAgentResult is a helper that writes agent deviation files for each test result.
+	writeAgentResult := func(res runner.TestResult, test runner.Test) {
+		if agentWriter == nil {
+			return
+		}
+		if res.Cancelled {
+			return
+		}
+		if !res.Passed {
+			if err := agentWriter.WriteDeviation(test, res, executor.GetServer()); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to write agent deviation file: %v\n", err)
+			}
+		} else {
+			agentWriter.RecordPassedTest(test)
+		}
+	}
+
 	if !interactive {
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
 			runner.OutputSingleResult(res, test, outputFormat, quiet, verbose)
+			writeAgentResult(res, test)
 
 			// Cleanup trace spans after the test is completed
 			if executor.GetServer() != nil {
@@ -347,6 +392,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if !interactive {
 				existingCallback(res, test)
 			}
+			writeAgentResult(res, test)
 
 			err := runner.UploadSingleTestResult(
 				context.Background(),
@@ -383,6 +429,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	// If no OnTestCompleted callback was set, set a default one that just cleans up the trace spans
 	if executor.OnTestCompleted == nil {
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			writeAgentResult(res, test)
 			if executor.GetServer() != nil {
 				executor.GetServer().CleanupTraceSpans(test.TraceID)
 			}
@@ -701,6 +748,15 @@ func runTests(cmd *cobra.Command, args []string) error {
 				)
 			},
 			OnAllCompleted: func(results []runner.TestResult, tests []runner.Test, exec *runner.Executor) {
+				// Write agent index after all tests complete (interactive mode)
+				if agentWriter != nil {
+					passed, _ := countPassedFailed(results)
+					if err := agentWriter.WriteIndex(len(results), passed); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to write agent index file: %v\n", err)
+					}
+					fmt.Fprintf(os.Stderr, "Agent deviation files written to: %s\n", agentWriter.OutputDir())
+				}
+
 				if cloud && client != nil && (ci || isValidation) {
 					var statusMessage string
 					if isValidation {
@@ -847,6 +903,15 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			return fmt.Errorf("test execution failed: %w", err)
 		}
+	}
+
+	// Write agent index after all tests complete (non-interactive mode)
+	if agentWriter != nil && !interactive {
+		passed, _ := countPassedFailed(results)
+		if err := agentWriter.WriteIndex(len(results), passed); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to write agent index file: %v\n", err)
+		}
+		fmt.Fprintf(os.Stderr, "Agent deviation files written to: %s\n", agentWriter.OutputDir())
 	}
 
 	_ = os.Stdout.Sync()
