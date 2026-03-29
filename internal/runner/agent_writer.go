@@ -39,7 +39,7 @@ func NewAgentWriter(baseDir string) (*AgentWriter, error) {
 		baseDir = utils.ResolveTuskPath(baseDir)
 	}
 
-	if err := os.MkdirAll(baseDir, 0750); err != nil {
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create base directory: %w", err)
 	}
 
@@ -48,13 +48,13 @@ func NewAgentWriter(baseDir string) (*AgentWriter, error) {
 
 	// Atomic create-or-fail: os.Mkdir returns EEXIST if another process won
 	// the race, avoiding the TOCTOU window that os.Stat+os.MkdirAll has.
-	if err := os.Mkdir(dir, 0750); err != nil {
+	if err := os.Mkdir(dir, 0o750); err != nil {
 		if !os.IsExist(err) {
 			return nil, fmt.Errorf("failed to create agent output directory: %w", err)
 		}
 		for i := 2; ; i++ {
 			candidate := fmt.Sprintf("%s-%d", dir, i)
-			if err := os.Mkdir(candidate, 0750); err == nil {
+			if err := os.Mkdir(candidate, 0o750); err == nil {
 				dir = candidate
 				break
 			} else if !os.IsExist(err) {
@@ -85,7 +85,7 @@ func (w *AgentWriter) WriteDeviation(test Test, result TestResult, server *Serve
 	body := buildDeviationBody(test, result, server)
 
 	filePath := filepath.Join(w.outputDir, fileName)
-	if err := os.WriteFile(filePath, []byte(fm+body), 0600); err != nil {
+	if err := os.WriteFile(filePath, []byte(fm+body), 0o600); err != nil {
 		return err
 	}
 
@@ -155,7 +155,7 @@ func (w *AgentWriter) WriteIndex(totalTests int, passedTests int) error {
 	}
 
 	filePath := filepath.Join(w.outputDir, "index.md")
-	return os.WriteFile(filePath, []byte(sb.String()), 0600)
+	return os.WriteFile(filePath, []byte(sb.String()), 0o600)
 }
 
 func determineFailureType(result TestResult, server *Server) string {
