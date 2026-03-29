@@ -91,7 +91,7 @@ func init() {
 func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&traceDir, "trace-dir", "", "Path to local recordings folder")
 	cmd.Flags().StringVar(&traceFile, "trace-file", "", "Path to a single test file")
-	cmd.Flags().StringVar(&traceID, "trace-id", "", "Database ID of a single test")
+	cmd.Flags().StringVar(&traceID, "trace-id", "", "ID of a single test")
 	cmd.Flags().BoolVarP(&print, "print", "p", false, "Print response and exit (useful for pipes)")
 	cmd.Flags().StringVar(&outputFormat, "output-format", "text", `Output format (only works with --print): "text" (default) or "json" (single result) (choices: "text", "json")"`)
 	cmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")

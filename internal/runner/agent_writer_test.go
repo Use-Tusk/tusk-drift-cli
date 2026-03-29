@@ -318,7 +318,7 @@ func TestWriteDeviation(t *testing.T) {
 
 	// File should exist
 	filePath := filepath.Join(w.OutputDir(), "deviation-trace-abc123.md")
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(filePath) //nolint:gosec // test reads a known temp file path
 	require.NoError(t, err)
 
 	s := string(content)

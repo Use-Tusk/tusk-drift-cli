@@ -39,22 +39,28 @@ func NewAgentWriter(baseDir string) (*AgentWriter, error) {
 		baseDir = utils.ResolveTuskPath(baseDir)
 	}
 
+	if err := os.MkdirAll(baseDir, 0750); err != nil {
+		return nil, fmt.Errorf("failed to create base directory: %w", err)
+	}
+
 	timestamp := time.Now().Format("20060102-150405")
 	dir := filepath.Join(baseDir, fmt.Sprintf("agent-run-%s", timestamp))
 
-	// Handle concurrent runs: if directory exists, append counter
-	if _, err := os.Stat(dir); err == nil {
+	// Atomic create-or-fail: os.Mkdir returns EEXIST if another process won
+	// the race, avoiding the TOCTOU window that os.Stat+os.MkdirAll has.
+	if err := os.Mkdir(dir, 0750); err != nil {
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("failed to create agent output directory: %w", err)
+		}
 		for i := 2; ; i++ {
 			candidate := fmt.Sprintf("%s-%d", dir, i)
-			if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			if err := os.Mkdir(candidate, 0750); err == nil {
 				dir = candidate
 				break
+			} else if !os.IsExist(err) {
+				return nil, fmt.Errorf("failed to create agent output directory %s: %w", candidate, err)
 			}
 		}
-	}
-
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create agent output directory: %w", err)
 	}
 
 	return &AgentWriter{
@@ -79,7 +85,7 @@ func (w *AgentWriter) WriteDeviation(test Test, result TestResult, server *Serve
 	body := buildDeviationBody(test, result, server)
 
 	filePath := filepath.Join(w.outputDir, fileName)
-	if err := os.WriteFile(filePath, []byte(fm+body), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(fm+body), 0600); err != nil {
 		return err
 	}
 
@@ -149,7 +155,7 @@ func (w *AgentWriter) WriteIndex(totalTests int, passedTests int) error {
 	}
 
 	filePath := filepath.Join(w.outputDir, "index.md")
-	return os.WriteFile(filePath, []byte(sb.String()), 0644)
+	return os.WriteFile(filePath, []byte(sb.String()), 0600)
 }
 
 func determineFailureType(result TestResult, server *Server) string {
@@ -220,8 +226,8 @@ func buildDeviationBody(test Test, result TestResult, server *Server) string {
 	sb.WriteString(formatBodyForAgent(test.Request.Body))
 	sb.WriteString("\n\n")
 
-	// Server crash: show error instead of response diff
-	if result.CrashedServer {
+	switch {
+	case result.CrashedServer:
 		sb.WriteString("## Error\n")
 		sb.WriteString("Server crashed during test execution.\n")
 		if result.Error != "" {
@@ -229,11 +235,11 @@ func buildDeviationBody(test Test, result TestResult, server *Server) string {
 			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")
-	} else if result.Error != "" && len(result.Deviations) == 0 {
+	case result.Error != "" && len(result.Deviations) == 0:
 		sb.WriteString("## Error\n")
 		sb.WriteString(result.Error)
 		sb.WriteString("\n\n")
-	} else {
+	default:
 		// Response Diff section
 		sb.WriteString("## Response Diff\n")
 
@@ -369,7 +375,6 @@ func formatBodyForAgent(body any) string {
 		return string(b)
 	}
 }
-
 
 func shouldTruncateDiff(expected, actual any) bool {
 	e, _ := json.Marshal(expected)
