@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -68,13 +69,10 @@ func TestExecutor_SetResultsOutput(t *testing.T) {
 	executor := NewExecutor()
 	tempDir := t.TempDir()
 
-	// We can't easily mock time.Now in the function, so we'll test the pattern
 	executor.SetResultsOutput(tempDir)
 
 	assert.Equal(t, tempDir, executor.resultsDir)
-	assert.Contains(t, executor.ResultsFile, tempDir)
-	assert.Contains(t, executor.ResultsFile, "results-")
-	assert.Contains(t, executor.ResultsFile, ".json")
+	assert.Equal(t, filepath.Join(tempDir, "results.json"), executor.ResultsFile)
 }
 
 func TestExecutor_SetConcurrency(t *testing.T) {

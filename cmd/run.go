@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,7 +37,7 @@ var (
 	verbose           bool
 	concurrency       int
 	enableServiceLogs bool
-	saveResults       bool
+	saveResultsFormat string
 	resultsDir        string
 	sandboxMode       string
 	sandboxConfigPath string
@@ -87,7 +88,7 @@ func init() {
 func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&traceDir, "trace-dir", "", "Path to local recordings folder")
 	cmd.Flags().StringVar(&traceFile, "trace-file", "", "Path to a single test file")
-	cmd.Flags().StringVar(&traceID, "trace-id", "", "Database ID of a single test")
+	cmd.Flags().StringVar(&traceID, "trace-id", "", "ID of a single test")
 	cmd.Flags().BoolVarP(&print, "print", "p", false, "Print response and exit (useful for pipes)")
 	cmd.Flags().StringVar(&outputFormat, "output-format", "text", `Output format (only works with --print): "text" (default) or "json" (single result) (choices: "text", "json")"`)
 	cmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter tests (see above help)")
@@ -95,8 +96,8 @@ func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&verbose, "verbose", "", false, "Verbose output, show detailed deviation information (only works with --print)")
 	cmd.Flags().IntVar(&concurrency, "concurrency", 1, "Maximum number of concurrent tests. If set, overrides the concurrency setting in the config file.")
 	cmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs. Logs from the SDK will be present.")
-	cmd.Flags().BoolVar(&saveResults, "save-results", false, "Save replay results to a file")
-	cmd.Flags().StringVar(&resultsDir, "results-dir", "", "Path to directory to save results (only works with --save-results). Default is '.tusk/results'")
+	cmd.Flags().StringVar(&saveResultsFormat, "save-results", "", `Save results to .tusk/results/ (formats: "json", "agent")`)
+	cmd.Flags().StringVar(&resultsDir, "results-dir", "", "Override output directory for --save-results (default: .tusk/results/)")
 	cmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "", "Replay sandbox mode: strict by default on supported platforms; choices: strict, auto, off")
 	cmd.Flags().StringVar(&sandboxConfigPath, "sandbox-config", "", "Path to a Fence config file to merge into the replay sandbox policy")
 
@@ -132,7 +133,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 		"quiet", quiet,
 		"concurrency", concurrency,
 		"enable-service-logs", enableServiceLogs,
-		"save-results", saveResults,
+		"save-results", saveResultsFormat,
 		"results-dir", resultsDir,
 		"sandbox-mode", sandboxMode,
 		"sandbox-config", sandboxConfigPath,
@@ -182,6 +183,15 @@ func runTests(cmd *cobra.Command, args []string) error {
 		utils.SetTracesDirOverride(traceDir)
 	} else if getConfigErr == nil && cfg.Traces.Dir != "" {
 		utils.SetTracesDirOverride(cfg.Traces.Dir)
+	}
+
+	if saveResultsFormat != "" && saveResultsFormat != "json" && saveResultsFormat != "agent" {
+		cmd.SilenceUsage = true
+		return fmt.Errorf("--save-results must be \"json\" or \"agent\", got %q", saveResultsFormat)
+	}
+	if resultsDir != "" && saveResultsFormat == "" {
+		cmd.SilenceUsage = true
+		return fmt.Errorf("--results-dir requires --save-results")
 	}
 
 	interactive := !print && (utils.IsTerminal() || utils.TUICIMode())
@@ -303,21 +313,74 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
-	if saveResults {
-		if resultsDir == "" {
+
+	// Initialize results saving (--save-results json|agent)
+	var agentWriter *runner.AgentWriter
+	var saveResultsDir string
+	if saveResultsFormat != "" {
+		baseDir := resultsDir
+		if baseDir == "" {
 			if getConfigErr == nil && cfg.Results.Dir != "" {
-				resultsDir = cfg.Results.Dir
+				baseDir = cfg.Results.Dir
 			} else {
-				resultsDir = utils.ResolveTuskPath(".tusk/results")
+				baseDir = utils.ResolveTuskPath(".tusk/results")
 			}
 		} else {
-			resultsDir = utils.ResolveTuskPath(resultsDir)
+			baseDir = utils.ResolveTuskPath(baseDir)
 		}
-		executor.SetResultsOutput(resultsDir)
+
+		var dirErr error
+		saveResultsDir, dirErr = createRunDirectory(baseDir)
+		if dirErr != nil {
+			cmd.SilenceUsage = true
+			return fmt.Errorf("failed to create results directory: %w", dirErr)
+		}
+		fmt.Fprintf(os.Stderr, "Results output directory: %s\n", saveResultsDir)
+
+		switch saveResultsFormat {
+		case "json":
+			executor.SetResultsOutput(saveResultsDir)
+		case "agent":
+			var agentErr error
+			agentWriter, agentErr = runner.NewAgentWriter(saveResultsDir)
+			if agentErr != nil {
+				cmd.SilenceUsage = true
+				return fmt.Errorf("failed to initialize agent writer: %w", agentErr)
+			}
+			// Fetch default branch from backend if cloud mode is available
+			if cloud && client != nil {
+				infoReq := &backend.GetObservableServiceInfoRequest{
+					ObservableServiceId: cfg.Service.ID,
+				}
+				info, infoErr := client.GetObservableServiceInfo(context.Background(), infoReq, authOptions)
+				if infoErr == nil && info.DefaultBranch != "" {
+					agentWriter.SetBaseBranch(info.DefaultBranch)
+				}
+			}
+		}
 	}
+
+	// writeAgentResult is a helper that writes agent deviation files for each test result.
+	writeAgentResult := func(res runner.TestResult, test runner.Test) {
+		if agentWriter == nil {
+			return
+		}
+		if res.Cancelled {
+			return
+		}
+		if !res.Passed {
+			if err := agentWriter.WriteDeviation(test, res, executor.GetServer()); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to write agent deviation file: %v\n", err)
+			}
+		} else {
+			agentWriter.RecordPassedTest(test)
+		}
+	}
+
 	if !interactive {
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
 			runner.OutputSingleResult(res, test, outputFormat, quiet, verbose)
+			writeAgentResult(res, test)
 
 			// Cleanup trace spans after the test is completed
 			if executor.GetServer() != nil {
@@ -347,6 +410,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			if !interactive {
 				existingCallback(res, test)
 			}
+			writeAgentResult(res, test)
 
 			err := runner.UploadSingleTestResult(
 				context.Background(),
@@ -383,6 +447,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 	// If no OnTestCompleted callback was set, set a default one that just cleans up the trace spans
 	if executor.OnTestCompleted == nil {
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			writeAgentResult(res, test)
 			if executor.GetServer() != nil {
 				executor.GetServer().CleanupTraceSpans(test.TraceID)
 			}
@@ -701,6 +766,15 @@ func runTests(cmd *cobra.Command, args []string) error {
 				)
 			},
 			OnAllCompleted: func(results []runner.TestResult, tests []runner.Test, exec *runner.Executor) {
+				// Write agent index after all tests complete (interactive mode)
+				if agentWriter != nil {
+					passed, _ := countPassedFailed(results)
+					if err := agentWriter.WriteIndex(len(results), passed); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to write agent index file: %v\n", err)
+					}
+					fmt.Fprintf(os.Stderr, "Agent deviation files written to: %s\n", agentWriter.OutputDir())
+				}
+
 				if cloud && client != nil && (ci || isValidation) {
 					var statusMessage string
 					if isValidation {
@@ -846,6 +920,26 @@ func runTests(cmd *cobra.Command, args []string) error {
 			}
 
 			return fmt.Errorf("test execution failed: %w", err)
+		}
+	}
+
+	// Write saved results after all tests complete (non-interactive mode)
+	if !interactive && saveResultsFormat != "" {
+		switch saveResultsFormat {
+		case "json":
+			if path, err := executor.WriteRunResultsToFile(tests, results); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to write results file: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Results written to: %s\n", path)
+			}
+		case "agent":
+			if agentWriter != nil {
+				passed, _ := countPassedFailed(results)
+				if err := agentWriter.WriteIndex(len(results), passed); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to write agent index file: %v\n", err)
+				}
+				fmt.Fprintf(os.Stderr, "Agent deviation files written to: %s\n", agentWriter.OutputDir())
+			}
 		}
 	}
 
@@ -1206,7 +1300,36 @@ func updateStatusToFailure(ctx context.Context, client *api.TuskClient, driftRun
 	_ = client.UpdateDriftRunCIStatus(ctx, statusReq, auth)
 }
 
-// countPassedFailed counts passed and failed tests from results
+// createRunDirectory creates a timestamped run directory under baseDir.
+// Returns the full path to the created directory.
+func createRunDirectory(baseDir string) (string, error) {
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
+		return "", fmt.Errorf("failed to create base directory: %w", err)
+	}
+
+	timestamp := time.Now().Format("20060102-150405")
+	dir := filepath.Join(baseDir, fmt.Sprintf("run-%s", timestamp))
+
+	// Handle concurrent runs: if directory exists, append counter
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		if os.IsExist(err) {
+			for i := 2; i <= 100; i++ {
+				candidate := fmt.Sprintf("%s-%d", dir, i)
+				if mkErr := os.Mkdir(candidate, 0o750); mkErr == nil {
+					return candidate, nil
+				} else if !os.IsExist(mkErr) {
+					return "", mkErr
+				}
+			}
+			return "", fmt.Errorf("too many concurrent runs in %s", baseDir)
+		}
+		return "", err
+	}
+
+	return dir, nil
+}
+
+// countPassedFailed counts passed and failed tests from results.
 func countPassedFailed(results []runner.TestResult) (passed, failed int) {
 	for _, r := range results {
 		if r.Passed {

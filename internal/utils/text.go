@@ -334,6 +334,32 @@ func FormatJSONDiff(expected, actual any) string {
 	return strings.Join(indentedLines, "\n")
 }
 
+// FormatJSONDiffPlain creates a plain unified diff between two JSON values without
+// ANSI colors or box borders. Suitable for writing to files consumed by coding agents.
+func FormatJSONDiffPlain(expected, actual any) string {
+	expectedJSON := formatJSONForDiff(expected)
+	actualJSON := formatJSONForDiff(actual)
+
+	if expectedJSON == actualJSON {
+		return ""
+	}
+
+	diff := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(expectedJSON),
+		B:        difflib.SplitLines(actualJSON),
+		FromFile: "Expected",
+		ToFile:   "Actual",
+		Context:  5,
+	}
+
+	result, err := difflib.GetUnifiedDiffString(diff)
+	if err != nil {
+		return fmt.Sprintf("Expected:\n%s\n\nActual:\n%s", expectedJSON, actualJSON)
+	}
+
+	return result
+}
+
 // formatJSONForDiff is a helper that formats JSON without the extra indentation prefix
 func formatJSONForDiff(v any) string {
 	if v == nil {

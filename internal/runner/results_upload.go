@@ -23,12 +23,7 @@ func (e *Executor) WriteRunResultsToFile(tests []Test, results []TestResult) (st
 	dir := e.resultsDir
 
 	if dir == "" {
-		// This should be set by the run command if --save-results is true
 		return "", fmt.Errorf("results directory is not set")
-	}
-
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", fmt.Errorf("failed to create results dir: %w", err)
 	}
 
 	outPath := e.ResultsFile

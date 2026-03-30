@@ -247,6 +247,7 @@ results:
 - **Readiness**: If no readiness command is configured, the CLI waits ~10s before replay.
 - **Concurrency**: Tests can run concurrently, with per‑test attribution for mock events.
 - **Service logs**: Written to `.tusk/logs/tusk-replay-*.log` when `--enable-service-logs` is provided.
+- **Agent output**: When `--agent` is set, per-test deviation Markdown files and a summary index are written to a timestamped subdirectory under `.tusk/logs/` (or the directory specified by `--agent-output-dir`). These files are designed for consumption by coding agents to understand and fix test failures.
 - **Timeouts**: SDK ACK ~10s, HTTP client ~30s. Socket messages are capped at 1MB.
 - **Sandboxing**: Uses [Fence](https://github.com/Use-Tusk/fence) to block localhost outbound (Postgres, Redis, etc.), enforcing SDK mock usage. Linux requires `bubblewrap` and `socat`. Disable with `--sandbox-mode off`.
 

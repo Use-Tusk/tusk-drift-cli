@@ -403,6 +403,8 @@ This will not affect CLI behavior. See SDK for more details:
 - `--sandbox-mode` → overrides `replay.sandbox.mode`
 - `--sandbox-config` → overrides `replay.sandbox.config_path`
 - `--cloud` and metadata flags (e.g., `--trace-test-id`, `--all-cloud-trace-tests`, CI context flags)
+- `--agent` → writes per-test deviation Markdown files to `.tusk/logs/` for coding agent consumption (not a config key)
+- `--agent-output-dir` → overrides the base output directory for `--agent` (default: `.tusk/logs/`)
 
 ### Environment variables that override config
 
