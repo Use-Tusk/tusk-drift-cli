@@ -17,9 +17,10 @@ const maxDiffBodySize = 100 * 1024 // 100KB
 
 // AgentWriter handles writing deviation files for agent consumption.
 type AgentWriter struct {
-	outputDir string
-	results   []agentTestEntry
-	mu        sync.Mutex
+	outputDir  string
+	baseBranch string
+	results    []agentTestEntry
+	mu         sync.Mutex
 }
 
 type agentTestEntry struct {
@@ -71,6 +72,11 @@ func NewAgentWriter(baseDir string) (*AgentWriter, error) {
 // OutputDir returns the full output directory path.
 func (w *AgentWriter) OutputDir() string {
 	return w.outputDir
+}
+
+// SetBaseBranch sets the base branch name to include in the index file.
+func (w *AgentWriter) SetBaseBranch(branch string) {
+	w.baseBranch = branch
 }
 
 // WriteDeviation writes a single deviation file for a failed test.
@@ -125,6 +131,9 @@ func (w *AgentWriter) WriteIndex(totalTests int, passedTests int) error {
 	sb.WriteString("# Tusk Drift Agent Deviation Report\n\n")
 	sb.WriteString(fmt.Sprintf("Run: %s\n", time.Now().Format("2006-01-02 15:04:05")))
 	sb.WriteString(fmt.Sprintf("Tests: %d total, %d passed, %d failed\n", totalTests, passedTests, failedTests))
+	if w.baseBranch != "" {
+		sb.WriteString(fmt.Sprintf("Base Branch: %s\n", w.baseBranch))
+	}
 
 	// Deviations table
 	var deviations []agentTestEntry

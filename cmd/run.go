@@ -340,6 +340,17 @@ func runTests(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to initialize agent writer: %w", agentErr)
 		}
 		fmt.Fprintf(os.Stderr, "Agent output directory: %s\n", agentWriter.OutputDir())
+
+		// Fetch default branch from backend if cloud mode is available
+		if cloud && client != nil {
+			infoReq := &backend.GetObservableServiceInfoRequest{
+				ObservableServiceId: cfg.Service.ID,
+			}
+			info, infoErr := client.GetObservableServiceInfo(context.Background(), infoReq, authOptions)
+			if infoErr == nil && info.DefaultBranch != "" {
+				agentWriter.SetBaseBranch(info.DefaultBranch)
+			}
+		}
 	}
 
 	// writeAgentResult is a helper that writes agent deviation files for each test result.
