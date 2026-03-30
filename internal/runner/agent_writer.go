@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -159,10 +160,14 @@ func buildFrontmatter(test Test, result TestResult, server *Server, failureType 
 
 	statusExpected := test.Response.Status
 	statusActual := statusExpected
-	for _, d := range result.Deviations {
-		if d.Field == "response.status" {
-			statusActual = anyToInt(d.Actual, statusExpected)
-			break
+	if failureType == "NO_RESPONSE" {
+		statusActual = 0
+	} else {
+		for _, d := range result.Deviations {
+			if d.Field == "response.status" {
+				statusActual = anyToInt(d.Actual, statusExpected)
+				break
+			}
 		}
 	}
 
@@ -193,15 +198,6 @@ func buildDeviationBody(test Test, result TestResult, server *Server) string {
 	// Request section
 	sb.WriteString("## Request\n")
 	sb.WriteString(fmt.Sprintf("%s %s\n", test.Request.Method, test.Request.Path))
-	if len(test.Request.Headers) > 0 {
-		sb.WriteString("Headers:\n")
-		for k, v := range test.Request.Headers {
-			if strings.EqualFold(k, "authorization") {
-				v = "***"
-			}
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
-		}
-	}
 	sb.WriteString("Body:\n")
 	sb.WriteString(formatBodyForAgent(test.Request.Body))
 	sb.WriteString("\n\n")
@@ -338,13 +334,26 @@ func formatBodyForAgent(body any) string {
 		if v == "" {
 			return "(empty)"
 		}
-		// Try to parse and pretty-print JSON
+		// Try to parse as JSON first
 		var parsed any
 		if err := json.Unmarshal([]byte(v), &parsed); err == nil {
 			b, err := json.MarshalIndent(parsed, "", "  ")
 			if err == nil {
 				return string(b)
 			}
+		}
+		// Try base64 decoding
+		if decoded, err := base64.StdEncoding.DecodeString(v); err == nil {
+			// Try to parse decoded bytes as JSON
+			var parsed any
+			if err := json.Unmarshal(decoded, &parsed); err == nil {
+				b, err := json.MarshalIndent(parsed, "", "  ")
+				if err == nil {
+					return string(b)
+				}
+			}
+			// Decoded but not JSON — return as plain text
+			return string(decoded)
 		}
 		return v
 	default:
