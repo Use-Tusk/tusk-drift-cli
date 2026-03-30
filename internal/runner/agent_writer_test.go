@@ -258,35 +258,12 @@ func TestMockNotFoundOperationName(t *testing.T) {
 		mockNotFoundOperationName(MockNotFoundEvent{}))
 }
 
-func TestNewAgentWriter_CreatesDirectory(t *testing.T) {
+func TestNewAgentWriter_UsesProvidedDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	w, err := NewAgentWriter(tmpDir)
 	require.NoError(t, err)
-	require.NotEmpty(t, w.OutputDir())
-
-	// Directory should exist
-	info, err := os.Stat(w.OutputDir())
-	require.NoError(t, err)
-	assert.True(t, info.IsDir())
-
-	// Should contain "agent-run-" in the path
-	assert.Contains(t, filepath.Base(w.OutputDir()), "agent-run-")
-}
-
-func TestNewAgentWriter_ConcurrentDirectory(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	w1, err := NewAgentWriter(tmpDir)
-	require.NoError(t, err)
-
-	// Create another writer with same timestamp (simulate concurrent)
-	// Force same directory name by creating it
-	w2, err := NewAgentWriter(tmpDir)
-	require.NoError(t, err)
-
-	// Both should exist and be different
-	assert.NotEqual(t, w1.OutputDir(), w2.OutputDir())
+	assert.Equal(t, tmpDir, w.OutputDir())
 }
 
 func TestWriteDeviation(t *testing.T) {

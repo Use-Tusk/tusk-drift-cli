@@ -32,40 +32,11 @@ type agentTestEntry struct {
 	fileName    string // "deviation-{testID}.md" or ""
 }
 
-// NewAgentWriter creates a new AgentWriter that writes to a timestamped subdirectory.
-func NewAgentWriter(baseDir string) (*AgentWriter, error) {
-	if baseDir == "" {
-		baseDir = utils.ResolveTuskPath(".tusk/logs")
-	} else {
-		baseDir = utils.ResolveTuskPath(baseDir)
-	}
-
-	if err := os.MkdirAll(baseDir, 0o750); err != nil {
-		return nil, fmt.Errorf("failed to create base directory: %w", err)
-	}
-
-	timestamp := time.Now().Format("20060102-150405")
-	dir := filepath.Join(baseDir, fmt.Sprintf("agent-run-%s", timestamp))
-
-	// Atomic create-or-fail: os.Mkdir returns EEXIST if another process won
-	// the race, avoiding the TOCTOU window that os.Stat+os.MkdirAll has.
-	if err := os.Mkdir(dir, 0o750); err != nil {
-		if !os.IsExist(err) {
-			return nil, fmt.Errorf("failed to create agent output directory: %w", err)
-		}
-		for i := 2; ; i++ {
-			candidate := fmt.Sprintf("%s-%d", dir, i)
-			if err := os.Mkdir(candidate, 0o750); err == nil {
-				dir = candidate
-				break
-			} else if !os.IsExist(err) {
-				return nil, fmt.Errorf("failed to create agent output directory %s: %w", candidate, err)
-			}
-		}
-	}
-
+// NewAgentWriter creates a new AgentWriter that writes to the given directory.
+// The directory must already exist (created by the caller).
+func NewAgentWriter(outputDir string) (*AgentWriter, error) {
 	return &AgentWriter{
-		outputDir: dir,
+		outputDir: outputDir,
 	}, nil
 }
 
