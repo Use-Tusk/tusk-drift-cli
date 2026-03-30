@@ -1303,7 +1303,7 @@ func updateStatusToFailure(ctx context.Context, client *api.TuskClient, driftRun
 // createRunDirectory creates a timestamped run directory under baseDir.
 // Returns the full path to the created directory.
 func createRunDirectory(baseDir string) (string, error) {
-	if err := os.MkdirAll(baseDir, 0750); err != nil {
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
 		return "", fmt.Errorf("failed to create base directory: %w", err)
 	}
 
@@ -1311,11 +1311,11 @@ func createRunDirectory(baseDir string) (string, error) {
 	dir := filepath.Join(baseDir, fmt.Sprintf("run-%s", timestamp))
 
 	// Handle concurrent runs: if directory exists, append counter
-	if err := os.Mkdir(dir, 0755); err != nil {
+	if err := os.Mkdir(dir, 0o750); err != nil {
 		if os.IsExist(err) {
 			for i := 2; i <= 100; i++ {
 				candidate := fmt.Sprintf("%s-%d", dir, i)
-				if mkErr := os.Mkdir(candidate, 0755); mkErr == nil {
+				if mkErr := os.Mkdir(candidate, 0o750); mkErr == nil {
 					return candidate, nil
 				} else if !os.IsExist(mkErr) {
 					return "", mkErr
