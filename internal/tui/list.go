@@ -87,13 +87,15 @@ type listModel struct {
 	renderedRowsNormal   []string // Each row rendered with normal style
 	renderedRowsSelected []string // Each row rendered with selected style
 	lastRenderedWidth    int      // Width used for last render
+
+	noRedact bool // When true, disables secret redaction and shows headers
 }
 
 func ShowTestList(tests []runner.Test) error {
-	return ShowTestListWithExecutor(tests, nil, runner.SuiteSpanOptions{})
+	return ShowTestListWithExecutor(tests, nil, runner.SuiteSpanOptions{}, false)
 }
 
-func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, suiteOpts runner.SuiteSpanOptions) error {
+func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, suiteOpts runner.SuiteSpanOptions, noRedact bool) error {
 	vp := viewport.New(50, 20)
 	vp.Style = lipgloss.NewStyle()
 
@@ -109,6 +111,7 @@ func ShowTestListWithExecutor(tests []runner.Test, executor *runner.Executor, su
 		cursor:         0,
 		lastCursor:     -1,
 		detailsCache:   make(map[string]string),
+		noRedact:       noRedact,
 	}
 
 	m.rebuildRows()
@@ -588,7 +591,11 @@ func (m *listModel) updateDetailsContent() {
 	}
 
 	lines := m.generateDetailsContent()
-	content := utils.RenderMarkdownWithWidth(strings.Join(lines, "\n"), wrapWidth)
+	raw := strings.Join(lines, "\n")
+	if !m.noRedact {
+		raw = runner.RedactSecrets(raw)
+	}
+	content := utils.RenderMarkdownWithWidth(raw, wrapWidth)
 
 	m.detailsPanel.SetContent(content)
 	m.detailsPanel.GotoTop()
@@ -687,7 +694,9 @@ func (m *listModel) generateDetailsContent() []string {
 		b.blank()
 		b.field("Method", test.Request.Method)
 		b.field("Path", test.Request.Path)
-		b.addSortedMap("Headers", test.Request.Headers)
+		if m.noRedact {
+			b.addSortedMap("Headers", test.Request.Headers)
+		}
 
 		reqBody := test.Request.Body
 		if reqBody != nil && rootSpan != nil && rootSpan.InputSchema != nil {
@@ -703,7 +712,9 @@ func (m *listModel) generateDetailsContent() []string {
 		b.header("RESPONSE")
 		b.blank()
 		b.field("Status", test.Response.Status)
-		b.addSortedMap("Headers", test.Response.Headers)
+		if m.noRedact {
+			b.addSortedMap("Headers", test.Response.Headers)
+		}
 
 		// Decode response body using schema
 		respBody := test.Response.Body

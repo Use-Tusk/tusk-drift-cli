@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
 	core "github.com/Use-Tusk/tusk-drift-schemas/generated/go/core"
@@ -63,7 +64,7 @@ func (w *AgentWriter) WriteDeviation(test Test, result TestResult, server *Serve
 	body := buildDeviationBody(test, result, server)
 
 	filePath := filepath.Join(w.outputDir, fileName)
-	content := redactSecrets(fm + body)
+	content := RedactSecrets(fm + body)
 	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
 		return err
 	}
@@ -137,7 +138,7 @@ func (w *AgentWriter) WriteIndex(totalTests int, passedTests int) error {
 	}
 
 	filePath := filepath.Join(w.outputDir, "index.md")
-	indexContent := redactSecrets(sb.String())
+	indexContent := RedactSecrets(sb.String())
 	return os.WriteFile(filePath, []byte(indexContent), 0o600)
 }
 
@@ -354,8 +355,9 @@ func formatBodyForAgent(body any) string {
 					return string(b)
 				}
 			}
-			// Decoded but not JSON — return as plain text
-			return string(decoded)
+			if utf8.Valid(decoded) {
+				return string(decoded)
+			}
 		}
 		return v
 	default:

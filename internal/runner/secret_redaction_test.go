@@ -17,7 +17,7 @@ func TestRuleIDToPlaceholder(t *testing.T) {
 
 func TestRedactSecrets_ShortContent(t *testing.T) {
 	short := "hello"
-	assert.Equal(t, short, redactSecrets(short))
+	assert.Equal(t, short, RedactSecrets(short))
 }
 
 func TestRedactSecrets_NoSecrets(t *testing.T) {
@@ -29,13 +29,13 @@ Body:
 ## Response Diff
 Status: 200 (OK)
 `
-	result := redactSecrets(content)
+	result := RedactSecrets(content)
 	assert.Equal(t, content, result)
 }
 
 func TestRedactSecrets_JWT(t *testing.T) {
 	content := "Authorization: Bearer " + testJWT + "\nBody:\n(empty)\n"
-	result := redactSecrets(content)
+	result := RedactSecrets(content)
 	assert.NotContains(t, result, testJWT)
 	assert.Contains(t, result, "TUSK_REDACTED_JWT")
 }
@@ -54,7 +54,7 @@ Body:
 ## Response Diff
 Status: 200 (OK)
 `
-	result := redactSecrets(content)
+	result := RedactSecrets(content)
 	// Frontmatter and structure preserved
 	assert.Contains(t, result, "---")
 	assert.Contains(t, result, "deviation_id: trace-123")

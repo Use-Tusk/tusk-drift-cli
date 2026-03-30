@@ -35,7 +35,7 @@ func ruleIDToPlaceholder(ruleID string) string {
 // redactSecrets scans content for secrets using gitleaks and replaces them
 // with TUSK_REDACTED_{RULE_ID} placeholders. Returns the original content
 // unchanged if detection fails (graceful fallback).
-func redactSecrets(content string) string {
+func RedactSecrets(content string) string {
 	if len(content) < minScannableLength {
 		return content
 	}
