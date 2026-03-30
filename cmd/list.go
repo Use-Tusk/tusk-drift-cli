@@ -24,8 +24,10 @@ var listContent string
 //go:embed short_docs/drift/drift_filter.md
 var filterContent string
 
-var listJSON bool
-var noRedact bool
+var (
+	listJSON bool
+	noRedact bool
+)
 
 var listCmd = &cobra.Command{
 	Use:          "list",
