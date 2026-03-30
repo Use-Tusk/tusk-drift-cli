@@ -144,7 +144,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 		"branchName", branchName,
 		"externalCheckRunID", externalCheckRunID,
 		"clientID", clientID,
-		"results-dir", resultsDir,
 	)
 
 	executor := runner.NewExecutor()
@@ -1301,11 +1300,10 @@ func updateStatusToFailure(ctx context.Context, client *api.TuskClient, driftRun
 	_ = client.UpdateDriftRunCIStatus(ctx, statusReq, auth)
 }
 
-// countPassedFailed counts passed and failed tests from results
 // createRunDirectory creates a timestamped run directory under baseDir.
 // Returns the full path to the created directory.
 func createRunDirectory(baseDir string) (string, error) {
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create base directory: %w", err)
 	}
 
@@ -1331,6 +1329,7 @@ func createRunDirectory(baseDir string) (string, error) {
 	return dir, nil
 }
 
+// countPassedFailed counts passed and failed tests from results.
 func countPassedFailed(results []runner.TestResult) (passed, failed int) {
 	for _, r := range results {
 		if r.Passed {

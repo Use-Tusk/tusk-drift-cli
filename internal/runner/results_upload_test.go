@@ -26,7 +26,7 @@ func TestWriteRunResultsToFile(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		resultsDir := filepath.Join(tmpDir, "results")
-		require.NoError(t, os.MkdirAll(resultsDir, 0755))
+		require.NoError(t, os.MkdirAll(resultsDir, 0750))
 		resultsFile := filepath.Join(resultsDir, "test-results.json")
 
 		executor := &Executor{
@@ -308,7 +308,7 @@ func TestWriteRunResultsToFile_JSONStructure(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	resultsDir := filepath.Join(tmpDir, "results")
-	require.NoError(t, os.MkdirAll(resultsDir, 0755))
+	require.NoError(t, os.MkdirAll(resultsDir, 0750))
 	resultsFile := filepath.Join(resultsDir, "test.json")
 
 	executor := &Executor{
