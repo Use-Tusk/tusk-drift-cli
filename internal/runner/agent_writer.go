@@ -63,7 +63,8 @@ func (w *AgentWriter) WriteDeviation(test Test, result TestResult, server *Serve
 	body := buildDeviationBody(test, result, server)
 
 	filePath := filepath.Join(w.outputDir, fileName)
-	if err := os.WriteFile(filePath, []byte(fm+body), 0o600); err != nil {
+	content := redactSecrets(fm + body)
+	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
 		return err
 	}
 
@@ -136,7 +137,8 @@ func (w *AgentWriter) WriteIndex(totalTests int, passedTests int) error {
 	}
 
 	filePath := filepath.Join(w.outputDir, "index.md")
-	return os.WriteFile(filePath, []byte(sb.String()), 0o600)
+	indexContent := redactSecrets(sb.String())
+	return os.WriteFile(filePath, []byte(indexContent), 0o600)
 }
 
 func determineFailureType(result TestResult, server *Server) string {
