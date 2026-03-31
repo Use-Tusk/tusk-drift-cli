@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,7 +92,7 @@ func TestBuildFrontmatter_ServerCrash(t *testing.T) {
 
 	assert.Contains(t, fm, "failure_type: NO_RESPONSE")
 	assert.Contains(t, fm, "status_expected: 200")
-	assert.Contains(t, fm, "status_actual: 200")
+	assert.Contains(t, fm, "status_actual: 0")
 }
 
 func TestBuildDeviationBody_StatusAndBodyDiff(t *testing.T) {
@@ -118,7 +119,7 @@ func TestBuildDeviationBody_StatusAndBodyDiff(t *testing.T) {
 
 	assert.Contains(t, body, "## Request")
 	assert.Contains(t, body, "POST /api/v1/users")
-	assert.Contains(t, body, "Authorization: ***")
+	assert.NotContains(t, body, "Authorization")
 	assert.Contains(t, body, "## Response Diff")
 	assert.Contains(t, body, "Status: 200 -> 201 (CHANGED)")
 	assert.Contains(t, body, "```diff")
@@ -385,4 +386,15 @@ func TestFormatBodyForAgent(t *testing.T) {
 	assert.Equal(t, "(empty)", formatBodyForAgent(""))
 	assert.Contains(t, formatBodyForAgent(map[string]any{"key": "value"}), "key")
 	assert.Contains(t, formatBodyForAgent(`{"json":"string"}`), "json")
+
+	// Base64-encoded JSON should be decoded and pretty-printed
+	encoded := base64.StdEncoding.EncodeToString([]byte(`{"operationName":"TestQuery","variables":{"id":1}}`))
+	decoded := formatBodyForAgent(encoded)
+	assert.Contains(t, decoded, "operationName")
+	assert.Contains(t, decoded, "TestQuery")
+	assert.NotContains(t, decoded, encoded) // should not contain the base64 string
+
+	// Base64-encoded plain text should be decoded
+	encodedText := base64.StdEncoding.EncodeToString([]byte("hello world"))
+	assert.Equal(t, "hello world", formatBodyForAgent(encodedText))
 }
