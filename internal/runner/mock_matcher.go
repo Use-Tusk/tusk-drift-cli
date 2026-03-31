@@ -229,11 +229,8 @@ func (mm *MockMatcher) runPriorityMatchingWithTraceSpans(req *core.GetMockReques
 	if req.OutboundSpan.InputValue != nil {
 		requestBody = req.OutboundSpan.InputValue.AsMap()
 		if !req.OutboundSpan.IsPreAppStart {
-			bodyForLog := requestBody
-			if !(isDebugEnabled()) {
-				bodyForLog = redactSensitive(requestBody)
-			}
-			log.TestLog(traceID, fmt.Sprintf("Finding best match for request: %v", bodyForLog))
+			logStr := RedactSecrets(fmt.Sprintf("Finding best match for request: %v", requestBody))
+			log.TestLog(traceID, logStr)
 		}
 	}
 
@@ -1299,30 +1296,4 @@ func normalizeGQL(q string) string {
 
 func isDebugEnabled() bool {
 	return slog.Default().Enabled(context.Background(), slog.LevelDebug)
-}
-
-// redactSensitive redacts sensitive fields from the given value.
-// Useful for displaying logs to the CLI.
-func redactSensitive(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, val := range t {
-			kl := strings.ToLower(k)
-			if kl == "token" || kl == "authorization" || kl == "secret" || kl == "secretorpublickey" {
-				out[k] = "[REDACTED]"
-				continue
-			}
-			out[k] = redactSensitive(val)
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i := range t {
-			out[i] = redactSensitive(t[i])
-		}
-		return out
-	default:
-		return v
-	}
 }
