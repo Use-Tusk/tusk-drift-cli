@@ -8,20 +8,20 @@ import (
 )
 
 var (
-	querySpansServiceID      string
-	querySpansName           string
-	querySpansPackageName    string
-	querySpansTraceID        string
-	querySpansEnvironment    string
-	querySpansMinDuration    int
-	querySpansRootSpansOnly  bool
-	querySpansLimit          int
-	querySpansOffset         int
+	querySpansServiceID       string
+	querySpansName            string
+	querySpansPackageName     string
+	querySpansTraceID         string
+	querySpansEnvironment     string
+	querySpansMinDuration     int
+	querySpansRootSpansOnly   bool
+	querySpansLimit           int
+	querySpansOffset          int
 	querySpansIncludePayloads bool
-	querySpansMaxPayload     int
-	querySpansOrderBy        string
-	querySpansWhere          string
-	querySpansJsonbFilters   string
+	querySpansMaxPayload      int
+	querySpansOrderBy         string
+	querySpansWhere           string
+	querySpansJsonbFilters    string
 )
 
 var driftQuerySpansCmd = &cobra.Command{

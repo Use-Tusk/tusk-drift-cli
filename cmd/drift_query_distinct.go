@@ -8,10 +8,10 @@ import (
 )
 
 var (
-	queryDistinctServiceID   string
-	queryDistinctField       string
-	queryDistinctLimit       int
-	queryDistinctWhere       string
+	queryDistinctServiceID    string
+	queryDistinctField        string
+	queryDistinctLimit        int
+	queryDistinctWhere        string
 	queryDistinctJsonbFilters string
 )
 

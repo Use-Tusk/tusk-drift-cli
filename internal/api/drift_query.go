@@ -57,3 +57,11 @@ func (c *TuskClient) GetDriftSpansByIds(ctx context.Context, input *driftquery.G
 	}
 	return out, nil
 }
+
+func (c *TuskClient) ListDriftServices(ctx context.Context, auth AuthOptions) (json.RawMessage, error) {
+	var out json.RawMessage
+	if err := c.makeJSONRequest(ctx, http.MethodGet, DriftQueryAPIPath+"/services", nil, &out, auth); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
