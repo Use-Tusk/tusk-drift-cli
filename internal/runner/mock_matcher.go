@@ -1,10 +1,8 @@
 package runner
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"runtime"
 	"sort"
@@ -1292,8 +1290,4 @@ func normalizeGQL(q string) string {
 	// Normalize brace adjacency then collapse whitespace
 	q = strings.NewReplacer("{", " { ", "}", " } ").Replace(strings.TrimSpace(q))
 	return strings.Join(strings.Fields(q), " ")
-}
-
-func isDebugEnabled() bool {
-	return slog.Default().Enabled(context.Background(), slog.LevelDebug)
 }
