@@ -8,9 +8,9 @@ import (
 )
 
 var (
-	queryTraceServiceID      string
+	queryTraceServiceID       string
 	queryTraceIncludePayloads bool
-	queryTraceMaxPayload     int
+	queryTraceMaxPayload      int
 )
 
 var driftQueryTraceCmd = &cobra.Command{

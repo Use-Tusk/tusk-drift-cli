@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	queryByIdsServiceID      string
-	queryByIdsIDs            string
+	queryByIdsServiceID       string
+	queryByIdsIDs             string
 	queryByIdsIncludePayloads bool
-	queryByIdsMaxPayload     int
+	queryByIdsMaxPayload      int
 )
 
 var driftQuerySpansByIdsCmd = &cobra.Command{
