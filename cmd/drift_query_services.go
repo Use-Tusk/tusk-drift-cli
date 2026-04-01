@@ -9,7 +9,7 @@ import (
 
 var driftQueryServicesCmd = &cobra.Command{
 	Use:          "services",
-	Short:        "List available observable services",
+	Short:        "List available Tusk Drift Cloud services",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, authOptions, _, err := api.SetupCloud(context.Background(), false)
