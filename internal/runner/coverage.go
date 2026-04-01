@@ -21,39 +21,35 @@ var processV8CoverageScript string
 
 const coverageSnapshotTimeout = 5 * time.Second
 
-// TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
-func (e *Executor) TakeCoverageSnapshot() error {
+// TakeCoverageSnapshotAndProcess calls the SDK's coverage snapshot endpoint,
+// processes the latest V8 file into compact line counts, and cleans up old files.
+// Returns per-file line counts: filePath -> lineNumber -> hitCount
+// Note: V8 best-effort coverage uses binary counts (0/1), so per-test diffing
+// gives marginal coverage (newly covered lines), not total per-test coverage.
+func (e *Executor) TakeCoverageSnapshotAndProcess() (map[string]map[string]int, error) {
 	if !e.coverageEnabled || e.coveragePort == 0 {
-		return nil
+		return nil, nil
 	}
 
+	// Call SDK to trigger v8.takeCoverage()
 	url := fmt.Sprintf("http://127.0.0.1:%d/snapshot", e.coveragePort)
-	client := &http.Client{Timeout: coverageSnapshotTimeout}
+	httpClient := &http.Client{Timeout: coverageSnapshotTimeout}
 
-	resp, err := client.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
-		return fmt.Errorf("failed to take coverage snapshot: %w", err)
+		return nil, fmt.Errorf("failed to take coverage snapshot: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("coverage snapshot returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("coverage snapshot returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Small delay to let V8 finish writing the file
 	time.Sleep(100 * time.Millisecond)
-	return nil
-}
 
-// TakeCoverageSnapshotAndProcess takes a snapshot, processes the latest V8 file
-// into compact line counts, and deletes the raw V8 file to save disk space.
-// Returns the processed line counts.
-func (e *Executor) TakeCoverageSnapshotAndProcess() (map[string]map[string]int, error) {
-	if err := e.TakeCoverageSnapshot(); err != nil {
-		return nil, err
-	}
-
+	// Process the latest V8 file
 	files, err := e.ListV8CoverageFiles()
 	if err != nil {
 		return nil, err
@@ -62,15 +58,13 @@ func (e *Executor) TakeCoverageSnapshotAndProcess() (map[string]map[string]int, 
 		return make(map[string]map[string]int), nil
 	}
 
-	// Process the latest file (cumulative snapshot)
 	latestFile := files[len(files)-1]
 	counts, err := processRawV8Coverage(latestFile)
 	if err != nil {
 		return nil, err
 	}
 
-	// Delete all raw V8 files except the latest (c8 needs the final one for aggregate)
-	// Actually for aggregate we only need the last file, so we can delete earlier ones
+	// Delete old V8 files to save disk space (keep latest for c8 aggregate)
 	for i := 0; i < len(files)-1; i++ {
 		os.Remove(files[i])
 	}
@@ -102,9 +96,9 @@ type CoverageTestRecord struct {
 	LineCounts  map[string]map[string]int // Processed line counts from V8 snapshot (cumulative)
 }
 
-// ProcessCoverage runs c8 report for aggregate and diffs pre-processed snapshots for per-test coverage.
-// Records should include a baseline at index 0 followed by per-test records.
-// Each record's LineCounts has already been extracted from raw V8 files during test execution.
+// ProcessCoverage runs c8 report for aggregate and writes per-test coverage files.
+// With V8 Inspector precise coverage, each record already contains clean per-test
+// coverage (counters reset between tests), so no diffing is needed.
 func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 	if !e.coverageEnabled {
 		return nil
@@ -112,7 +106,7 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 
 	log.Stderrln("\n➤ Processing coverage data...")
 
-	// 1. Run c8 report for aggregate (uses remaining raw V8 files in raw dir)
+	// 1. Run c8 report for aggregate (uses NODE_V8_COVERAGE files for --all support)
 	aggregateDir := filepath.Join(e.coverageOutputDir, "aggregate")
 	if err := os.MkdirAll(aggregateDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create aggregate dir: %w", err)
@@ -123,34 +117,59 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 		return fmt.Errorf("aggregate c8 report failed: %w", err)
 	}
 
-	// 2. Diff consecutive pre-processed snapshots for per-test coverage
-	// records[0] = baseline, records[1..N] = per-test
-	testRecords := make([]CoverageTestRecord, 0)
-	for i := 1; i < len(records); i++ {
-		prev := records[i-1].LineCounts
-		curr := records[i].LineCounts
+	// 2. Write per-test coverage files (diffs already computed during test execution)
+	for _, record := range records {
+		detail := e.GetTestCoverageDetail(record.TestID)
+		if detail == nil {
+			continue
+		}
 
-		diff := DiffV8LineCounts(prev, curr)
-
-		testDir := filepath.Join(e.coverageOutputDir, sanitizeFileName(records[i].TestID))
+		testDir := filepath.Join(e.coverageOutputDir, sanitizeFileName(record.TestID))
 		if err := os.MkdirAll(testDir, 0o750); err != nil {
 			return err
 		}
 
 		diffPath := filepath.Join(testDir, "coverage.json")
-		diffData, _ := json.MarshalIndent(diff, "", "  ")
+		diffData, _ := json.MarshalIndent(detail, "", "  ")
 		if err := os.WriteFile(diffPath, diffData, 0o644); err != nil {
 			return err
 		}
-
-		testRecords = append(testRecords, records[i])
 	}
 
 	// 3. Clean up raw V8 files (aggregate already processed)
 	os.RemoveAll(e.coverageRawDir)
 
 	// 4. Print summary
-	return e.printCoverageSummary(testRecords)
+	return e.printCoverageSummary(records)
+}
+
+// LinecountsToCoverageDetail converts raw line counts to CoverageFileDiff format.
+func LinecountsToCoverageDetail(lineCounts map[string]map[string]int) map[string]CoverageFileDiff {
+	result := make(map[string]CoverageFileDiff)
+
+	for filePath, lines := range lineCounts {
+		var coveredLines []int
+		for lineStr, count := range lines {
+			if count > 0 {
+				line := 0
+				fmt.Sscanf(lineStr, "%d", &line)
+				if line > 0 {
+					coveredLines = append(coveredLines, line)
+				}
+			}
+		}
+		if len(coveredLines) > 0 {
+			sort.Ints(coveredLines)
+			coveredLines = dedup(coveredLines)
+			result[filePath] = CoverageFileDiff{
+				CoveredLines:   coveredLines,
+				CoverableLines: len(lines),
+				CoveredCount:   len(coveredLines),
+			}
+		}
+	}
+
+	return result
 }
 
 // processRawV8Coverage runs the Node.js helper to extract line-level counts from a V8 coverage file.

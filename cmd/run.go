@@ -410,7 +410,8 @@ func runTests(cmd *cobra.Command, args []string) error {
 				existingCallback(res, test)
 			}
 
-			// Take coverage snapshot and process immediately (extract line counts, clean up raw V8 file)
+			// Take coverage snapshot - SDK returns cumulative precise counts
+			// We diff with previous snapshot to get true per-test coverage
 			lineCounts, err := executor.TakeCoverageSnapshotAndProcess()
 			if err != nil {
 				log.Warn("Failed to take coverage snapshot", "testID", test.TraceID, "error", err)
@@ -418,7 +419,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			}
 
 			coverageMu.Lock()
-			// Compute per-test diff (delta from previous snapshot)
+			// Diff with previous snapshot (precise counts, not binary)
 			var prevCounts map[string]map[string]int
 			if len(coverageRecords) > 0 {
 				prevCounts = coverageRecords[len(coverageRecords)-1].LineCounts
@@ -430,7 +431,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 			})
 			coverageMu.Unlock()
 
-			// Diff with previous snapshot to get this test's coverage
+			// Diff gives us lines where count increased = lines this test executed
 			diff := runner.DiffV8LineCounts(prevCounts, lineCounts)
 			executor.SetTestCoverageDetail(test.TraceID, diff)
 
@@ -880,9 +881,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 			log.Stderrln(fmt.Sprintf("➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency()))
 		}
 
-		// Coverage: take baseline snapshot before any tests run
+		// Coverage: take baseline snapshot (captures startup coverage)
+		// This becomes the reference for diffing the first test's coverage
 		if coverageEnabled {
-			// Small delay to let the service fully initialize and coverage server start
+			// Small delay to let the coverage server start
 			time.Sleep(500 * time.Millisecond)
 			baselineCounts, err := executor.TakeCoverageSnapshotAndProcess()
 			if err != nil {
@@ -895,7 +897,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 					LineCounts: baselineCounts,
 				})
 				coverageMu.Unlock()
-				log.Debug("Coverage baseline snapshot taken")
+				log.Debug("Coverage baseline snapshot taken (precise mode)")
 			}
 		}
 
@@ -929,15 +931,16 @@ func runTests(cmd *cobra.Command, args []string) error {
 	_ = os.Stdout.Sync()
 	time.Sleep(1 * time.Millisecond)
 
-	// Coverage: process coverage data after all tests complete (before service stops)
+	// Coverage: process aggregate and write per-test files
+	// records[0] = baseline, records[1..N] = per-test (with cumulative counts)
 	if coverageEnabled && len(coverageRecords) > 1 {
-		// records[0] = baseline, records[1..N] = per-test (LineCounts already processed inline)
 		coverageMu.Lock()
-		records := make([]runner.CoverageTestRecord, len(coverageRecords))
-		copy(records, coverageRecords)
+		// Skip baseline, pass only test records (diffs already computed inline)
+		testRecords := make([]runner.CoverageTestRecord, 0, len(coverageRecords)-1)
+		testRecords = append(testRecords, coverageRecords[1:]...)
 		coverageMu.Unlock()
 
-		if err := executor.ProcessCoverage(records); err != nil {
+		if err := executor.ProcessCoverage(testRecords); err != nil {
 			log.Warn("Failed to process coverage", "error", err)
 		}
 	}
