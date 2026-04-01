@@ -62,6 +62,18 @@ func ReplayTestsByEnvironment(
 		log.ServiceLog(fmt.Sprintf("✓ Environment ready (%.1fs)", envStartDuration))
 		log.Stderrln(fmt.Sprintf("✓ Environment ready (%.1fs)", envStartDuration))
 
+		// Coverage: take baseline snapshot to capture all coverable lines and reset counters
+		if executor.IsCoverageEnabled() {
+			time.Sleep(500 * time.Millisecond) // let coverage server start
+			baseline, err := executor.TakeCoverageBaseline()
+			if err != nil {
+				log.Warn("Failed to take baseline coverage snapshot", "error", err)
+			} else {
+				executor.SetCoverageBaseline(baseline)
+				log.Debug("Coverage baseline taken (counters reset, all coverable lines captured)")
+			}
+		}
+
 		// 3. Run tests for this environment
 		results, err := executor.RunTests(group.Tests)
 		if err != nil {
