@@ -223,12 +223,7 @@ func saveSelectedClientToCLIConfig(clientID, clientName string) {
 }
 
 func getGitRootDir() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get git root: %w", err)
-	}
-	return strings.TrimSpace(string(out)), nil
+	return utils.GetGitRootDir()
 }
 
 func detectGitHubIndicators() bool {

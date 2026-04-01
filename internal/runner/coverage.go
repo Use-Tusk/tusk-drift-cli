@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Use-Tusk/tusk-cli/internal/log"
+	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
 const coverageSnapshotTimeout = 5 * time.Second
@@ -366,12 +366,9 @@ func normalizeFilePaths(lineCounts map[string]map[string]int) map[string]map[str
 
 // getPathNormalizationBase returns the git root, falling back to cwd.
 func getPathNormalizationBase() string {
-	// Try git root first (handles monorepo files outside service dir)
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	if out, err := cmd.Output(); err == nil {
-		return strings.TrimSpace(string(out))
+	if root, err := utils.GetGitRootDir(); err == nil {
+		return root
 	}
-	// Fallback to cwd
 	if cwd, err := os.Getwd(); err == nil {
 		return cwd
 	}
