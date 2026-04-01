@@ -409,7 +409,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				existingCallback(res, test)
 			}
 
-			// Take coverage snapshot. V8's takeCoverage() auto-resets counters,
+			// Take coverage snapshot. The SDK resets counters on each call,
 			// so the response contains ONLY coverage from this test.
 			lineCounts, err := executor.TakeCoverageSnapshot()
 			if err != nil {

@@ -162,14 +162,16 @@ func (e *Executor) StartService() error {
 
 	env = append(env, "TUSK_DRIFT_MODE=REPLAY")
 
-	// Coverage: inject NODE_V8_COVERAGE dir and coverage port
+	// Coverage: inject env vars that SDK coverage servers listen for.
+	// NODE_V8_COVERAGE is required by the Node SDK to enable V8 coverage collection.
+	// TUSK_COVERAGE_PORT tells both Node and Python SDKs which port to serve snapshots on.
 	if e.coverageEnabled {
 		coverageRawDir := filepath.Join(e.coverageOutputDir, ".v8-raw")
 		os.MkdirAll(coverageRawDir, 0o750)
 		absCoverageRawDir, _ := filepath.Abs(coverageRawDir)
 		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", absCoverageRawDir))
 		env = append(env, fmt.Sprintf("TUSK_COVERAGE_PORT=%d", e.coveragePort))
-		log.Debug("Coverage enabled", "v8_dir", absCoverageRawDir, "port", e.coveragePort)
+		log.Debug("Coverage enabled", "raw_dir", absCoverageRawDir, "port", e.coveragePort)
 	}
 
 	e.serviceCmd.Env = env

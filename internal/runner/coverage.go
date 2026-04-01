@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,11 +17,6 @@ import (
 
 const coverageSnapshotTimeout = 5 * time.Second
 
-// TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
-// The SDK calls v8.takeCoverage() (Node) or coverage.py stop/start (Python),
-// processes the coverage data, and returns per-file line counts.
-// V8's takeCoverage() auto-resets counters, so each call returns ONLY the
-// coverage since the last call - true per-test coverage with no diffing needed.
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
 // Returns per-file line counts for this test only (counters auto-reset).
 func (e *Executor) TakeCoverageSnapshot() (map[string]map[string]int, error) {
@@ -96,11 +92,11 @@ func LinecountsToCoverageDetail(lineCounts map[string]map[string]int) map[string
 		var covered []int
 		for lineStr, count := range lines {
 			if count > 0 {
-				line := 0
-				fmt.Sscanf(lineStr, "%d", &line)
-				if line > 0 {
-					covered = append(covered, line)
+				line, err := strconv.Atoi(lineStr)
+				if err != nil || line <= 0 {
+					continue
 				}
+				covered = append(covered, line)
 			}
 		}
 		if len(covered) > 0 {
