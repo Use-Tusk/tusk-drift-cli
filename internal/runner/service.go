@@ -45,18 +45,9 @@ func (e *Executor) StartService() error {
 
 	command := cfg.Service.Start.Command
 
-	// Coverage: set up output directory (env vars injected later, no command wrapping needed)
-	if e.coverageEnabled {
-		if e.coverageOutputDir == "" {
-			timestamp := time.Now().Format("20060102T150405")
-			e.coverageOutputDir = filepath.Join(".tusk", "coverage-"+timestamp)
-		}
-		if err := os.MkdirAll(e.coverageOutputDir, 0o750); err != nil {
-			return fmt.Errorf("failed to create coverage output dir: %w", err)
-		}
-		if e.coveragePort == 0 {
-			e.coveragePort = 19876
-		}
+	// Coverage: set port (env vars injected after sandbox wrapping)
+	if e.coverageEnabled && e.coveragePort == 0 {
+		e.coveragePort = 19876
 	}
 
 	// Wrap command with fence sandboxing (if supported and enabled)
@@ -166,12 +157,14 @@ func (e *Executor) StartService() error {
 	// NODE_V8_COVERAGE is required by the Node SDK to enable V8 coverage collection.
 	// TUSK_COVERAGE_PORT tells both Node and Python SDKs which port to serve snapshots on.
 	if e.coverageEnabled {
-		coverageRawDir := filepath.Join(e.coverageOutputDir, ".v8-raw")
-		os.MkdirAll(coverageRawDir, 0o750)
-		absCoverageRawDir, _ := filepath.Abs(coverageRawDir)
-		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", absCoverageRawDir))
+		// Use temp dir for V8 coverage files (SDK reads + deletes immediately, nothing persists)
+		v8CoverageDir, err := os.MkdirTemp("", "tusk-v8-coverage-*")
+		if err != nil {
+			return fmt.Errorf("failed to create temp dir for V8 coverage: %w", err)
+		}
+		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", v8CoverageDir))
 		env = append(env, fmt.Sprintf("TUSK_COVERAGE_PORT=%d", e.coveragePort))
-		log.Debug("Coverage enabled", "raw_dir", absCoverageRawDir, "port", e.coveragePort)
+		log.Debug("Coverage enabled", "v8_dir", v8CoverageDir, "port", e.coveragePort)
 	}
 
 	e.serviceCmd.Env = env

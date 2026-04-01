@@ -124,7 +124,8 @@ func LinecountsToCoverageDetail(lineCounts map[string]map[string]int) map[string
 	return result
 }
 
-// ProcessCoverage writes per-test coverage files and prints the summary.
+// ProcessCoverage computes aggregate coverage and prints the summary.
+// All data stays in memory - no files written to user's project.
 func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 	if !e.coverageEnabled || len(records) == 0 {
 		return nil
@@ -132,27 +133,11 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 
 	log.Stderrln("\n➤ Processing coverage data...")
 
-	// Write per-test coverage files
-	for _, record := range records {
-		detail := e.GetTestCoverageDetail(record.TestID)
-		if detail == nil {
-			continue
-		}
-		testDir := filepath.Join(e.coverageOutputDir, sanitizeFileName(record.TestID))
-		if err := os.MkdirAll(testDir, 0o750); err != nil {
-			return err
-		}
-		data, _ := json.MarshalIndent(detail, "", "  ")
-		if err := os.WriteFile(filepath.Join(testDir, "coverage.json"), data, 0o644); err != nil {
-			return err
-		}
-	}
-
 	// Compute aggregate: start with baseline (all coverable lines including count=0),
 	// then merge in per-test coverage. This gives accurate denominator.
 	aggregate := mergeWithBaseline(e.coverageBaseline, records)
 
-	// Print and write summary
+	// Print summary to console
 	return e.printCoverageSummary(records, aggregate)
 }
 
@@ -274,13 +259,6 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 		summary.PerTest = append(summary.PerTest, ts)
 	}
 
-	// Write summary.json
-	summaryPath := filepath.Join(e.coverageOutputDir, "summary.json")
-	summaryData, _ := json.MarshalIndent(summary, "", "  ")
-	if err := os.WriteFile(summaryPath, summaryData, 0o644); err != nil {
-		return err
-	}
-
 	// Console output
 	log.Stderrln(fmt.Sprintf("\n📊 Coverage: %.1f%% (%d/%d coverable lines across %d files)",
 		aggPct, totalCovered, totalCoverable, len(aggregate)))
@@ -318,7 +296,6 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 		log.Stderrln(fmt.Sprintf("    %-40s %d lines across %d files", name, ts.CoveredLines, ts.FilesTouched))
 	}
 
-	log.Stderrln(fmt.Sprintf("\n  Full report: %s", summaryPath))
 	return nil
 }
 

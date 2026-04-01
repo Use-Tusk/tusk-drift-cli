@@ -94,12 +94,11 @@ type Executor struct {
 	replaySandboxConfigPath string
 
 	// Coverage
-	coverageEnabled    bool
-	coveragePort       int    // Coverage snapshot server port
-	coverageOutputDir  string // Processed coverage output dir
-	coveragePerTest      map[string]map[string]CoverageFileDiff // testID -> per-file coverage diff
+	coverageEnabled      bool
+	coveragePort         int // Coverage snapshot server port
+	coveragePerTest      map[string]map[string]CoverageFileDiff
 	coveragePerTestMu    sync.Mutex
-	coverageBaseline     map[string]map[string]int // baseline: all coverable lines (including count=0)
+	coverageBaseline     map[string]map[string]int
 }
 
 func NewExecutor() *Executor {
@@ -489,10 +488,6 @@ func (e *Executor) SetCoverageEnabled(enabled bool) {
 
 func (e *Executor) IsCoverageEnabled() bool {
 	return e.coverageEnabled
-}
-
-func (e *Executor) GetCoverageOutputDir() string {
-	return e.coverageOutputDir
 }
 
 // SetCoverageBaseline merges new baseline data into the existing baseline.
