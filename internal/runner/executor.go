@@ -92,6 +92,14 @@ type Executor struct {
 	replayComposeOverride   string
 	replayEnvVars           map[string]string
 	replaySandboxConfigPath string
+
+	// Coverage
+	coverageEnabled    bool
+	coverageRawDir     string // NODE_V8_COVERAGE output dir
+	coveragePort       int    // Coverage snapshot server port
+	coverageOutputDir  string // Final processed coverage output dir
+	coveragePerTest    map[string]map[string]CoverageFileDiff // testID -> per-file coverage diff
+	coveragePerTestMu  sync.Mutex
 }
 
 func NewExecutor() *Executor {
@@ -473,6 +481,38 @@ func (e *Executor) SetTestTimeout(timeout time.Duration) {
 
 func (e *Executor) SetOnTestCompleted(callback func(TestResult, Test)) {
 	e.OnTestCompleted = callback
+}
+
+func (e *Executor) SetCoverageEnabled(enabled bool) {
+	e.coverageEnabled = enabled
+}
+
+func (e *Executor) IsCoverageEnabled() bool {
+	return e.coverageEnabled
+}
+
+func (e *Executor) GetCoverageOutputDir() string {
+	return e.coverageOutputDir
+}
+
+// SetTestCoverageDetail stores per-test coverage diff for display in TUI/print.
+func (e *Executor) SetTestCoverageDetail(testID string, detail map[string]CoverageFileDiff) {
+	e.coveragePerTestMu.Lock()
+	defer e.coveragePerTestMu.Unlock()
+	if e.coveragePerTest == nil {
+		e.coveragePerTest = make(map[string]map[string]CoverageFileDiff)
+	}
+	e.coveragePerTest[testID] = detail
+}
+
+// GetTestCoverageDetail returns per-test coverage diff for a given test.
+func (e *Executor) GetTestCoverageDetail(testID string) map[string]CoverageFileDiff {
+	e.coveragePerTestMu.Lock()
+	defer e.coveragePerTestMu.Unlock()
+	if e.coveragePerTest == nil {
+		return nil
+	}
+	return e.coveragePerTest[testID]
 }
 
 func (e *Executor) SetSuiteSpans(spans []*core.Span) {

@@ -146,6 +146,29 @@ func (e *Executor) StartService() error {
 	}
 
 	env = append(env, "TUSK_DRIFT_MODE=REPLAY")
+
+	// Coverage: inject NODE_V8_COVERAGE and TUSK_COVERAGE_PORT
+	if e.coverageEnabled {
+		if e.coverageRawDir == "" {
+			timestamp := time.Now().Format("20060102T150405")
+			e.coverageRawDir = filepath.Join(".tusk", "coverage-raw-"+timestamp)
+			e.coverageOutputDir = filepath.Join(".tusk", "coverage-"+timestamp)
+		}
+		if err := os.MkdirAll(e.coverageRawDir, 0o750); err != nil {
+			return fmt.Errorf("failed to create coverage raw dir: %w", err)
+		}
+		if err := os.MkdirAll(e.coverageOutputDir, 0o750); err != nil {
+			return fmt.Errorf("failed to create coverage output dir: %w", err)
+		}
+		absCoverageRawDir, _ := filepath.Abs(e.coverageRawDir)
+		if e.coveragePort == 0 {
+			e.coveragePort = 19876
+		}
+		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", absCoverageRawDir))
+		env = append(env, fmt.Sprintf("TUSK_COVERAGE_PORT=%d", e.coveragePort))
+		log.Debug("Coverage enabled", "raw_dir", absCoverageRawDir, "port", e.coveragePort)
+	}
+
 	e.serviceCmd.Env = env
 
 	// Always capture service logs during startup.

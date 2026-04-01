@@ -55,6 +55,9 @@ var (
 	// Validation mode
 	validateSuiteIfDefaultBranch bool
 	validateSuite                bool
+
+	// Coverage mode
+	coverageEnabled bool
 )
 
 //go:embed short_docs/drift/drift_run.md
@@ -114,6 +117,9 @@ func bindRunFlags(cmd *cobra.Command) {
 	// Validation mode flags
 	cmd.Flags().BoolVar(&validateSuiteIfDefaultBranch, "validate-suite-if-default-branch", false, "[Cloud] Validate traces on default branch before adding to suite")
 	cmd.Flags().BoolVar(&validateSuite, "validate-suite", false, "[Cloud] Force validation mode regardless of branch")
+
+	// Coverage mode
+	cmd.Flags().BoolVar(&coverageEnabled, "coverage", false, "Collect code coverage during test execution")
 
 	_ = cmd.Flags().MarkHidden("client-id")
 	cmd.Flags().SortFlags = false
@@ -303,6 +309,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
+	if coverageEnabled {
+		executor.SetCoverageEnabled(true)
+		log.Stderrln("➤ Coverage collection enabled")
+	}
 	if saveResults {
 		if resultsDir == "" {
 			if getConfigErr == nil && cfg.Results.Dir != "" {
@@ -385,6 +395,54 @@ func runTests(cmd *cobra.Command, args []string) error {
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
 			if executor.GetServer() != nil {
 				executor.GetServer().CleanupTraceSpans(test.TraceID)
+			}
+		})
+	}
+
+	// Coverage: wrap the OnTestCompleted callback to take snapshots between tests
+	var coverageRecords []runner.CoverageTestRecord
+	var coverageMu sync.Mutex
+	if coverageEnabled {
+		existingCallback := executor.OnTestCompleted
+		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			// Call the original callback first
+			if existingCallback != nil {
+				existingCallback(res, test)
+			}
+
+			// Take coverage snapshot and process immediately (extract line counts, clean up raw V8 file)
+			lineCounts, err := executor.TakeCoverageSnapshotAndProcess()
+			if err != nil {
+				log.Warn("Failed to take coverage snapshot", "testID", test.TraceID, "error", err)
+				return
+			}
+
+			coverageMu.Lock()
+			// Compute per-test diff (delta from previous snapshot)
+			var prevCounts map[string]map[string]int
+			if len(coverageRecords) > 0 {
+				prevCounts = coverageRecords[len(coverageRecords)-1].LineCounts
+			}
+			coverageRecords = append(coverageRecords, runner.CoverageTestRecord{
+				TestID:     test.TraceID,
+				TestName:   fmt.Sprintf("%s %s", test.Method, test.Path),
+				LineCounts: lineCounts,
+			})
+			coverageMu.Unlock()
+
+			// Diff with previous snapshot to get this test's coverage
+			diff := runner.DiffV8LineCounts(prevCounts, lineCounts)
+			executor.SetTestCoverageDetail(test.TraceID, diff)
+
+			// Print sub-line in --print mode
+			if !interactive {
+				totalLines := 0
+				for _, fd := range diff {
+					totalLines += fd.CoveredCount
+				}
+				if totalLines > 0 {
+					log.UserProgress(fmt.Sprintf("  ↳ coverage: %d lines across %d files", totalLines, len(diff)))
+				}
 			}
 		})
 	}
@@ -822,6 +880,25 @@ func runTests(cmd *cobra.Command, args []string) error {
 			log.Stderrln(fmt.Sprintf("➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency()))
 		}
 
+		// Coverage: take baseline snapshot before any tests run
+		if coverageEnabled {
+			// Small delay to let the service fully initialize and coverage server start
+			time.Sleep(500 * time.Millisecond)
+			baselineCounts, err := executor.TakeCoverageSnapshotAndProcess()
+			if err != nil {
+				log.Warn("Failed to take baseline coverage snapshot", "error", err)
+			} else {
+				coverageMu.Lock()
+				coverageRecords = append(coverageRecords, runner.CoverageTestRecord{
+					TestID:     "_baseline",
+					TestName:   "baseline",
+					LineCounts: baselineCounts,
+				})
+				coverageMu.Unlock()
+				log.Debug("Coverage baseline snapshot taken")
+			}
+		}
+
 		results, err = executor.RunTests(tests)
 		if err != nil {
 			cmd.SilenceUsage = true
@@ -851,6 +928,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 	_ = os.Stdout.Sync()
 	time.Sleep(1 * time.Millisecond)
+
+	// Coverage: process coverage data after all tests complete (before service stops)
+	if coverageEnabled && len(coverageRecords) > 1 {
+		// records[0] = baseline, records[1..N] = per-test (LineCounts already processed inline)
+		coverageMu.Lock()
+		records := make([]runner.CoverageTestRecord, len(coverageRecords))
+		copy(records, coverageRecords)
+		coverageMu.Unlock()
+
+		if err := executor.ProcessCoverage(records); err != nil {
+			log.Warn("Failed to process coverage", "error", err)
+		}
+	}
 
 	var outputErr error
 	if !interactive {

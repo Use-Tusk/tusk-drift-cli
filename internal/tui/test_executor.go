@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -620,6 +621,30 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.executor.OnTestCompleted != nil {
 				m.executor.OnTestCompleted(msg.result, test)
 			}
+
+			// Show per-file coverage breakdown in test log panel
+			if m.executor.IsCoverageEnabled() {
+				if detail := m.executor.GetTestCoverageDetail(test.TraceID); len(detail) > 0 {
+					totalLines := 0
+					for _, fd := range detail {
+						totalLines += fd.CoveredCount
+					}
+					m.addTestLog(test.TraceID, fmt.Sprintf("  📊 Coverage: %d lines across %d files", totalLines, len(detail)))
+					for filePath, fd := range detail {
+						// Shorten the file path relative to cwd
+						shortPath := filePath
+						if cwd, err := os.Getwd(); err == nil {
+							if rel, err := filepath.Rel(cwd, filePath); err == nil {
+								shortPath = rel
+							}
+						}
+						m.addTestLog(test.TraceID, fmt.Sprintf("     %-40s %d lines", shortPath, fd.CoveredCount))
+					}
+				} else {
+					m.addTestLog(test.TraceID, "  📊 Coverage: 0 new lines")
+				}
+			}
+
 			if m.opts != nil && m.opts.OnTestCompleted != nil {
 				res := msg.result
 				go m.opts.OnTestCompleted(res, test, m.executor)
