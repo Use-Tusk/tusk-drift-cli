@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -342,21 +343,37 @@ func sanitizeFileName(name string) string {
 }
 
 // normalizeFilePaths converts absolute file paths to repo-relative paths.
-// Uses the current working directory as the base (which is the project root
-// where .tusk/config.yaml lives). This ensures consistent paths across machines.
+// Uses git root as the base (consistent across machines, handles monorepo
+// files outside the service directory like ../shared/utils.js).
+// Falls back to cwd if not in a git repo.
 func normalizeFilePaths(lineCounts map[string]map[string]int) map[string]map[string]int {
-	cwd, err := os.Getwd()
-	if err != nil {
+	base := getPathNormalizationBase()
+	if base == "" {
 		return lineCounts
 	}
 
 	normalized := make(map[string]map[string]int, len(lineCounts))
 	for absPath, lines := range lineCounts {
-		relPath, err := filepath.Rel(cwd, absPath)
-		if err != nil {
-			relPath = absPath // keep absolute if rel fails
+		relPath, err := filepath.Rel(base, absPath)
+		if err != nil || strings.HasPrefix(relPath, "..") {
+			// Outside the base - keep as-is rather than producing ../../... paths
+			relPath = absPath
 		}
 		normalized[relPath] = lines
 	}
 	return normalized
+}
+
+// getPathNormalizationBase returns the git root, falling back to cwd.
+func getPathNormalizationBase() string {
+	// Try git root first (handles monorepo files outside service dir)
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	if out, err := cmd.Output(); err == nil {
+		return strings.TrimSpace(string(out))
+	}
+	// Fallback to cwd
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	}
+	return ""
 }
