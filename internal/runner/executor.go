@@ -495,8 +495,23 @@ func (e *Executor) GetCoverageOutputDir() string {
 	return e.coverageOutputDir
 }
 
+// SetCoverageBaseline merges new baseline data into the existing baseline.
+// Called per environment group - accumulates across service restarts.
 func (e *Executor) SetCoverageBaseline(baseline map[string]map[string]int) {
-	e.coverageBaseline = baseline
+	if e.coverageBaseline == nil {
+		e.coverageBaseline = make(map[string]map[string]int)
+	}
+	for filePath, lines := range baseline {
+		if e.coverageBaseline[filePath] == nil {
+			e.coverageBaseline[filePath] = make(map[string]int)
+		}
+		for line, count := range lines {
+			// Keep the existing count if it's already tracked (don't overwrite covered with uncovered)
+			if existing, ok := e.coverageBaseline[filePath][line]; !ok || existing == 0 {
+				e.coverageBaseline[filePath][line] = count
+			}
+		}
+	}
 }
 
 func (e *Executor) GetCoverageBaseline() map[string]map[string]int {

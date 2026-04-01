@@ -26,8 +26,18 @@ func (e *Executor) TakeCoverageSnapshot() (map[string]map[string]int, error) {
 // TakeCoverageBaseline calls the SDK's coverage snapshot endpoint with ?baseline=true.
 // Returns ALL coverable lines (including uncovered at count=0) for the aggregate denominator.
 // Also resets counters so the first real test gets clean data.
+// Retries with backoff since the coverage server may not be ready immediately after service start.
 func (e *Executor) TakeCoverageBaseline() (map[string]map[string]int, error) {
-	return e.callCoverageEndpoint(true)
+	var lastErr error
+	for attempt := 0; attempt < 15; attempt++ {
+		result, err := e.callCoverageEndpoint(true)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		time.Sleep(200 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("coverage baseline failed after retries: %w", lastErr)
 }
 
 func (e *Executor) callCoverageEndpoint(baseline bool) (map[string]map[string]int, error) {
@@ -68,7 +78,8 @@ func (e *Executor) callCoverageEndpoint(baseline bool) (map[string]map[string]in
 		return nil, fmt.Errorf("coverage snapshot returned ok=false")
 	}
 
-	return result.Coverage, nil
+	// Normalize absolute paths to repo-relative paths
+	return normalizeFilePaths(result.Coverage), nil
 }
 
 // CoverageTestRecord holds per-test coverage data.
@@ -328,4 +339,24 @@ func dedup(sorted []int) []int {
 func sanitizeFileName(name string) string {
 	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_")
 	return replacer.Replace(name)
+}
+
+// normalizeFilePaths converts absolute file paths to repo-relative paths.
+// Uses the current working directory as the base (which is the project root
+// where .tusk/config.yaml lives). This ensures consistent paths across machines.
+func normalizeFilePaths(lineCounts map[string]map[string]int) map[string]map[string]int {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return lineCounts
+	}
+
+	normalized := make(map[string]map[string]int, len(lineCounts))
+	for absPath, lines := range lineCounts {
+		relPath, err := filepath.Rel(cwd, absPath)
+		if err != nil {
+			relPath = absPath // keep absolute if rel fails
+		}
+		normalized[relPath] = lines
+	}
+	return normalized
 }

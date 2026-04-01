@@ -64,7 +64,6 @@ func ReplayTestsByEnvironment(
 
 		// Coverage: take baseline snapshot to capture all coverable lines and reset counters
 		if executor.IsCoverageEnabled() {
-			time.Sleep(500 * time.Millisecond) // let coverage server start
 			baseline, err := executor.TakeCoverageBaseline()
 			if err != nil {
 				log.Warn("Failed to take baseline coverage snapshot", "error", err)

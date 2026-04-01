@@ -311,7 +311,10 @@ func runTests(cmd *cobra.Command, args []string) error {
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
 	if coverageEnabled {
 		executor.SetCoverageEnabled(true)
-		log.Stderrln("➤ Coverage collection enabled")
+		// Coverage requires serial execution (concurrency=1) because per-test
+		// snapshots rely on the SDK resetting counters between tests.
+		executor.SetConcurrency(1)
+		log.Stderrln("➤ Coverage collection enabled (concurrency forced to 1)")
 	}
 	if saveResults {
 		if resultsDir == "" {
@@ -879,7 +882,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 		// (including uncovered at count=0) for the aggregate denominator.
 		// This also resets counters so the first test gets clean data.
 		if coverageEnabled {
-			time.Sleep(500 * time.Millisecond) // let coverage server start
 			baseline, err := executor.TakeCoverageBaseline()
 			if err != nil {
 				log.Warn("Failed to take baseline coverage snapshot", "error", err)
