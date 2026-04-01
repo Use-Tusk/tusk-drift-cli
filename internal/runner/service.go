@@ -43,8 +43,23 @@ func (e *Executor) StartService() error {
 
 	log.Debug("Starting service", "command", cfg.Service.Start.Command)
 
-	// Wrap command with fence sandboxing (if supported and enabled)
 	command := cfg.Service.Start.Command
+
+	// Coverage: set up output directory (env vars injected later, no command wrapping needed)
+	if e.coverageEnabled {
+		if e.coverageOutputDir == "" {
+			timestamp := time.Now().Format("20060102T150405")
+			e.coverageOutputDir = filepath.Join(".tusk", "coverage-"+timestamp)
+		}
+		if err := os.MkdirAll(e.coverageOutputDir, 0o750); err != nil {
+			return fmt.Errorf("failed to create coverage output dir: %w", err)
+		}
+		if e.coveragePort == 0 {
+			e.coveragePort = 19876
+		}
+	}
+
+	// Wrap command with fence sandboxing (if supported and enabled)
 	replayOverridePath := e.getReplayComposeOverride()
 	if replayOverridePath != "" && isComposeBasedStartCommand(command) {
 		commandWithReplayOverride, injected, injectErr := injectComposeOverrideFile(command, replayOverridePath)
@@ -147,26 +162,14 @@ func (e *Executor) StartService() error {
 
 	env = append(env, "TUSK_DRIFT_MODE=REPLAY")
 
-	// Coverage: inject NODE_V8_COVERAGE and TUSK_COVERAGE_PORT
+	// Coverage: inject NODE_V8_COVERAGE dir and coverage port
 	if e.coverageEnabled {
-		if e.coverageRawDir == "" {
-			timestamp := time.Now().Format("20060102T150405")
-			e.coverageRawDir = filepath.Join(".tusk", "coverage-raw-"+timestamp)
-			e.coverageOutputDir = filepath.Join(".tusk", "coverage-"+timestamp)
-		}
-		if err := os.MkdirAll(e.coverageRawDir, 0o750); err != nil {
-			return fmt.Errorf("failed to create coverage raw dir: %w", err)
-		}
-		if err := os.MkdirAll(e.coverageOutputDir, 0o750); err != nil {
-			return fmt.Errorf("failed to create coverage output dir: %w", err)
-		}
-		absCoverageRawDir, _ := filepath.Abs(e.coverageRawDir)
-		if e.coveragePort == 0 {
-			e.coveragePort = 19876
-		}
+		coverageRawDir := filepath.Join(e.coverageOutputDir, ".v8-raw")
+		os.MkdirAll(coverageRawDir, 0o750)
+		absCoverageRawDir, _ := filepath.Abs(coverageRawDir)
 		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", absCoverageRawDir))
 		env = append(env, fmt.Sprintf("TUSK_COVERAGE_PORT=%d", e.coveragePort))
-		log.Debug("Coverage enabled", "raw_dir", absCoverageRawDir, "port", e.coveragePort)
+		log.Debug("Coverage enabled", "v8_dir", absCoverageRawDir, "port", e.coveragePort)
 	}
 
 	e.serviceCmd.Env = env

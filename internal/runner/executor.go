@@ -95,9 +95,8 @@ type Executor struct {
 
 	// Coverage
 	coverageEnabled    bool
-	coverageRawDir     string // NODE_V8_COVERAGE output dir
 	coveragePort       int    // Coverage snapshot server port
-	coverageOutputDir  string // Final processed coverage output dir
+	coverageOutputDir  string // Processed coverage output dir
 	coveragePerTest    map[string]map[string]CoverageFileDiff // testID -> per-file coverage diff
 	coveragePerTestMu  sync.Mutex
 }
