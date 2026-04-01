@@ -97,8 +97,9 @@ type Executor struct {
 	coverageEnabled    bool
 	coveragePort       int    // Coverage snapshot server port
 	coverageOutputDir  string // Processed coverage output dir
-	coveragePerTest    map[string]map[string]CoverageFileDiff // testID -> per-file coverage diff
-	coveragePerTestMu  sync.Mutex
+	coveragePerTest      map[string]map[string]CoverageFileDiff // testID -> per-file coverage diff
+	coveragePerTestMu    sync.Mutex
+	coverageBaseline     map[string]map[string]int // baseline: all coverable lines (including count=0)
 }
 
 func NewExecutor() *Executor {
@@ -492,6 +493,14 @@ func (e *Executor) IsCoverageEnabled() bool {
 
 func (e *Executor) GetCoverageOutputDir() string {
 	return e.coverageOutputDir
+}
+
+func (e *Executor) SetCoverageBaseline(baseline map[string]map[string]int) {
+	e.coverageBaseline = baseline
+}
+
+func (e *Executor) GetCoverageBaseline() map[string]map[string]int {
+	return e.coverageBaseline
 }
 
 // SetTestCoverageDetail stores per-test coverage diff for display in TUI/print.

@@ -875,14 +875,17 @@ func runTests(cmd *cobra.Command, args []string) error {
 			log.Stderrln(fmt.Sprintf("➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency()))
 		}
 
-		// Coverage: take baseline snapshot to discard startup coverage.
-		// v8.takeCoverage() resets counters, so the first real test gets clean data.
+		// Coverage: take baseline with ?baseline=true to capture ALL coverable lines
+		// (including uncovered at count=0) for the aggregate denominator.
+		// This also resets counters so the first test gets clean data.
 		if coverageEnabled {
 			time.Sleep(500 * time.Millisecond) // let coverage server start
-			if _, err := executor.TakeCoverageSnapshot(); err != nil {
+			baseline, err := executor.TakeCoverageBaseline()
+			if err != nil {
 				log.Warn("Failed to take baseline coverage snapshot", "error", err)
 			} else {
-				log.Debug("Coverage baseline taken (startup coverage discarded, counters reset)")
+				executor.SetCoverageBaseline(baseline)
+				log.Debug("Coverage baseline taken (counters reset, all coverable lines captured)")
 			}
 		}
 

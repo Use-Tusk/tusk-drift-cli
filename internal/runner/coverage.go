@@ -21,12 +21,28 @@ const coverageSnapshotTimeout = 5 * time.Second
 // processes the coverage data, and returns per-file line counts.
 // V8's takeCoverage() auto-resets counters, so each call returns ONLY the
 // coverage since the last call - true per-test coverage with no diffing needed.
+// TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
+// Returns per-file line counts for this test only (counters auto-reset).
 func (e *Executor) TakeCoverageSnapshot() (map[string]map[string]int, error) {
+	return e.callCoverageEndpoint(false)
+}
+
+// TakeCoverageBaseline calls the SDK's coverage snapshot endpoint with ?baseline=true.
+// Returns ALL coverable lines (including uncovered at count=0) for the aggregate denominator.
+// Also resets counters so the first real test gets clean data.
+func (e *Executor) TakeCoverageBaseline() (map[string]map[string]int, error) {
+	return e.callCoverageEndpoint(true)
+}
+
+func (e *Executor) callCoverageEndpoint(baseline bool) (map[string]map[string]int, error) {
 	if !e.coverageEnabled || e.coveragePort == 0 {
 		return nil, nil
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d/snapshot", e.coveragePort)
+	if baseline {
+		url += "?baseline=true"
+	}
 	httpClient := &http.Client{Timeout: coverageSnapshotTimeout}
 
 	resp, err := httpClient.Get(url)
@@ -124,17 +140,31 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 		}
 	}
 
-	// Compute aggregate by merging all per-test coverage (union of covered lines)
-	aggregate := mergeLineCounts(records)
+	// Compute aggregate: start with baseline (all coverable lines including count=0),
+	// then merge in per-test coverage. This gives accurate denominator.
+	aggregate := mergeWithBaseline(e.coverageBaseline, records)
 
 	// Print and write summary
 	return e.printCoverageSummary(records, aggregate)
 }
 
-// mergeLineCounts unions all per-test line counts into an aggregate.
-// A line's count in the aggregate = sum of counts across all tests.
-func mergeLineCounts(records []CoverageTestRecord) map[string]map[string]int {
+// mergeWithBaseline creates aggregate coverage starting from the baseline
+// (which has ALL coverable lines including count=0), then merging in per-test data.
+// If no baseline is available, falls back to merging per-test data only.
+func mergeWithBaseline(baseline map[string]map[string]int, records []CoverageTestRecord) map[string]map[string]int {
 	merged := make(map[string]map[string]int)
+
+	// Start with baseline (all coverable lines, count=0 for uncovered)
+	if baseline != nil {
+		for filePath, lines := range baseline {
+			merged[filePath] = make(map[string]int)
+			for line, count := range lines {
+				merged[filePath][line] = count
+			}
+		}
+	}
+
+	// Merge in per-test coverage (add counts)
 	for _, record := range records {
 		for filePath, lines := range record.LineCounts {
 			if merged[filePath] == nil {
@@ -145,6 +175,7 @@ func mergeLineCounts(records []CoverageTestRecord) map[string]map[string]int {
 			}
 		}
 	}
+
 	return merged
 }
 
