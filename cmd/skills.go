@@ -20,7 +20,7 @@ var skillsCmd = &cobra.Command{
 			return fmt.Errorf("npx not found: please install Node.js (https://nodejs.org/) to use this command")
 		}
 
-		c := exec.Command(npxPath, "skills", "add", "Use-Tusk/tusk-skills")
+		c := exec.Command(npxPath, "skills", "add", "Use-Tusk/tusk-skills") //nolint:gosec // npxPath is resolved from exec.LookPath
 		c.Stdin = os.Stdin
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
