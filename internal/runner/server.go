@@ -697,7 +697,7 @@ func (ms *Server) handleConnection(conn net.Conn) {
 			// SDK is responding to our SetTimeTravel request
 			ms.handleSetTimeTravelResponse(&sdkMsg)
 		case core.MessageType_MESSAGE_TYPE_COVERAGE_SNAPSHOT:
-			// SDK is responding to our CoverageSnapshot request
+			log.Debug("Received coverage snapshot response", "requestId", sdkMsg.RequestId)
 			ms.handleCoverageSnapshotResponse(&sdkMsg)
 		default:
 			log.Debug("Unknown message type", "type", sdkMsg.Type)
