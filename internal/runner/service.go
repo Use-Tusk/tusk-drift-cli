@@ -152,15 +152,18 @@ func (e *Executor) StartService() error {
 
 	// Coverage: inject env vars that SDK coverage servers listen for.
 	// NODE_V8_COVERAGE is required by the Node SDK to enable V8 coverage collection.
-	// TUSK_COVERAGE_PORT tells both Node and Python SDKs which port to serve snapshots on.
+	// Coverage env vars:
+	// TUSK_COVERAGE=true - language-agnostic signal for both Node and Python SDKs
+	// NODE_V8_COVERAGE=<dir> - Node-specific: tells V8 to collect coverage data
+	// TS_NODE_EMIT=true - Node-specific: forces ts-node to write compiled JS to disk
 	if e.coverageEnabled {
-		// Use temp dir for V8 coverage files (SDK reads + deletes immediately, nothing persists)
+		env = append(env, "TUSK_COVERAGE=true")
+		// Node.js: V8 coverage needs a directory to write JSON files
 		v8CoverageDir, err := os.MkdirTemp("", "tusk-v8-coverage-*")
 		if err != nil {
 			return fmt.Errorf("failed to create temp dir for V8 coverage: %w", err)
 		}
 		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", v8CoverageDir))
-		// ts-node: force emit compiled JS + source maps to disk so we can read them.
 		env = append(env, "TS_NODE_EMIT=true")
 		log.Debug("Coverage enabled", "v8_dir", v8CoverageDir)
 	}
