@@ -98,7 +98,7 @@ type Executor struct {
 	coveragePort         int // Coverage snapshot server port
 	coveragePerTest      map[string]map[string]CoverageFileDiff
 	coveragePerTestMu    sync.Mutex
-	coverageBaseline     map[string]map[string]int
+	coverageBaseline     CoverageSnapshot
 }
 
 func NewExecutor() *Executor {
@@ -492,25 +492,36 @@ func (e *Executor) IsCoverageEnabled() bool {
 
 // SetCoverageBaseline merges new baseline data into the existing baseline.
 // Called per environment group - accumulates across service restarts.
-func (e *Executor) SetCoverageBaseline(baseline map[string]map[string]int) {
+func (e *Executor) SetCoverageBaseline(baseline CoverageSnapshot) {
 	if e.coverageBaseline == nil {
-		e.coverageBaseline = make(map[string]map[string]int)
+		e.coverageBaseline = make(CoverageSnapshot)
 	}
-	for filePath, lines := range baseline {
-		if e.coverageBaseline[filePath] == nil {
-			e.coverageBaseline[filePath] = make(map[string]int)
-		}
-		for line, count := range lines {
-			// Keep the existing count if it's already tracked (don't overwrite covered with uncovered)
-			if existing, ok := e.coverageBaseline[filePath][line]; !ok || existing == 0 {
-				e.coverageBaseline[filePath][line] = count
+	for filePath, fileData := range baseline {
+		existing, ok := e.coverageBaseline[filePath]
+		if !ok {
+			existing = FileCoverageData{
+				Lines:    make(map[string]int),
+				Branches: make(map[string]BranchInfo),
 			}
 		}
+		for line, count := range fileData.Lines {
+			if existingCount, ok := existing.Lines[line]; !ok || existingCount == 0 {
+				existing.Lines[line] = count
+			}
+		}
+		// Merge branch data (keep max)
+		for line, branchInfo := range fileData.Branches {
+			if existing.Branches == nil {
+				existing.Branches = make(map[string]BranchInfo)
+			}
+			if eb, ok := existing.Branches[line]; !ok || branchInfo.Total > eb.Total {
+				existing.Branches[line] = branchInfo
+			}
+		}
+		existing.TotalBranches = fileData.TotalBranches
+		existing.CoveredBranches = fileData.CoveredBranches
+		e.coverageBaseline[filePath] = existing
 	}
-}
-
-func (e *Executor) GetCoverageBaseline() map[string]map[string]int {
-	return e.coverageBaseline
 }
 
 // SetTestCoverageDetail stores per-test coverage diff for display in TUI/print.

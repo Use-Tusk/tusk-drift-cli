@@ -422,14 +422,14 @@ func runTests(cmd *cobra.Command, args []string) error {
 
 			coverageMu.Lock()
 			coverageRecords = append(coverageRecords, runner.CoverageTestRecord{
-				TestID:     test.TraceID,
-				TestName:   fmt.Sprintf("%s %s", test.Method, test.Path),
-				LineCounts: lineCounts,
+				TestID:   test.TraceID,
+				TestName: fmt.Sprintf("%s %s", test.Method, test.Path),
+				Coverage: lineCounts,
 			})
 			coverageMu.Unlock()
 
 			// Store detail for TUI display
-			detail := runner.LinecountsToCoverageDetail(lineCounts)
+			detail := runner.SnapshotToCoverageDetail(lineCounts)
 			executor.SetTestCoverageDetail(test.TraceID, detail)
 
 			// Print sub-line in --print mode

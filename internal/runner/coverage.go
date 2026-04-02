@@ -19,16 +19,15 @@ import (
 const coverageSnapshotTimeout = 5 * time.Second
 
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
-// Returns per-file line counts for this test only (counters auto-reset).
-func (e *Executor) TakeCoverageSnapshot() (map[string]map[string]int, error) {
+// Returns per-file coverage data for this test only (counters auto-reset).
+func (e *Executor) TakeCoverageSnapshot() (CoverageSnapshot, error) {
 	return e.callCoverageEndpoint(false)
 }
 
 // TakeCoverageBaseline calls the SDK's coverage snapshot endpoint with ?baseline=true.
 // Returns ALL coverable lines (including uncovered at count=0) for the aggregate denominator.
-// Also resets counters so the first real test gets clean data.
 // Retries with backoff since the coverage server may not be ready immediately after service start.
-func (e *Executor) TakeCoverageBaseline() (map[string]map[string]int, error) {
+func (e *Executor) TakeCoverageBaseline() (CoverageSnapshot, error) {
 	var lastErr error
 	for attempt := 0; attempt < 15; attempt++ {
 		result, err := e.callCoverageEndpoint(true)
@@ -41,7 +40,7 @@ func (e *Executor) TakeCoverageBaseline() (map[string]map[string]int, error) {
 	return nil, fmt.Errorf("coverage baseline failed after retries: %w", lastErr)
 }
 
-func (e *Executor) callCoverageEndpoint(baseline bool) (map[string]map[string]int, error) {
+func (e *Executor) callCoverageEndpoint(baseline bool) (CoverageSnapshot, error) {
 	if !e.coverageEnabled || e.coveragePort == 0 {
 		return nil, nil
 	}
@@ -68,8 +67,8 @@ func (e *Executor) callCoverageEndpoint(baseline bool) (map[string]map[string]in
 	}
 
 	var result struct {
-		OK       bool                      `json:"ok"`
-		Coverage map[string]map[string]int `json:"coverage"`
+		OK       bool                            `json:"ok"`
+		Coverage map[string]SnapshotFileCoverage `json:"coverage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse coverage response: %w", err)
@@ -79,30 +78,68 @@ func (e *Executor) callCoverageEndpoint(baseline bool) (map[string]map[string]in
 		return nil, fmt.Errorf("coverage snapshot returned ok=false")
 	}
 
-	// Normalize absolute paths to repo-relative paths
-	return normalizeFilePaths(result.Coverage), nil
+	// Convert to our internal format and normalize paths
+	snapshot := make(CoverageSnapshot)
+	for filePath, fileData := range result.Coverage {
+		snapshot[filePath] = FileCoverageData{
+			Lines:           fileData.Lines,
+			TotalBranches:   fileData.TotalBranches,
+			CoveredBranches: fileData.CoveredBranches,
+			Branches:        fileData.Branches,
+		}
+	}
+
+	return normalizeCoveragePaths(snapshot), nil
 }
+
+// SnapshotFileCoverage matches the JSON response from the SDK's /snapshot endpoint.
+type SnapshotFileCoverage struct {
+	Lines           map[string]int        `json:"lines"`
+	TotalBranches   int                   `json:"totalBranches"`
+	CoveredBranches int                   `json:"coveredBranches"`
+	Branches        map[string]BranchInfo `json:"branches"`
+}
+
+// BranchInfo tracks branch coverage at a specific line.
+type BranchInfo struct {
+	Total   int `json:"total"`
+	Covered int `json:"covered"`
+}
+
+// FileCoverageData is the internal representation of per-file coverage.
+type FileCoverageData struct {
+	Lines           map[string]int
+	TotalBranches   int
+	CoveredBranches int
+	Branches        map[string]BranchInfo
+}
+
+// CoverageSnapshot is the full coverage data for a snapshot.
+type CoverageSnapshot map[string]FileCoverageData
 
 // CoverageTestRecord holds per-test coverage data.
 type CoverageTestRecord struct {
-	TestID     string
-	TestName   string
-	LineCounts map[string]map[string]int // filePath -> lineNumber -> hitCount (per-test, not cumulative)
+	TestID   string
+	TestName string
+	Coverage CoverageSnapshot
 }
 
 // CoverageFileDiff represents per-test coverage for a single file.
 type CoverageFileDiff struct {
-	CoveredLines   []int `json:"covered_lines"`
-	CoverableLines int   `json:"coverable_lines"`
-	CoveredCount   int   `json:"covered_count"`
+	CoveredLines    []int                  `json:"covered_lines"`
+	CoverableLines  int                    `json:"coverable_lines"`
+	CoveredCount    int                    `json:"covered_count"`
+	TotalBranches   int                    `json:"total_branches"`
+	CoveredBranches int                    `json:"covered_branches"`
+	Branches        map[string]BranchInfo  `json:"branches,omitempty"`
 }
 
-// LinecountsToCoverageDetail converts raw line counts to CoverageFileDiff format.
-func LinecountsToCoverageDetail(lineCounts map[string]map[string]int) map[string]CoverageFileDiff {
+// SnapshotToCoverageDetail converts a CoverageSnapshot to per-file CoverageFileDiff format.
+func SnapshotToCoverageDetail(snapshot CoverageSnapshot) map[string]CoverageFileDiff {
 	result := make(map[string]CoverageFileDiff)
-	for filePath, lines := range lineCounts {
+	for filePath, fileData := range snapshot {
 		var covered []int
-		for lineStr, count := range lines {
+		for lineStr, count := range fileData.Lines {
 			if count > 0 {
 				line, err := strconv.Atoi(lineStr)
 				if err != nil || line <= 0 {
@@ -115,9 +152,12 @@ func LinecountsToCoverageDetail(lineCounts map[string]map[string]int) map[string
 			sort.Ints(covered)
 			covered = dedup(covered)
 			result[filePath] = CoverageFileDiff{
-				CoveredLines:   covered,
-				CoverableLines: len(lines),
-				CoveredCount:   len(covered),
+				CoveredLines:    covered,
+				CoverableLines:  len(fileData.Lines),
+				CoveredCount:    len(covered),
+				TotalBranches:   fileData.TotalBranches,
+				CoveredBranches: fileData.CoveredBranches,
+				Branches:        fileData.Branches,
 			}
 		}
 	}
@@ -137,35 +177,69 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 	// then merge in per-test coverage. This gives accurate denominator.
 	aggregate := mergeWithBaseline(e.coverageBaseline, records)
 
-	// Print summary to console
 	return e.printCoverageSummary(records, aggregate)
 }
 
 // mergeWithBaseline creates aggregate coverage starting from the baseline
 // (which has ALL coverable lines including count=0), then merging in per-test data.
-// If no baseline is available, falls back to merging per-test data only.
-func mergeWithBaseline(baseline map[string]map[string]int, records []CoverageTestRecord) map[string]map[string]int {
-	merged := make(map[string]map[string]int)
+func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) CoverageSnapshot {
+	merged := make(CoverageSnapshot)
 
 	// Start with baseline (all coverable lines, count=0 for uncovered)
 	if baseline != nil {
-		for filePath, lines := range baseline {
-			merged[filePath] = make(map[string]int)
-			for line, count := range lines {
-				merged[filePath][line] = count
+		for filePath, fileData := range baseline {
+			lines := make(map[string]int, len(fileData.Lines))
+			for line, count := range fileData.Lines {
+				lines[line] = count
+			}
+			merged[filePath] = FileCoverageData{
+				Lines:           lines,
+				TotalBranches:   fileData.TotalBranches,
+				CoveredBranches: fileData.CoveredBranches,
+				Branches:        fileData.Branches,
 			}
 		}
 	}
 
-	// Merge in per-test coverage (add counts)
+	// Merge in per-test coverage (add line counts, union branches)
 	for _, record := range records {
-		for filePath, lines := range record.LineCounts {
-			if merged[filePath] == nil {
-				merged[filePath] = make(map[string]int)
+		for filePath, fileData := range record.Coverage {
+			existing, ok := merged[filePath]
+			if !ok {
+				existing = FileCoverageData{
+					Lines:    make(map[string]int),
+					Branches: make(map[string]BranchInfo),
+				}
 			}
-			for line, count := range lines {
-				merged[filePath][line] += count
+			for line, count := range fileData.Lines {
+				existing.Lines[line] += count
 			}
+			// Merge branch data: take max of covered
+			for line, branchInfo := range fileData.Branches {
+				if eb, ok := existing.Branches[line]; ok {
+					if branchInfo.Total > eb.Total {
+						eb.Total = branchInfo.Total
+					}
+					if branchInfo.Covered > eb.Covered {
+						eb.Covered = branchInfo.Covered
+					}
+					existing.Branches[line] = eb
+				} else {
+					if existing.Branches == nil {
+						existing.Branches = make(map[string]BranchInfo)
+					}
+					existing.Branches[line] = branchInfo
+				}
+			}
+			// Recompute branch totals from merged per-line data
+			totalB, covB := 0, 0
+			for _, b := range existing.Branches {
+				totalB += b.Total
+				covB += b.Covered
+			}
+			existing.TotalBranches = totalB
+			existing.CoveredBranches = covB
+			merged[filePath] = existing
 		}
 	}
 
@@ -182,17 +256,22 @@ type CoverageSummary struct {
 }
 
 type CoverageAggregate struct {
-	TotalCoverableLines int     `json:"total_coverable_lines"`
-	TotalCoveredLines   int     `json:"total_covered_lines"`
-	CoveragePct         float64 `json:"coverage_pct"`
-	TotalFiles          int     `json:"total_files"`
-	CoveredFiles        int     `json:"covered_files"`
+	TotalCoverableLines  int     `json:"total_coverable_lines"`
+	TotalCoveredLines    int     `json:"total_covered_lines"`
+	CoveragePct          float64 `json:"coverage_pct"`
+	TotalFiles           int     `json:"total_files"`
+	CoveredFiles         int     `json:"covered_files"`
+	TotalBranches        int     `json:"total_branches"`
+	CoveredBranches      int     `json:"covered_branches"`
+	BranchCoveragePct    float64 `json:"branch_coverage_pct"`
 }
 
 type CoverageFileSummary struct {
-	CoveredLines   int     `json:"covered_lines"`
-	CoverableLines int     `json:"coverable_lines"`
-	CoveragePct    float64 `json:"coverage_pct"`
+	CoveredLines    int     `json:"covered_lines"`
+	CoverableLines  int     `json:"coverable_lines"`
+	CoveragePct     float64 `json:"coverage_pct"`
+	TotalBranches   int     `json:"total_branches"`
+	CoveredBranches int     `json:"covered_branches"`
 }
 
 type CoverageTestSummary struct {
@@ -202,7 +281,7 @@ type CoverageTestSummary struct {
 	FilesTouched int    `json:"files_touched"`
 }
 
-func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate map[string]map[string]int) error {
+func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate CoverageSnapshot) error {
 	summary := CoverageSummary{
 		Timestamp: time.Now().Format(time.RFC3339),
 		PerFile:   make(map[string]CoverageFileSummary),
@@ -210,18 +289,22 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 
 	totalCoverable := 0
 	totalCovered := 0
+	totalBranches := 0
+	totalCoveredBranches := 0
 	coveredFiles := 0
 
-	for filePath, lines := range aggregate {
-		coverable := len(lines)
+	for filePath, fileData := range aggregate {
+		coverable := len(fileData.Lines)
 		covered := 0
-		for _, count := range lines {
+		for _, count := range fileData.Lines {
 			if count > 0 {
 				covered++
 			}
 		}
 		totalCoverable += coverable
 		totalCovered += covered
+		totalBranches += fileData.TotalBranches
+		totalCoveredBranches += fileData.CoveredBranches
 		if covered > 0 {
 			coveredFiles++
 		}
@@ -230,7 +313,11 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 			pct = float64(covered) / float64(coverable) * 100
 		}
 		summary.PerFile[filePath] = CoverageFileSummary{
-			CoveredLines: covered, CoverableLines: coverable, CoveragePct: pct,
+			CoveredLines:    covered,
+			CoverableLines:  coverable,
+			CoveragePct:     pct,
+			TotalBranches:   fileData.TotalBranches,
+			CoveredBranches: fileData.CoveredBranches,
 		}
 	}
 
@@ -239,12 +326,20 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 		aggPct = float64(totalCovered) / float64(totalCoverable) * 100
 	}
 
+	branchPct := 0.0
+	if totalBranches > 0 {
+		branchPct = float64(totalCoveredBranches) / float64(totalBranches) * 100
+	}
+
 	summary.Aggregate = CoverageAggregate{
 		TotalCoverableLines: totalCoverable,
 		TotalCoveredLines:   totalCovered,
 		CoveragePct:         aggPct,
 		TotalFiles:          len(aggregate),
 		CoveredFiles:        coveredFiles,
+		TotalBranches:       totalBranches,
+		CoveredBranches:     totalCoveredBranches,
+		BranchCoveragePct:   branchPct,
 	}
 
 	// Per-test summaries from stored detail
@@ -260,8 +355,12 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 	}
 
 	// Console output
-	log.Stderrln(fmt.Sprintf("\n📊 Coverage: %.1f%% (%d/%d coverable lines across %d files)",
-		aggPct, totalCovered, totalCoverable, len(aggregate)))
+	coverageMsg := fmt.Sprintf("\n📊 Coverage: %.1f%% lines (%d/%d)", aggPct, totalCovered, totalCoverable)
+	if totalBranches > 0 {
+		coverageMsg += fmt.Sprintf(", %.1f%% branches (%d/%d)", branchPct, totalCoveredBranches, totalBranches)
+	}
+	coverageMsg += fmt.Sprintf(" across %d files", len(aggregate))
+	log.Stderrln(coverageMsg)
 
 	type fileStat struct {
 		path    string
@@ -319,24 +418,23 @@ func sanitizeFileName(name string) string {
 	return replacer.Replace(name)
 }
 
-// normalizeFilePaths converts absolute file paths to repo-relative paths.
+// normalizeCoveragePaths converts absolute file paths to repo-relative paths.
 // Uses git root as the base (consistent across machines, handles monorepo
 // files outside the service directory like ../shared/utils.js).
 // Falls back to cwd if not in a git repo.
-func normalizeFilePaths(lineCounts map[string]map[string]int) map[string]map[string]int {
+func normalizeCoveragePaths(snapshot CoverageSnapshot) CoverageSnapshot {
 	base := getPathNormalizationBase()
 	if base == "" {
-		return lineCounts
+		return snapshot
 	}
 
-	normalized := make(map[string]map[string]int, len(lineCounts))
-	for absPath, lines := range lineCounts {
+	normalized := make(CoverageSnapshot, len(snapshot))
+	for absPath, fileData := range snapshot {
 		relPath, err := filepath.Rel(base, absPath)
 		if err != nil || strings.HasPrefix(relPath, "..") {
-			// Outside the base - keep as-is rather than producing ../../... paths
 			relPath = absPath
 		}
-		normalized[relPath] = lines
+		normalized[relPath] = fileData
 	}
 	return normalized
 }
