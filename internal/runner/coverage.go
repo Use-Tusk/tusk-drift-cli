@@ -366,6 +366,9 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 			summary.Aggregate.BranchCoveragePct, summary.Aggregate.CoveredBranches, summary.Aggregate.TotalBranches)
 	}
 	coverageMsg += fmt.Sprintf(" across %d files", summary.Aggregate.TotalFiles)
+	if e.coverageBaseline == nil {
+		coverageMsg += "  ⚠️  baseline failed - denominator may be incomplete"
+	}
 	log.Stderrln(coverageMsg)
 
 	// Per-file breakdown sorted by coverage %
