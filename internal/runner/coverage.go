@@ -271,7 +271,13 @@ type CoverageTestSummary struct {
 	FilesTouched int    `json:"files_touched"`
 }
 
-func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate CoverageSnapshot) error {
+// ComputeCoverageSummary builds a CoverageSummary from aggregate coverage data
+// and per-test detail. This is a pure function (no side effects, no I/O).
+func ComputeCoverageSummary(
+	aggregate CoverageSnapshot,
+	perTestDetail map[string]map[string]CoverageFileDiff,
+	records []CoverageTestRecord,
+) CoverageSummary {
 	summary := CoverageSummary{
 		Timestamp: time.Now().Format(time.RFC3339),
 		PerFile:   make(map[string]CoverageFileSummary),
@@ -315,7 +321,6 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 	if totalCoverable > 0 {
 		aggPct = float64(totalCovered) / float64(totalCoverable) * 100
 	}
-
 	branchPct := 0.0
 	if totalBranches > 0 {
 		branchPct = float64(totalCoveredBranches) / float64(totalBranches) * 100
@@ -332,10 +337,9 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 		BranchCoveragePct:   branchPct,
 	}
 
-	// Per-test summaries from stored detail
 	for _, record := range records {
 		ts := CoverageTestSummary{TestID: record.TestID, TestName: record.TestName}
-		if detail := e.GetTestCoverageDetail(record.TestID); detail != nil {
+		if detail, ok := perTestDetail[record.TestID]; ok {
 			for _, fd := range detail {
 				ts.CoveredLines += fd.CoveredCount
 			}
@@ -344,17 +348,27 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 		summary.PerTest = append(summary.PerTest, ts)
 	}
 
-	// Console output
-	coverageMsg := fmt.Sprintf("\n📊 Coverage: %.1f%% lines (%d/%d)", aggPct, totalCovered, totalCoverable)
-	if totalBranches > 0 {
-		coverageMsg += fmt.Sprintf(", %.1f%% branches (%d/%d)", branchPct, totalCoveredBranches, totalBranches)
+	return summary
+}
+
+// printCoverageSummary computes and prints the coverage summary to stderr.
+func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate CoverageSnapshot) error {
+	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
+
+	// Aggregate line
+	coverageMsg := fmt.Sprintf("\n📊 Coverage: %.1f%% lines (%d/%d)",
+		summary.Aggregate.CoveragePct, summary.Aggregate.TotalCoveredLines, summary.Aggregate.TotalCoverableLines)
+	if summary.Aggregate.TotalBranches > 0 {
+		coverageMsg += fmt.Sprintf(", %.1f%% branches (%d/%d)",
+			summary.Aggregate.BranchCoveragePct, summary.Aggregate.CoveredBranches, summary.Aggregate.TotalBranches)
 	}
-	coverageMsg += fmt.Sprintf(" across %d files", len(aggregate))
+	coverageMsg += fmt.Sprintf(" across %d files", summary.Aggregate.TotalFiles)
 	log.Stderrln(coverageMsg)
 
+	// Per-file breakdown sorted by coverage %
 	type fileStat struct {
-		path    string
-		pct     float64
+		path     string
+		pct      float64
 		cov, tot int
 	}
 	var stats []fileStat
@@ -367,15 +381,10 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 
 	log.Stderrln("\n  Per-file:")
 	for _, s := range stats {
-		shortPath := s.path
-		if cwd, err := os.Getwd(); err == nil {
-			if rel, err := filepath.Rel(cwd, s.path); err == nil {
-				shortPath = rel
-			}
-		}
-		log.Stderrln(fmt.Sprintf("    %-40s %5.1f%% (%d/%d)", shortPath, s.pct, s.cov, s.tot))
+		log.Stderrln(fmt.Sprintf("    %-40s %5.1f%% (%d/%d)", s.path, s.pct, s.cov, s.tot))
 	}
 
+	// Per-test breakdown
 	log.Stderrln("\n  Per-test:")
 	for _, ts := range summary.PerTest {
 		name := ts.TestName
