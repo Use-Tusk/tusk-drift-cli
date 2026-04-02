@@ -164,6 +164,9 @@ func (e *Executor) StartService() error {
 		}
 		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", v8CoverageDir))
 		env = append(env, fmt.Sprintf("TUSK_COVERAGE_PORT=%d", e.coveragePort))
+		// ts-node: force emit compiled JS + source maps to disk so we can read them.
+		// Without this, ts-node compiles in memory and our SDK can't find the compiled output.
+		env = append(env, "TS_NODE_EMIT=true")
 		log.Debug("Coverage enabled", "v8_dir", v8CoverageDir, "port", e.coveragePort)
 	}
 
