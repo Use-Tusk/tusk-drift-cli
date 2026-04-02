@@ -121,6 +121,7 @@ func SnapshotToCoverageDetail(snapshot CoverageSnapshot) map[string]CoverageFile
 			if count > 0 {
 				line, err := strconv.Atoi(lineStr)
 				if err != nil || line <= 0 {
+					log.Debug("Skipping invalid line number in coverage data", "line", lineStr, "file", filePath)
 					continue
 				}
 				covered = append(covered, line)
@@ -215,9 +216,11 @@ func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) 
 				if branchInfo.Total > eb.Total {
 					eb.Total = branchInfo.Total
 				}
-				eb.Covered += branchInfo.Covered
-				if eb.Covered > eb.Total {
-					eb.Covered = eb.Total // Clamp: can't cover more branches than exist
+				newCovered := eb.Covered + branchInfo.Covered
+				if newCovered > eb.Total || newCovered < 0 { // Clamp + overflow guard
+					eb.Covered = eb.Total
+				} else {
+					eb.Covered = newCovered
 				}
 				existing.Branches[line] = eb
 			}
