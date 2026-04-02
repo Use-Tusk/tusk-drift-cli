@@ -95,7 +95,6 @@ type Executor struct {
 
 	// Coverage
 	coverageEnabled      bool
-	coveragePort         int // Coverage snapshot server port
 	coveragePerTest      map[string]map[string]CoverageFileDiff
 	coveragePerTestMu    sync.Mutex
 	coverageBaseline     CoverageSnapshot

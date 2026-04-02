@@ -74,3 +74,5 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 )
+
+replace github.com/Use-Tusk/tusk-drift-schemas => /Users/sohil/projects/tusk-drift-schemas

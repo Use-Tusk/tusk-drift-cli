@@ -45,10 +45,7 @@ func (e *Executor) StartService() error {
 
 	command := cfg.Service.Start.Command
 
-	// Coverage: set port (env vars injected after sandbox wrapping)
-	if e.coverageEnabled && e.coveragePort == 0 {
-		e.coveragePort = 19876
-	}
+	// Coverage: nothing to set here, env vars injected below after sandbox wrapping
 
 	// Wrap command with fence sandboxing (if supported and enabled)
 	replayOverridePath := e.getReplayComposeOverride()
@@ -163,11 +160,9 @@ func (e *Executor) StartService() error {
 			return fmt.Errorf("failed to create temp dir for V8 coverage: %w", err)
 		}
 		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", v8CoverageDir))
-		env = append(env, fmt.Sprintf("TUSK_COVERAGE_PORT=%d", e.coveragePort))
 		// ts-node: force emit compiled JS + source maps to disk so we can read them.
-		// Without this, ts-node compiles in memory and our SDK can't find the compiled output.
 		env = append(env, "TS_NODE_EMIT=true")
-		log.Debug("Coverage enabled", "v8_dir", v8CoverageDir, "port", e.coveragePort)
+		log.Debug("Coverage enabled", "v8_dir", v8CoverageDir)
 	}
 
 	e.serviceCmd.Env = env

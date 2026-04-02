@@ -1,10 +1,7 @@
 package runner
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,8 +12,6 @@ import (
 	"github.com/Use-Tusk/tusk-cli/internal/log"
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
-
-const coverageSnapshotTimeout = 5 * time.Second
 
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
 // Returns per-file coverage data for this test only (counters auto-reset).
@@ -41,63 +36,40 @@ func (e *Executor) TakeCoverageBaseline() (CoverageSnapshot, error) {
 }
 
 func (e *Executor) callCoverageEndpoint(baseline bool) (CoverageSnapshot, error) {
-	if !e.coverageEnabled || e.coveragePort == 0 {
+	if !e.coverageEnabled || e.server == nil {
 		return nil, nil
 	}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/snapshot", e.coveragePort)
-	if baseline {
-		url += "?baseline=true"
-	}
-	httpClient := &http.Client{Timeout: coverageSnapshotTimeout}
-
-	resp, err := httpClient.Get(url)
+	resp, err := e.server.SendCoverageSnapshot(baseline)
 	if err != nil {
 		return nil, fmt.Errorf("coverage snapshot failed: %w", err)
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read coverage response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("coverage snapshot status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result struct {
-		OK       bool                            `json:"ok"`
-		Coverage map[string]SnapshotFileCoverage `json:"coverage"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse coverage response: %w", err)
-	}
-
-	if !result.OK {
-		return nil, fmt.Errorf("coverage snapshot returned ok=false")
-	}
-
-	// Convert to our internal format and normalize paths
+	// Convert protobuf response to our internal format
 	snapshot := make(CoverageSnapshot)
-	for filePath, fileData := range result.Coverage {
+	for filePath, fileData := range resp.Coverage {
+		branches := make(map[string]BranchInfo)
+		for line, branchProto := range fileData.Branches {
+			branches[line] = BranchInfo{
+				Total:   int(branchProto.Total),
+				Covered: int(branchProto.Covered),
+			}
+		}
+
+		lines := make(map[string]int)
+		for line, count := range fileData.Lines {
+			lines[line] = int(count)
+		}
+
 		snapshot[filePath] = FileCoverageData{
-			Lines:           fileData.Lines,
-			TotalBranches:   fileData.TotalBranches,
-			CoveredBranches: fileData.CoveredBranches,
-			Branches:        fileData.Branches,
+			Lines:           lines,
+			TotalBranches:   int(fileData.TotalBranches),
+			CoveredBranches: int(fileData.CoveredBranches),
+			Branches:        branches,
 		}
 	}
 
 	return normalizeCoveragePaths(snapshot), nil
-}
-
-// SnapshotFileCoverage matches the JSON response from the SDK's /snapshot endpoint.
-type SnapshotFileCoverage struct {
-	Lines           map[string]int        `json:"lines"`
-	TotalBranches   int                   `json:"totalBranches"`
-	CoveredBranches int                   `json:"coveredBranches"`
-	Branches        map[string]BranchInfo `json:"branches"`
 }
 
 // BranchInfo tracks branch coverage at a specific line.
