@@ -7,30 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSanitizeFileName(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{name: "no special chars", input: "simple", expected: "simple"},
-		{name: "forward slashes", input: "a/b/c", expected: "a_b_c"},
-		{name: "backslashes", input: "a\\b\\c", expected: "a_b_c"},
-		{name: "colons", input: "a:b:c", expected: "a_b_c"},
-		{name: "spaces", input: "a b c", expected: "a_b_c"},
-		{name: "mixed separators", input: "path/to:some file\\here", expected: "path_to_some_file_here"},
-		{name: "empty string", input: "", expected: ""},
-		{name: "already clean", input: "test_id_123", expected: "test_id_123"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizeFileName(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestDedup(t *testing.T) {
 	tests := []struct {
 		name     string

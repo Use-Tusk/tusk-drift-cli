@@ -13,6 +13,12 @@ import (
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
 )
 
+const (
+	coverageBaselineMaxRetries   = 15
+	coverageBaselineRetryDelay   = 200 * time.Millisecond
+	coverageSnapshotTimeout      = 10 * time.Second
+)
+
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
 // Returns per-file coverage data for this test only (counters auto-reset).
 func (e *Executor) TakeCoverageSnapshot() (CoverageSnapshot, error) {
@@ -24,13 +30,13 @@ func (e *Executor) TakeCoverageSnapshot() (CoverageSnapshot, error) {
 // Retries with backoff since the coverage server may not be ready immediately after service start.
 func (e *Executor) TakeCoverageBaseline() (CoverageSnapshot, error) {
 	var lastErr error
-	for attempt := 0; attempt < 15; attempt++ {
+	for attempt := 0; attempt < coverageBaselineMaxRetries; attempt++ {
 		result, err := e.callCoverageEndpoint(true)
 		if err == nil {
 			return result, nil
 		}
 		lastErr = err
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(coverageBaselineRetryDelay)
 	}
 	return nil, fmt.Errorf("coverage baseline failed after retries: %w", lastErr)
 }
@@ -123,13 +129,18 @@ func SnapshotToCoverageDetail(snapshot CoverageSnapshot) map[string]CoverageFile
 		if len(covered) > 0 {
 			sort.Ints(covered)
 			covered = dedup(covered)
+			// Deep-copy branches to avoid shared references
+			branchesCopy := make(map[string]BranchInfo, len(fileData.Branches))
+			for line, info := range fileData.Branches {
+				branchesCopy[line] = info
+			}
 			result[filePath] = CoverageFileDiff{
 				CoveredLines:    covered,
 				CoverableLines:  len(fileData.Lines),
 				CoveredCount:    len(covered),
 				TotalBranches:   fileData.TotalBranches,
 				CoveredBranches: fileData.CoveredBranches,
-				Branches:        fileData.Branches,
+				Branches:        branchesCopy,
 			}
 		}
 	}
@@ -152,28 +163,36 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 	return e.printCoverageSummary(records, aggregate)
 }
 
-// mergeWithBaseline creates aggregate coverage starting from the baseline
-// (which has ALL coverable lines including count=0), then merging in per-test data.
+// mergeWithBaseline creates aggregate coverage by starting from the baseline
+// (all coverable lines including count=0) and unioning per-test data.
+//
+// Branch merging uses UNION semantics: if test A covers branch path 1 and test B
+// covers branch path 2, the aggregate shows both paths as covered. This is done
+// by summing covered counts per line (clamped to total) rather than taking max.
 func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) CoverageSnapshot {
 	merged := make(CoverageSnapshot)
 
-	// Start with baseline (all coverable lines, count=0 for uncovered)
+	// Deep-copy baseline (don't mutate the original)
 	if baseline != nil {
 		for filePath, fileData := range baseline {
 			lines := make(map[string]int, len(fileData.Lines))
 			for line, count := range fileData.Lines {
 				lines[line] = count
 			}
+			branches := make(map[string]BranchInfo, len(fileData.Branches))
+			for line, info := range fileData.Branches {
+				branches[line] = info // BranchInfo is a value type, safe to copy
+			}
 			merged[filePath] = FileCoverageData{
 				Lines:           lines,
 				TotalBranches:   fileData.TotalBranches,
 				CoveredBranches: fileData.CoveredBranches,
-				Branches:        fileData.Branches,
+				Branches:        branches,
 			}
 		}
 	}
 
-	// Merge in per-test coverage (add line counts, union branches)
+	// Union per-test coverage into the merged result
 	for _, record := range records {
 		for filePath, fileData := range record.Coverage {
 			existing, ok := merged[filePath]
@@ -183,27 +202,26 @@ func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) 
 					Branches: make(map[string]BranchInfo),
 				}
 			}
+			// Add line counts
 			for line, count := range fileData.Lines {
 				existing.Lines[line] += count
 			}
-			// Merge branch data: take max of covered
+			// Union branch data: sum covered counts (clamped to total)
 			for line, branchInfo := range fileData.Branches {
-				if eb, ok := existing.Branches[line]; ok {
-					if branchInfo.Total > eb.Total {
-						eb.Total = branchInfo.Total
-					}
-					if branchInfo.Covered > eb.Covered {
-						eb.Covered = branchInfo.Covered
-					}
-					existing.Branches[line] = eb
-				} else {
-					if existing.Branches == nil {
-						existing.Branches = make(map[string]BranchInfo)
-					}
-					existing.Branches[line] = branchInfo
+				if existing.Branches == nil {
+					existing.Branches = make(map[string]BranchInfo)
 				}
+				eb := existing.Branches[line]
+				if branchInfo.Total > eb.Total {
+					eb.Total = branchInfo.Total
+				}
+				eb.Covered += branchInfo.Covered
+				if eb.Covered > eb.Total {
+					eb.Covered = eb.Total // Clamp: can't cover more branches than exist
+				}
+				existing.Branches[line] = eb
 			}
-			// Recompute branch totals from merged per-line data
+			// Recompute file-level branch totals from per-line data
 			totalB, covB := 0, 0
 			for _, b := range existing.Branches {
 				totalB += b.Total
@@ -385,10 +403,6 @@ func dedup(sorted []int) []int {
 	return result
 }
 
-func sanitizeFileName(name string) string {
-	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_")
-	return replacer.Replace(name)
-}
 
 // normalizeCoveragePaths converts absolute file paths to repo-relative paths.
 // Uses git root as the base (consistent across machines, handles monorepo
