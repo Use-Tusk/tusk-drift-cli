@@ -392,6 +392,47 @@ This will not affect CLI behavior. See SDK for more details:
   </tbody>
 </table>
 
+## Coverage
+
+Configuration for code coverage collection. See [`docs/drift/coverage.md`](coverage.md) for full documentation.
+
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Type</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>coverage.enabled</code></td>
+      <td>bool</td>
+      <td><code>false</code></td>
+      <td>When <code>true</code>, automatically collect coverage during suite validation runs on the default branch. No CI changes needed.</td>
+    </tr>
+    <tr>
+      <td><code>coverage.include</code></td>
+      <td>string[]</td>
+      <td>(all files)</td>
+      <td>Only include files matching at least one pattern. Supports <code>**</code> for recursive matching. Paths are git-relative.</td>
+    </tr>
+    <tr>
+      <td><code>coverage.exclude</code></td>
+      <td>string[]</td>
+      <td>(none)</td>
+      <td>Exclude files matching any pattern. Applied after include. Supports <code>**</code> for recursive matching.</td>
+    </tr>
+    <tr>
+      <td><code>coverage.strip_path_prefix</code></td>
+      <td>string</td>
+      <td>(none)</td>
+      <td>Strip this prefix from coverage file paths. Required for Docker Compose — set to the container mount point (e.g., <code>/app</code>).</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Config overrides
 
 ### Flags that override config
