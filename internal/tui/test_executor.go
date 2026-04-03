@@ -750,7 +750,7 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addServiceLog("\n" + strings.Repeat("=", 60))
 		m.addServiceLog("🏁 All tests completed!")
 
-		// Show aggregate coverage summary in service logs
+		// Show aggregate coverage summary in service logs and write output file
 		if m.executor.IsCoverageEnabled() {
 			records := m.executor.GetCoverageRecords()
 			if summaryLines := m.executor.FormatCoverageSummaryLines(records); len(summaryLines) > 0 {
@@ -758,6 +758,17 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for _, line := range summaryLines {
 					m.addServiceLog(line)
 				}
+			}
+			// Write coverage output file if requested. Suppress console display
+			// since we already showed the summary above via FormatCoverageSummaryLines.
+			savedShowOutput := m.executor.IsCoverageShowOutput()
+			m.executor.SetShowCoverage(false)
+			if err := m.executor.ProcessCoverage(records); err != nil {
+				m.addServiceLog(fmt.Sprintf("⚠️ Failed to process coverage: %v", err))
+			}
+			m.executor.SetShowCoverage(savedShowOutput)
+			if outputPath := m.executor.GetCoverageOutputPath(); outputPath != "" {
+				m.addServiceLog(fmt.Sprintf("📄 Coverage written to %s", outputPath))
 			}
 		}
 

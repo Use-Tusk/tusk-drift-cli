@@ -478,6 +478,7 @@ func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) []st
 		return nil
 	}
 
+	records = filterInSuiteRecords(records)
 	aggregate := mergeWithBaseline(e.coverageBaseline, records)
 	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
 	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
@@ -543,9 +544,18 @@ type CoverageExport struct {
 func WriteCoverageJSON(path string, aggregate CoverageSnapshot, perTest map[string]map[string]CoverageFileDiff, records []CoverageTestRecord) error {
 	summary := ComputeCoverageSummary(aggregate, perTest, records)
 
-	// Filter per-test data to only include files present in the (filtered) aggregate
+	// Build set of allowed test IDs from the filtered in-suite records
+	allowedTestIDs := make(map[string]struct{}, len(records))
+	for _, r := range records {
+		allowedTestIDs[r.TestID] = struct{}{}
+	}
+
+	// Filter per-test data to only include in-suite tests and files present in the (filtered) aggregate
 	filteredPerTest := make(map[string]map[string]CoverageFileDiff, len(perTest))
 	for testID, testDetail := range perTest {
+		if _, ok := allowedTestIDs[testID]; !ok {
+			continue
+		}
 		filtered := make(map[string]CoverageFileDiff)
 		for fp, fd := range testDetail {
 			if _, ok := aggregate[fp]; ok {

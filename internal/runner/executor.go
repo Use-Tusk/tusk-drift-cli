@@ -502,6 +502,14 @@ func (e *Executor) SetShowCoverage(show bool) {
 	e.coverageShowOutput = show
 }
 
+func (e *Executor) IsCoverageShowOutput() bool {
+	return e.coverageShowOutput
+}
+
+func (e *Executor) GetCoverageOutputPath() string {
+	return e.coverageOutputPath
+}
+
 func (e *Executor) SetCoverageOutputPath(path string) {
 	e.coverageOutputPath = path
 }
