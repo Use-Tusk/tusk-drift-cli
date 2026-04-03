@@ -1,8 +1,8 @@
 # Code Coverage
 
-Tusk Drift can collect code coverage during test replay, showing which lines of your service code each trace test exercises. This helps you understand test value, identify redundant tests, and measure suite completeness.
+Tusk Drift can collect code coverage during test replay, showing which lines of your service code each trace test exercises.
 
-Coverage works with Node.js (JavaScript, TypeScript, ESM, CJS) and Python.
+Coverage works with Node.js and Python.
 
 ## Enabling Coverage
 
@@ -10,14 +10,14 @@ There are two ways to enable coverage:
 
 ### Config-driven (for CI)
 
-Add `coverage.enabled: true` to `.tusk/config.yaml`. Coverage is automatically collected during validation runs on the default branch — no CI changes needed.
+Add `coverage.enabled: true` to `.tusk/config.yaml`. Coverage is automatically collected during validation runs on the default branch. No CI changes needed.
 
 ```yaml
 coverage:
   enabled: true
 ```
 
-Config-driven coverage is **silent** — no console output. Data is collected for backend upload during suite validation.
+Config-driven coverage is silent (no console output). Data is collected for backend upload during suite validation.
 
 ### Flag-driven (for local dev)
 
@@ -126,10 +126,10 @@ In TUI mode, the aggregate summary appears in the service logs panel after all t
 ### LCOV export
 
 ```bash
-tusk drift run --show-coverage --coverage-output coverage.lcov
+tusk drift run --cloud --show-coverage --coverage-output coverage.lcov --print
 ```
 
-Standard LCOV format, compatible with Codecov, Coveralls, SonarQube, VS Code coverage gutters, JetBrains, and most other tools.
+Compatible with Codecov, Coveralls, SonarQube, VS Code, and most coverage tools.
 
 **Note on validation runs:**
 - **In-suite tests** are always included in coverage output, even if they fail (a failing test still exercises code paths).
@@ -139,7 +139,7 @@ Standard LCOV format, compatible with Codecov, Coveralls, SonarQube, VS Code cov
 ### JSON export
 
 ```bash
-tusk drift run --show-coverage --coverage-output coverage.json
+tusk drift run --cloud --show-coverage --coverage-output coverage.json --print
 ```
 
 JSON includes three top-level fields:
