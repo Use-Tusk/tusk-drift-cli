@@ -163,6 +163,7 @@ func (e *Executor) StartService() error {
 		if err != nil {
 			return fmt.Errorf("failed to create temp dir for V8 coverage: %w", err)
 		}
+		e.coverageTempDir = v8CoverageDir
 		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", v8CoverageDir))
 		env = append(env, "TS_NODE_EMIT=true")
 		log.Debug("Coverage enabled", "v8_dir", v8CoverageDir)
@@ -332,6 +333,11 @@ func (e *Executor) StopService() error {
 		if e.fenceManager != nil {
 			e.fenceManager.Cleanup()
 			e.fenceManager = nil
+		}
+		// Clean up V8 coverage temp directory
+		if e.coverageTempDir != "" {
+			os.RemoveAll(e.coverageTempDir)
+			e.coverageTempDir = ""
 		}
 		log.ServiceLog("Service stopped")
 	}()

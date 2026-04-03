@@ -57,7 +57,8 @@ var (
 	validateSuite                bool
 
 	// Coverage mode
-	coverageEnabled bool
+	showCoverage       bool
+	coverageOutputPath string
 )
 
 //go:embed short_docs/drift/drift_run.md
@@ -119,7 +120,8 @@ func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&validateSuite, "validate-suite", false, "[Cloud] Force validation mode regardless of branch")
 
 	// Coverage mode
-	cmd.Flags().BoolVar(&coverageEnabled, "coverage", false, "Collect code coverage during test execution")
+	cmd.Flags().BoolVar(&showCoverage, "show-coverage", false, "Collect and display code coverage during test execution")
+	cmd.Flags().StringVar(&coverageOutputPath, "coverage-output", "", "Write coverage data to file (LCOV by default, JSON if path ends in .json)")
 
 	_ = cmd.Flags().MarkHidden("client-id")
 	cmd.Flags().SortFlags = false
@@ -309,12 +311,38 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
+
+	// Coverage activation:
+	// - Config-driven: coverage.enabled=true in config activates during validation runs (silent, for upload)
+	// - Flag-driven: --show-coverage or --coverage-output activates anytime (for local dev/debugging)
+	coverageFromConfig := getConfigErr == nil && cfg.Coverage.Enabled && isValidation
+	coverageFromFlags := showCoverage || coverageOutputPath != ""
+	coverageEnabled := coverageFromConfig || coverageFromFlags
 	if coverageEnabled {
 		executor.SetCoverageEnabled(true)
+		executor.SetShowCoverage(showCoverage)
+		if coverageOutputPath != "" {
+			executor.SetCoverageOutputPath(coverageOutputPath)
+		}
+		if getConfigErr == nil {
+			if len(cfg.Coverage.Include) > 0 {
+				executor.SetCoverageIncludePatterns(cfg.Coverage.Include)
+			}
+			if len(cfg.Coverage.Exclude) > 0 {
+				executor.SetCoverageExcludePatterns(cfg.Coverage.Exclude)
+			}
+			if cfg.Coverage.StripPathPrefix != "" {
+				executor.SetCoverageStripPrefix(cfg.Coverage.StripPathPrefix)
+			}
+		}
 		// Coverage requires serial execution (concurrency=1) because per-test
 		// snapshots rely on the SDK resetting counters between tests.
 		executor.SetConcurrency(1)
-		log.Stderrln("➤ Coverage collection enabled (concurrency forced to 1)")
+		if showCoverage {
+			log.Stderrln("➤ Coverage collection enabled (concurrency forced to 1)")
+		} else {
+			log.Debug("Coverage collection enabled via config (concurrency forced to 1)")
+		}
 	}
 	if saveResults {
 		if resultsDir == "" {
@@ -370,6 +398,9 @@ func runTests(cmd *cobra.Command, args []string) error {
 				res,
 				test,
 			)
+			// TODO-COVERAGE-TRACKING: Include per-test coverage in the upload.
+			// Add TraceTestCoverageData to UploadSingleTestResult (or piggyback on existing proto).
+			// Data source: executor.GetTestCoverageDetail(test.TraceID)
 
 			mu.Lock()
 			attemptedCount++
@@ -403,8 +434,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	// Coverage: wrap the OnTestCompleted callback to take snapshots between tests
-	var coverageRecords []runner.CoverageTestRecord
-	var coverageMu sync.Mutex
 	if coverageEnabled {
 		existingCallback := executor.OnTestCompleted
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
@@ -420,20 +449,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 				return
 			}
 
-			coverageMu.Lock()
-			coverageRecords = append(coverageRecords, runner.CoverageTestRecord{
-				TestID:   test.TraceID,
-				TestName: fmt.Sprintf("%s %s", test.Method, test.Path),
-				Coverage: lineCounts,
+			executor.AddCoverageRecord(runner.CoverageTestRecord{
+				TestID:      test.TraceID,
+				TestName:    test.DisplayName,
+				SuiteStatus: test.SuiteStatus,
+				Coverage:    lineCounts,
 			})
-			coverageMu.Unlock()
 
 			// Store detail for TUI display
 			detail := runner.SnapshotToCoverageDetail(lineCounts)
 			executor.SetTestCoverageDetail(test.TraceID, detail)
 
-			// Print sub-line in --print mode
-			if !interactive {
+			// Print sub-line in --print mode when --show-coverage is active
+			if !interactive && showCoverage {
 				totalLines := 0
 				for _, fd := range detail {
 					totalLines += fd.CoveredCount
@@ -921,15 +949,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 	_ = os.Stdout.Sync()
 	time.Sleep(1 * time.Millisecond)
 
-	// Coverage: write per-test files and print summary
-	if coverageEnabled && len(coverageRecords) > 0 {
-		coverageMu.Lock()
-		records := make([]runner.CoverageTestRecord, len(coverageRecords))
-		copy(records, coverageRecords)
-		coverageMu.Unlock()
-
-		if err := executor.ProcessCoverage(records); err != nil {
-			log.Warn("Failed to process coverage", "error", err)
+	// Coverage: print summary and write output file
+	if coverageEnabled {
+		if records := executor.GetCoverageRecords(); len(records) > 0 {
+			if err := executor.ProcessCoverage(records); err != nil {
+				log.Warn("Failed to process coverage", "error", err)
+			}
 		}
 	}
 
@@ -959,6 +984,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 		if isValidation {
 			log.Println("\nSuite validation completed - backend will process results and update suite")
 		}
+		// TODO-COVERAGE-TRACKING: Upload coverage baseline after validation run completes.
+		// When coverageEnabled && isValidation, upload the baseline snapshot to backend:
+		// - endpoint: UploadCoverageBaseline (new)
+		// - data: executor.coverageBaseline (all coverable lines + branch data)
+		// - identifiers: driftRunID, observable_service_id, commit_sha
+		// This provides the denominator for coverage % calculations.
 		mu.Lock()
 		log.Stderr(fmt.Sprintf("\nSuccessfully uploaded %d/%d test results", uploadedCount, attemptedCount))
 		if attemptedCount > uploadedCount && lastUploadErr != nil {

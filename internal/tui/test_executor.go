@@ -630,12 +630,22 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						totalLines += fd.CoveredCount
 					}
 					m.addTestLog(test.TraceID, fmt.Sprintf("  📊 Coverage: %d lines across %d files", totalLines, len(detail)))
-					for filePath, fd := range detail {
-						// Shorten the file path relative to cwd
+					// Sort file paths for deterministic display
+					filePaths := make([]string, 0, len(detail))
+					for fp := range detail {
+						filePaths = append(filePaths, fp)
+					}
+					slices.Sort(filePaths)
+					for _, filePath := range filePaths {
+						fd := detail[filePath]
+						// Paths are already git-relative from normalizeCoveragePaths.
+						// Only try Rel() on absolute paths (shouldn't happen, but defensive).
 						shortPath := filePath
-						if cwd, err := os.Getwd(); err == nil {
-							if rel, err := filepath.Rel(cwd, filePath); err == nil {
-								shortPath = rel
+						if filepath.IsAbs(filePath) {
+							if cwd, err := os.Getwd(); err == nil {
+								if rel, err := filepath.Rel(cwd, filePath); err == nil {
+									shortPath = rel
+								}
 							}
 						}
 						m.addTestLog(test.TraceID, fmt.Sprintf("     %-40s %d lines", shortPath, fd.CoveredCount))
@@ -739,6 +749,17 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.header.SetCompleted()
 		m.addServiceLog("\n" + strings.Repeat("=", 60))
 		m.addServiceLog("🏁 All tests completed!")
+
+		// Show aggregate coverage summary in service logs
+		if m.executor.IsCoverageEnabled() {
+			records := m.executor.GetCoverageRecords()
+			if summaryLines := m.executor.FormatCoverageSummaryLines(records); len(summaryLines) > 0 {
+				m.addServiceLog("")
+				for _, line := range summaryLines {
+					m.addServiceLog(line)
+				}
+			}
+		}
 
 		// All-tests completed upload (non-blocking)
 		if m.opts != nil && m.opts.OnAllCompleted != nil {
@@ -1067,6 +1088,17 @@ func (m *testExecutorModel) startNextEnvironmentGroup() tea.Cmd {
 		m.serverStarted = true
 		m.serviceStarted = true
 		m.addServiceLog("✅ Environment ready")
+
+		// Coverage: take baseline snapshot to capture all coverable lines and reset counters
+		if m.executor.IsCoverageEnabled() {
+			baseline, err := m.executor.TakeCoverageBaseline()
+			if err != nil {
+				m.addServiceLog("⚠️ Coverage baseline failed: " + err.Error())
+			} else {
+				m.executor.SetCoverageBaseline(baseline)
+				m.addServiceLog("✅ Coverage baseline captured")
+			}
+		}
 
 		// Build list of global test indices for this environment
 		envIdx := m.currentGroupIndex - 1 // We already incremented it above

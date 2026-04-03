@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,12 +12,13 @@ import (
 
 	"github.com/Use-Tusk/tusk-cli/internal/log"
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 const (
 	coverageBaselineMaxRetries   = 15
 	coverageBaselineRetryDelay   = 200 * time.Millisecond
-	coverageSnapshotTimeout      = 10 * time.Second
+	coverageSnapshotTimeout      = 30 * time.Second
 )
 
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
@@ -75,7 +77,7 @@ func (e *Executor) callCoverageEndpoint(baseline bool) (CoverageSnapshot, error)
 		}
 	}
 
-	return normalizeCoveragePaths(snapshot), nil
+	return normalizeCoveragePaths(snapshot, e.coverageStripPrefix), nil
 }
 
 // BranchInfo tracks branch coverage at a specific line.
@@ -86,10 +88,10 @@ type BranchInfo struct {
 
 // FileCoverageData is the internal representation of per-file coverage.
 type FileCoverageData struct {
-	Lines           map[string]int
-	TotalBranches   int
-	CoveredBranches int
-	Branches        map[string]BranchInfo
+	Lines           map[string]int        `json:"lines"`
+	TotalBranches   int                   `json:"total_branches"`
+	CoveredBranches int                   `json:"covered_branches"`
+	Branches        map[string]BranchInfo `json:"branches,omitempty"`
 }
 
 // CoverageSnapshot is the full coverage data for a snapshot.
@@ -97,9 +99,10 @@ type CoverageSnapshot map[string]FileCoverageData
 
 // CoverageTestRecord holds per-test coverage data.
 type CoverageTestRecord struct {
-	TestID   string
-	TestName string
-	Coverage CoverageSnapshot
+	TestID      string
+	TestName    string
+	SuiteStatus string // "draft", "in_suite", or "" (local)
+	Coverage    CoverageSnapshot
 }
 
 // CoverageFileDiff represents per-test coverage for a single file.
@@ -148,20 +151,76 @@ func SnapshotToCoverageDetail(snapshot CoverageSnapshot) map[string]CoverageFile
 	return result
 }
 
-// ProcessCoverage computes aggregate coverage and prints the summary.
-// All data stays in memory - no files written to user's project.
+// ProcessCoverage computes aggregate coverage, optionally prints summary, writes file, and prepares for upload.
+// During validation runs, the aggregate and output files only include IN_SUITE tests (not drafts).
+// All per-test data (including drafts) is retained for backend upload — the backend needs draft
+// coverage for promotion decisions ("does this draft add unique coverage?").
 func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 	if !e.coverageEnabled || len(records) == 0 {
 		return nil
 	}
 
-	log.Stderrln("\n➤ Processing coverage data...")
+	// Filter to in-suite tests for the aggregate. If no suite status is set
+	// (local run, no cloud), include all tests.
+	suiteRecords := filterInSuiteRecords(records)
 
 	// Compute aggregate: start with baseline (all coverable lines including count=0),
 	// then merge in per-test coverage. This gives accurate denominator.
-	aggregate := mergeWithBaseline(e.coverageBaseline, records)
+	aggregate := mergeWithBaseline(e.coverageBaseline, suiteRecords)
 
-	return e.printCoverageSummary(records, aggregate)
+	// Apply include/exclude patterns from config
+	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+
+	// Print summary if --show-coverage was passed (not in silent config-driven mode)
+	if e.coverageShowOutput {
+		log.Stderrln("\n➤ Processing coverage data...")
+		e.printCoverageSummary(suiteRecords, aggregate)
+	}
+
+	// Write coverage file if requested.
+	// During validation runs, aggregate and output only include IN_SUITE tests.
+	// Draft coverage is excluded from the file but retained for backend upload.
+	if e.coverageOutputPath != "" {
+		outPath := e.coverageOutputPath
+		if !filepath.IsAbs(outPath) {
+			if cwd, err := os.Getwd(); err == nil {
+				outPath = filepath.Join(cwd, outPath)
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return fmt.Errorf("failed to create coverage output directory: %w", err)
+		}
+
+		if strings.HasSuffix(strings.ToLower(outPath), ".json") {
+			if err := WriteCoverageJSON(outPath, aggregate, e.coveragePerTest, suiteRecords); err != nil {
+				return fmt.Errorf("failed to write coverage JSON: %w", err)
+			}
+		} else {
+			if err := WriteCoverageLCOV(outPath, aggregate); err != nil {
+				return fmt.Errorf("failed to write coverage LCOV: %w", err)
+			}
+		}
+		if e.coverageShowOutput {
+			log.Stderrln(fmt.Sprintf("\n📄 Coverage written to %s", e.coverageOutputPath))
+		}
+	}
+
+	// TODO-COVERAGE-TRACKING: Upload coverage data to backend during validation runs.
+	// Upload ALL records (including drafts) — backend needs draft coverage for promotion.
+	// The backend computes the in-suite aggregate itself after promotion decisions.
+	// When running with --ci and isValidation=true, upload:
+	// 1. Coverage baseline (all coverable lines) — one per validation run
+	// 2. Per-test coverage records — one per trace test (both IN_SUITE and DRAFT)
+	// Backend uses this for:
+	// - Coverage-aware test promotion (which drafts add unique coverage?)
+	// - Coverage history tracking (coverage_snapshot table, IN_SUITE only)
+	// - Dashboard display (per-file, per-test attribution)
+	// Backend computes the final aggregate from IN_SUITE tests ONLY (post-promotion).
+	// The per-test data for rejected drafts is stored but excluded from the aggregate.
+	// Upload should use existing UploadTraceTestResults piggybacking (add TraceTestCoverageData)
+	// and a new UploadCoverageBaseline endpoint.
+
+	return nil
 }
 
 // mergeWithBaseline creates aggregate coverage by starting from the baseline
@@ -354,12 +413,12 @@ func ComputeCoverageSummary(
 	return summary
 }
 
-// printCoverageSummary computes and prints the coverage summary to stderr.
-func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate CoverageSnapshot) error {
-	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
+// formatCoverageSummary formats coverage summary as lines of text.
+func (e *Executor) formatCoverageSummary(summary CoverageSummary) []string {
+	var lines []string
 
 	// Aggregate line
-	coverageMsg := fmt.Sprintf("\n📊 Coverage: %.1f%% lines (%d/%d)",
+	coverageMsg := fmt.Sprintf("📊 Coverage: %.1f%% lines (%d/%d)",
 		summary.Aggregate.CoveragePct, summary.Aggregate.TotalCoveredLines, summary.Aggregate.TotalCoverableLines)
 	if summary.Aggregate.TotalBranches > 0 {
 		coverageMsg += fmt.Sprintf(", %.1f%% branches (%d/%d)",
@@ -369,9 +428,9 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 	if e.coverageBaseline == nil {
 		coverageMsg += "  ⚠️  baseline failed - denominator may be incomplete"
 	}
-	log.Stderrln(coverageMsg)
+	lines = append(lines, coverageMsg)
 
-	// Per-file breakdown sorted by coverage %
+	// Per-file breakdown sorted alphabetically
 	type fileStat struct {
 		path     string
 		pct      float64
@@ -383,11 +442,22 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 			stats = append(stats, fileStat{fp, fs.CoveragePct, fs.CoveredLines, fs.CoverableLines})
 		}
 	}
-	sort.Slice(stats, func(i, j int) bool { return stats[i].pct > stats[j].pct })
+	sort.Slice(stats, func(i, j int) bool { return stats[i].path < stats[j].path })
 
-	log.Stderrln("\n  Per-file:")
+	lines = append(lines, "")
+	lines = append(lines, "  Per-file:")
 	for _, s := range stats {
-		log.Stderrln(fmt.Sprintf("    %-40s %5.1f%% (%d/%d)", s.path, s.pct, s.cov, s.tot))
+		lines = append(lines, fmt.Sprintf("    %-40s %5.1f%% (%d/%d)", s.path, s.pct, s.cov, s.tot))
+	}
+
+	return lines
+}
+
+// printCoverageSummary computes and prints the coverage summary to stderr.
+func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate CoverageSnapshot) {
+	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
+	for _, line := range e.formatCoverageSummary(summary) {
+		log.Stderrln(line)
 	}
 
 	// Per-test breakdown
@@ -399,8 +469,203 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 		}
 		log.Stderrln(fmt.Sprintf("    %-40s %d lines across %d files", name, ts.CoveredLines, ts.FilesTouched))
 	}
+}
 
-	return nil
+// FormatCoverageSummaryLines computes the coverage summary and returns formatted
+// lines for the TUI service log panel (aggregate + per-file, no per-test).
+func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) []string {
+	if !e.coverageEnabled || len(records) == 0 {
+		return nil
+	}
+
+	aggregate := mergeWithBaseline(e.coverageBaseline, records)
+	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
+	return e.formatCoverageSummary(summary)
+}
+
+// filterCoverageByPatterns applies include/exclude glob patterns to a snapshot.
+// Include (if set): only keep files matching at least one include pattern.
+// Exclude: remove files matching any exclude pattern.
+// Include is applied first, then exclude.
+// Supports ** for recursive directory matching:
+//   - "**/migrations/**"      matches any file in any migrations/ directory
+//   - "backend/src/db/**"     matches everything under backend/src/db/
+//   - "**/*.test.ts"          matches any .test.ts file
+//   - "backend/src/db/migrations/**" matches specific path
+func filterCoverageByPatterns(snapshot CoverageSnapshot, include, exclude []string) CoverageSnapshot {
+	if len(include) == 0 && len(exclude) == 0 {
+		return snapshot
+	}
+	filtered := make(CoverageSnapshot, len(snapshot))
+	for filePath, data := range snapshot {
+		// Include filter: if patterns are set, file must match at least one
+		if len(include) > 0 && !matchesAnyPattern(filePath, include) {
+			continue
+		}
+		// Exclude filter: file must not match any
+		if len(exclude) > 0 && matchesAnyPattern(filePath, exclude) {
+			continue
+		}
+		filtered[filePath] = data
+	}
+	return filtered
+}
+
+// matchesAnyPattern checks if a file path matches any of the glob patterns.
+// Uses doublestar for proper ** support.
+func matchesAnyPattern(filePath string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if matched, _ := doublestar.Match(pattern, filePath); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// matchGlob matches a path against a glob pattern supporting **.
+// Exported for testing.
+func matchGlob(filePath, pattern string) bool {
+	matched, _ := doublestar.Match(pattern, filePath)
+	return matched
+}
+
+// --- Coverage Export ---
+
+// CoverageExport is the top-level JSON export structure.
+type CoverageExport struct {
+	Summary   CoverageSummary                        `json:"summary"`
+	Aggregate CoverageSnapshot                       `json:"aggregate"`
+	PerTest   map[string]map[string]CoverageFileDiff `json:"per_test"`
+}
+
+// WriteCoverageJSON writes aggregate + per-test coverage as JSON.
+func WriteCoverageJSON(path string, aggregate CoverageSnapshot, perTest map[string]map[string]CoverageFileDiff, records []CoverageTestRecord) error {
+	summary := ComputeCoverageSummary(aggregate, perTest, records)
+
+	// Filter per-test data to only include files present in the (filtered) aggregate
+	filteredPerTest := make(map[string]map[string]CoverageFileDiff, len(perTest))
+	for testID, testDetail := range perTest {
+		filtered := make(map[string]CoverageFileDiff)
+		for fp, fd := range testDetail {
+			if _, ok := aggregate[fp]; ok {
+				filtered[fp] = fd
+			}
+		}
+		if len(filtered) > 0 {
+			filteredPerTest[testID] = filtered
+		}
+	}
+
+	export := CoverageExport{
+		Summary:   summary,
+		Aggregate: aggregate,
+		PerTest:   filteredPerTest,
+	}
+
+	data, err := json.MarshalIndent(export, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// WriteCoverageLCOV writes aggregate coverage data in LCOV format.
+func WriteCoverageLCOV(path string, aggregate CoverageSnapshot) error {
+	var b strings.Builder
+
+	// Sort file paths for deterministic output
+	filePaths := make([]string, 0, len(aggregate))
+	for fp := range aggregate {
+		filePaths = append(filePaths, fp)
+	}
+	sort.Strings(filePaths)
+
+	for _, filePath := range filePaths {
+		fileData := aggregate[filePath]
+		b.WriteString("SF:")
+		b.WriteString(filePath)
+		b.WriteByte('\n')
+
+		// Line data (DA:line,count)
+		lineNums := make([]int, 0, len(fileData.Lines))
+		for lineStr := range fileData.Lines {
+			if n, err := strconv.Atoi(lineStr); err == nil {
+				lineNums = append(lineNums, n)
+			}
+		}
+		sort.Ints(lineNums)
+
+		linesFound := 0
+		linesHit := 0
+		for _, line := range lineNums {
+			count := fileData.Lines[strconv.Itoa(line)]
+			b.WriteString(fmt.Sprintf("DA:%d,%d\n", line, count))
+			linesFound++
+			if count > 0 {
+				linesHit++
+			}
+		}
+
+		// Branch data (BRDA:line,block,branch,count)
+		branchLines := make([]int, 0, len(fileData.Branches))
+		for lineStr := range fileData.Branches {
+			if n, err := strconv.Atoi(lineStr); err == nil {
+				branchLines = append(branchLines, n)
+			}
+		}
+		sort.Ints(branchLines)
+
+		branchesFound := 0
+		branchesHit := 0
+		for _, line := range branchLines {
+			info := fileData.Branches[strconv.Itoa(line)]
+			for i := 0; i < info.Total; i++ {
+				count := 0
+				if i < info.Covered {
+					count = 1
+				}
+				b.WriteString(fmt.Sprintf("BRDA:%d,0,%d,%d\n", line, i, count))
+				branchesFound++
+				if count > 0 {
+					branchesHit++
+				}
+			}
+		}
+
+		b.WriteString(fmt.Sprintf("LF:%d\n", linesFound))
+		b.WriteString(fmt.Sprintf("LH:%d\n", linesHit))
+		if branchesFound > 0 {
+			b.WriteString(fmt.Sprintf("BRF:%d\n", branchesFound))
+			b.WriteString(fmt.Sprintf("BRH:%d\n", branchesHit))
+		}
+		b.WriteString("end_of_record\n")
+	}
+
+	return os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+// filterInSuiteRecords returns only records from in-suite tests.
+// If no tests have suite status set (local run, no cloud), returns all records.
+func filterInSuiteRecords(records []CoverageTestRecord) []CoverageTestRecord {
+	hasSuiteStatus := false
+	for _, r := range records {
+		if r.SuiteStatus != "" {
+			hasSuiteStatus = true
+			break
+		}
+	}
+	if !hasSuiteStatus {
+		return records
+	}
+
+	var filtered []CoverageTestRecord
+	for _, r := range records {
+		if r.SuiteStatus != "draft" {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
 }
 
 // --- Helpers ---
@@ -420,10 +685,32 @@ func dedup(sorted []int) []int {
 
 
 // normalizeCoveragePaths converts absolute file paths to repo-relative paths.
-// Uses git root as the base (consistent across machines, handles monorepo
-// files outside the service directory like ../shared/utils.js).
-// Falls back to cwd if not in a git repo.
-func normalizeCoveragePaths(snapshot CoverageSnapshot) CoverageSnapshot {
+//
+// For non-Docker: uses git root as the base (handles monorepos, cd into subdirs).
+// For Docker: coverage.strip_path_prefix strips the container mount point first
+// (e.g., "/app"), then git root normalization converts the rest to repo-relative.
+func normalizeCoveragePaths(snapshot CoverageSnapshot, stripPrefix string) CoverageSnapshot {
+	if len(snapshot) == 0 {
+		return snapshot
+	}
+
+	// Step 1: Strip container path prefix if configured (Docker Compose)
+	if stripPrefix != "" {
+		stripPrefix = strings.TrimRight(stripPrefix, "/")
+		stripped := make(CoverageSnapshot, len(snapshot))
+		for absPath, fileData := range snapshot {
+			newPath := absPath
+			if strings.HasPrefix(absPath, stripPrefix+"/") {
+				newPath = absPath[len(stripPrefix)+1:]
+			} else if absPath == stripPrefix {
+				newPath = "."
+			}
+			stripped[newPath] = fileData
+		}
+		snapshot = stripped
+	}
+
+	// Step 2: Normalize to git-root-relative paths
 	base := getPathNormalizationBase()
 	if base == "" {
 		return snapshot
@@ -433,6 +720,7 @@ func normalizeCoveragePaths(snapshot CoverageSnapshot) CoverageSnapshot {
 	for absPath, fileData := range snapshot {
 		relPath, err := filepath.Rel(base, absPath)
 		if err != nil || strings.HasPrefix(relPath, "..") {
+			// Already relative (from strip_prefix) or outside git root — keep as-is
 			relPath = absPath
 		}
 		normalized[relPath] = fileData

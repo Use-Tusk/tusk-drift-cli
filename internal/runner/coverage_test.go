@@ -295,15 +295,133 @@ func TestComputeCoverageSummary(t *testing.T) {
 
 func TestNormalizeCoveragePaths(t *testing.T) {
 	t.Run("nil input returns empty", func(t *testing.T) {
-		result := normalizeCoveragePaths(nil)
+		result := normalizeCoveragePaths(nil, "")
 		assert.Len(t, result, 0)
 	})
 
 	t.Run("empty input returns empty", func(t *testing.T) {
-		result := normalizeCoveragePaths(CoverageSnapshot{})
+		result := normalizeCoveragePaths(CoverageSnapshot{}, "")
 		assert.Empty(t, result)
 	})
 
-	// Note: full path normalization depends on git root which is environment-specific.
+	t.Run("strip_path_prefix strips container mount point", func(t *testing.T) {
+		snapshot := CoverageSnapshot{
+			"/app/app/api/views.py":   FileCoverageData{Lines: map[string]int{"1": 1}},
+			"/app/app/settings.py":    FileCoverageData{Lines: map[string]int{"1": 1}},
+			"/app/tusk_drift_init.py": FileCoverageData{Lines: map[string]int{"1": 1}},
+		}
+		result := normalizeCoveragePaths(snapshot, "/app")
+		assert.Contains(t, result, "app/api/views.py")
+		assert.Contains(t, result, "app/settings.py")
+		assert.Contains(t, result, "tusk_drift_init.py")
+	})
+
+	t.Run("strip_path_prefix with trailing slash", func(t *testing.T) {
+		snapshot := CoverageSnapshot{
+			"/app/server.py": FileCoverageData{Lines: map[string]int{"1": 1}},
+		}
+		result := normalizeCoveragePaths(snapshot, "/app/")
+		assert.Contains(t, result, "server.py")
+	})
+
+	t.Run("strip_path_prefix with cd backend", func(t *testing.T) {
+		snapshot := CoverageSnapshot{
+			"/app/backend/src/server.py": FileCoverageData{Lines: map[string]int{"1": 1}},
+		}
+		result := normalizeCoveragePaths(snapshot, "/app")
+		assert.Contains(t, result, "backend/src/server.py")
+	})
+
+	// Note: full git root normalization depends on git root which is environment-specific.
 	// We test the function handles edge cases; full integration is tested E2E.
+}
+
+
+func TestMatchGlob(t *testing.T) {
+	tests := []struct {
+		path    string
+		pattern string
+		want    bool
+	}{
+		// ** patterns
+		{"backend/src/db/migrations/1700-Init.ts", "**/migrations/**", true},
+		{"backend/src/db/migrations/foo/bar.ts", "**/migrations/**", true},
+		{"backend/src/services/ResourceService.ts", "**/migrations/**", false},
+
+		// Leading **
+		{"backend/src/utils/test.test.ts", "**/*.test.ts", true},
+		{"foo.test.ts", "**/*.test.ts", true},
+		{"backend/src/utils/test.ts", "**/*.test.ts", false},
+
+		// Trailing **
+		{"backend/src/db/migrations/1700-Init.ts", "backend/src/db/**", true},
+		{"backend/src/db/config.ts", "backend/src/db/**", true},
+		{"backend/src/services/foo.ts", "backend/src/db/**", false},
+
+		// Specific path with **
+		{"backend/src/db/migrations/1700-Init.ts", "backend/src/db/migrations/**", true},
+		{"backend/src/db/config.ts", "backend/src/db/migrations/**", false},
+
+		// No ** — standard glob
+		{"server.js", "server.js", true},
+		{"server.ts", "server.js", false},
+		{"server.js", "*.js", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path+"_"+tt.pattern, func(t *testing.T) {
+			got := matchGlob(tt.path, tt.pattern)
+			assert.Equal(t, tt.want, got, "matchGlob(%q, %q)", tt.path, tt.pattern)
+		})
+	}
+}
+
+func TestFilterCoverageByPatterns(t *testing.T) {
+	snapshot := CoverageSnapshot{
+		"backend/src/db/migrations/1700-Init.ts":  FileCoverageData{Lines: map[string]int{"1": 1}},
+		"backend/src/db/migrations/1701-Add.ts":   FileCoverageData{Lines: map[string]int{"1": 1}},
+		"backend/src/services/ResourceService.ts": FileCoverageData{Lines: map[string]int{"1": 1}},
+		"backend/src/scripts/runMigration.ts":     FileCoverageData{Lines: map[string]int{"1": 1}},
+		"backend/src/utils/test.test.ts":          FileCoverageData{Lines: map[string]int{"1": 1}},
+		"shared/utils/helpers.ts":                 FileCoverageData{Lines: map[string]int{"1": 1}},
+	}
+
+	t.Run("exclude only", func(t *testing.T) {
+		result := filterCoverageByPatterns(snapshot, nil, []string{
+			"**/migrations/**",
+			"**/scripts/**",
+		})
+		assert.Len(t, result, 3)
+		assert.Contains(t, result, "backend/src/services/ResourceService.ts")
+		assert.Contains(t, result, "backend/src/utils/test.test.ts")
+		assert.Contains(t, result, "shared/utils/helpers.ts")
+	})
+
+	t.Run("include only", func(t *testing.T) {
+		result := filterCoverageByPatterns(snapshot, []string{
+			"backend/src/**",
+		}, nil)
+		assert.Len(t, result, 5)
+		assert.Contains(t, result, "backend/src/services/ResourceService.ts")
+		assert.NotContains(t, result, "shared/utils/helpers.ts")
+	})
+
+	t.Run("include and exclude", func(t *testing.T) {
+		result := filterCoverageByPatterns(snapshot, []string{
+			"backend/src/**",
+		}, []string{
+			"**/migrations/**",
+		})
+		assert.Len(t, result, 3)
+		assert.Contains(t, result, "backend/src/services/ResourceService.ts")
+		assert.Contains(t, result, "backend/src/scripts/runMigration.ts")
+		assert.Contains(t, result, "backend/src/utils/test.test.ts")
+		assert.NotContains(t, result, "shared/utils/helpers.ts")
+		assert.NotContains(t, result, "backend/src/db/migrations/1700-Init.ts")
+	})
+
+	t.Run("no patterns returns all", func(t *testing.T) {
+		result := filterCoverageByPatterns(snapshot, nil, nil)
+		assert.Len(t, result, 6)
+	})
 }

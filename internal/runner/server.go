@@ -1012,7 +1012,7 @@ func (ms *Server) SendCoverageSnapshot(baseline bool) (*core.CoverageSnapshotRes
 		return nil, fmt.Errorf("failed to send coverage snapshot request: %w", err)
 	}
 
-	response, err := ms.waitForSDKResponse(requestID, 10*time.Second)
+	response, err := ms.waitForSDKResponse(requestID, coverageSnapshotTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive coverage snapshot response: %w", err)
 	}
