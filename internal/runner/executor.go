@@ -510,6 +510,29 @@ func (e *Executor) GetCoverageOutputPath() string {
 	return e.coverageOutputPath
 }
 
+// GetCoverageBaselineForUpload computes the full baseline by merging the raw baseline
+// with all per-test records. This ensures the denominator includes lines discovered
+// during test execution that weren't in the initial baseline snapshot.
+func (e *Executor) GetCoverageBaselineForUpload() CoverageSnapshot {
+	e.coverageBaselineMu.Lock()
+	baseline := e.coverageBaseline
+	e.coverageBaselineMu.Unlock()
+
+	records := e.GetCoverageRecords()
+	if baseline == nil && len(records) == 0 {
+		return nil
+	}
+
+	// Merge baseline with ALL per-test records (not filtered by suite status)
+	// to get the complete set of coverable lines for the denominator
+	aggregate := mergeWithBaseline(baseline, records)
+
+	// Apply include/exclude patterns
+	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+
+	return aggregate
+}
+
 func (e *Executor) SetCoverageOutputPath(path string) {
 	e.coverageOutputPath = path
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,6 +112,8 @@ func ReportDriftRunSuccess(
 	driftRunID string,
 	authOptions api.AuthOptions,
 	results []TestResult,
+	coverageBaseline CoverageSnapshot,
+	commitSha string,
 	statusMessageOverride ...string,
 ) error {
 	// Note: We always report SUCCESS status here unless there was an error executing tests.
@@ -125,7 +129,67 @@ func ReportDriftRunSuccess(
 		CiStatus:        finalStatus,
 		CiStatusMessage: &statusMessage,
 	}
+
+	// Attach coverage baseline if available
+	if coverageBaseline != nil {
+		statusReq.CoverageBaseline = buildCoverageBaselineProto(coverageBaseline, commitSha)
+	}
+
 	return client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions)
+}
+
+func buildCoverageBaselineProto(snapshot CoverageSnapshot, commitSha string) *backend.CoverageBaseline {
+	baseline := &backend.CoverageBaseline{
+		CommitSha:                  commitSha,
+		CoverableLinesByFile:      make(map[string]*backend.FileLineRanges),
+		StartupCoveredLinesByFile: make(map[string]*backend.FileLineRanges),
+	}
+	totalCoverable := int32(0)
+	for filePath, fileData := range snapshot {
+		totalCoverable += int32(len(fileData.Lines))
+
+		var allLines []int32
+		var coveredLines []int32
+		for lineStr, count := range fileData.Lines {
+			if n, err := strconv.Atoi(lineStr); err == nil {
+				allLines = append(allLines, int32(n))
+				if count > 0 {
+					coveredLines = append(coveredLines, int32(n))
+				}
+			}
+		}
+
+		sort.Slice(allLines, func(i, j int) bool { return allLines[i] < allLines[j] })
+		baseline.CoverableLinesByFile[filePath] = toLineRangesProto(allLines)
+
+		if len(coveredLines) > 0 {
+			sort.Slice(coveredLines, func(i, j int) bool { return coveredLines[i] < coveredLines[j] })
+			baseline.StartupCoveredLinesByFile[filePath] = toLineRangesProto(coveredLines)
+		}
+	}
+	baseline.TotalCoverableLines = totalCoverable
+	return baseline
+}
+
+// toLineRangesProto compresses sorted int32s into LineRange protos.
+// [1,2,3,5,6,10] -> [{1,3},{5,6},{10,10}]
+func toLineRangesProto(sorted []int32) *backend.FileLineRanges {
+	if len(sorted) == 0 {
+		return &backend.FileLineRanges{}
+	}
+	var ranges []*backend.LineRange
+	start, end := sorted[0], sorted[0]
+	for i := 1; i < len(sorted); i++ {
+		if sorted[i] == end+1 {
+			end = sorted[i]
+		} else {
+			ranges = append(ranges, &backend.LineRange{Start: start, End: end})
+			start = sorted[i]
+			end = sorted[i]
+		}
+	}
+	ranges = append(ranges, &backend.LineRange{Start: start, End: end})
+	return &backend.FileLineRanges{Ranges: ranges}
 }
 
 func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test) []*backend.TraceTestResult {
@@ -251,7 +315,33 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 			}
 		}
 
+		// Per-test coverage data (if coverage is enabled)
+		if e != nil && e.IsCoverageEnabled() {
+			detail := e.GetTestCoverageDetail(r.TestID)
+			if len(detail) > 0 {
+				covData := &backend.TraceTestCoverageData{
+					CoveredLinesByFile: make(map[string]*backend.FileLineRanges),
+				}
+				totalCovered := int32(0)
+				for filePath, fd := range detail {
+					totalCovered += int32(fd.CoveredCount)
+					sorted := toInt32Slice(fd.CoveredLines)
+					covData.CoveredLinesByFile[filePath] = toLineRangesProto(sorted)
+				}
+				covData.TotalCoveredLines = totalCovered
+				tr.CoverageData = covData
+			}
+		}
+
 		out = append(out, tr)
 	}
 	return out
+}
+
+func toInt32Slice(ints []int) []int32 {
+	result := make([]int32, len(ints))
+	for i, v := range ints {
+		result[i] = int32(v)
+	}
+	return result
 }

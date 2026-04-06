@@ -18,7 +18,7 @@ import (
 const (
 	coverageBaselineMaxRetries   = 15
 	coverageBaselineRetryDelay   = 200 * time.Millisecond
-	coverageSnapshotTimeout      = 30 * time.Second
+	coverageSnapshotTimeout      = 60 * time.Second
 )
 
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
@@ -205,21 +205,6 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 		}
 	}
 
-	// TODO-COVERAGE-TRACKING: Upload coverage data to backend during validation runs.
-	// Upload ALL records (including drafts) — backend needs draft coverage for promotion.
-	// The backend computes the in-suite aggregate itself after promotion decisions.
-	// When running with --ci and isValidation=true, upload:
-	// 1. Coverage baseline (all coverable lines) — one per validation run
-	// 2. Per-test coverage records — one per trace test (both IN_SUITE and DRAFT)
-	// Backend uses this for:
-	// - Coverage-aware test promotion (which drafts add unique coverage?)
-	// - Coverage history tracking (coverage_snapshot table, IN_SUITE only)
-	// - Dashboard display (per-file, per-test attribution)
-	// Backend computes the final aggregate from IN_SUITE tests ONLY (post-promotion).
-	// The per-test data for rejected drafts is stored but excluded from the aggregate.
-	// Upload should use existing UploadTraceTestResults piggybacking (add TraceTestCoverageData)
-	// and a new UploadCoverageBaseline endpoint.
-
 	return nil
 }
 
@@ -232,7 +217,10 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) CoverageSnapshot {
 	merged := make(CoverageSnapshot)
 
-	// Deep-copy baseline (don't mutate the original)
+	// Deep-copy baseline (don't mutate the original).
+	// Baseline lines include startup-covered counts (count > 0 for lines executed
+	// during module loading). These count toward "covered" in the aggregate,
+	// matching industry standard behavior (Istanbul, NYC, coverage.py, etc.).
 	if baseline != nil {
 		for filePath, fileData := range baseline {
 			lines := make(map[string]int, len(fileData.Lines))

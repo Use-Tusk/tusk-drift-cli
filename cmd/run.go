@@ -398,9 +398,7 @@ func runTests(cmd *cobra.Command, args []string) error {
 				res,
 				test,
 			)
-			// TODO-COVERAGE-TRACKING: Include per-test coverage in the upload.
-			// Add TraceTestCoverageData to UploadSingleTestResult (or piggyback on existing proto).
-			// Data source: executor.GetTestCoverageDetail(test.TraceID)
+
 
 			mu.Lock()
 			attemptedCount++
@@ -433,16 +431,13 @@ func runTests(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	// Coverage: wrap the OnTestCompleted callback to take snapshots between tests
+	// Coverage: wrap the OnTestCompleted callback to take snapshots between tests.
+	// Snapshot runs BEFORE the existing callback (which uploads results) so that
+	// per-test coverage data is available when building the upload proto.
 	if coverageEnabled {
 		existingCallback := executor.OnTestCompleted
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
-			if existingCallback != nil {
-				existingCallback(res, test)
-			}
-
-			// Take coverage snapshot. The SDK resets counters on each call,
-			// so the response contains ONLY coverage from this test.
+			// Take coverage snapshot FIRST so data is available for upload
 			lineCounts, err := executor.TakeCoverageSnapshot()
 			if err != nil {
 				log.Warn("Failed to take coverage snapshot", "testID", test.TraceID, "error", err)
@@ -469,6 +464,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 				if totalLines > 0 {
 					log.UserProgress(fmt.Sprintf("  ↳ coverage: %d lines across %d files", totalLines, len(detail)))
 				}
+			}
+
+			// Now run the existing callback (which uploads results).
+			// Coverage data is available via GetTestCoverageDetail() for the upload.
+			if existingCallback != nil {
+				existingCallback(res, test)
 			}
 		})
 	}
@@ -791,7 +792,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 						passed, failed := countPassedFailed(results)
 						statusMessage = fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)
 					}
-					if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
+					var interactiveCoverageBaseline runner.CoverageSnapshot
+					if coverageEnabled && isValidation {
+						interactiveCoverageBaseline = executor.GetCoverageBaselineForUpload()
+					}
+					if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, interactiveCoverageBaseline, commitSha, statusMessage); err != nil {
 						log.Warn("Interactive: cloud finalize failed", "error", err)
 					}
 					mu.Lock()
@@ -978,18 +983,17 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		// streamed is always true here so this only updates the CI status
 		// Does NOT upload results to the backend as they are already uploaded via UploadSingleTestResult during the callback
-		if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
+		// Coverage baseline (if enabled) is piggybacked on this status update
+		var headlessCoverageBaseline runner.CoverageSnapshot
+		if coverageEnabled && isValidation {
+			headlessCoverageBaseline = executor.GetCoverageBaselineForUpload()
+		}
+		if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, headlessCoverageBaseline, commitSha, statusMessage); err != nil {
 			log.Warn("Headless: cloud finalize failed", "error", err)
 		}
 		if isValidation {
 			log.Println("\nSuite validation completed - backend will process results and update suite")
 		}
-		// TODO-COVERAGE-TRACKING: Upload coverage baseline after validation run completes.
-		// When coverageEnabled && isValidation, upload the baseline snapshot to backend:
-		// - endpoint: UploadCoverageBaseline (new)
-		// - data: executor.coverageBaseline (all coverable lines + branch data)
-		// - identifiers: driftRunID, observable_service_id, commit_sha
-		// This provides the denominator for coverage % calculations.
 		mu.Lock()
 		log.Stderr(fmt.Sprintf("\nSuccessfully uploaded %d/%d test results", uploadedCount, attemptedCount))
 		if attemptedCount > uploadedCount && lastUploadErr != nil {
