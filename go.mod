@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/Use-Tusk/fence v0.1.36
-	github.com/Use-Tusk/tusk-drift-schemas v0.1.32
+	github.com/Use-Tusk/tusk-drift-schemas v0.1.33
 	github.com/agnivade/levenshtein v1.0.3
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7
@@ -25,6 +25,7 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
+	github.com/zricethezav/gitleaks/v8 v8.30.1
 	golang.org/x/mod v0.27.0
 	golang.org/x/term v0.33.0
 	google.golang.org/protobuf v1.36.9
@@ -113,7 +114,6 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
-	github.com/zricethezav/gitleaks/v8 v8.30.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect

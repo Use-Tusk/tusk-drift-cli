@@ -8,11 +8,10 @@ import (
 )
 
 var (
-	queryDistinctServiceID    string
-	queryDistinctField        string
-	queryDistinctLimit        int
-	queryDistinctWhere        string
-	queryDistinctJsonbFilters string
+	queryDistinctServiceID string
+	queryDistinctField     string
+	queryDistinctLimit     int
+	queryDistinctWhere     string
 )
 
 var driftQueryDistinctCmd = &cobra.Command{
@@ -24,11 +23,15 @@ var driftQueryDistinctCmd = &cobra.Command{
 		if err != nil {
 			return formatApiError(err)
 		}
+		limit, err := driftquery.Int32Ptr("--limit", queryDistinctLimit)
+		if err != nil {
+			return err
+		}
 
 		input := &driftquery.ListDistinctValuesInput{
-			ObservableServiceID: serviceID,
+			ObservableServiceId: serviceID,
 			Field:               queryDistinctField,
-			Limit:               queryDistinctLimit,
+			Limit:               limit,
 		}
 
 		if queryDistinctWhere != "" {
@@ -37,14 +40,6 @@ var driftQueryDistinctCmd = &cobra.Command{
 				return err
 			}
 			input.Where = where
-		}
-
-		if queryDistinctJsonbFilters != "" {
-			filters, err := parseJsonbFiltersJSON(queryDistinctJsonbFilters)
-			if err != nil {
-				return err
-			}
-			input.JsonbFilters = filters
 		}
 
 		result, err := client.ListDriftDistinctValues(context.Background(), input, authOptions)
@@ -63,8 +58,7 @@ func init() {
 	f.StringVar(&queryDistinctServiceID, "service-id", "", "Observable service ID")
 	f.StringVar(&queryDistinctField, "field", "", "Field to get distinct values for (e.g. name, packageName, outputValue.statusCode)")
 	f.IntVar(&queryDistinctLimit, "limit", 50, "Max distinct values to return (1-100)")
-	f.StringVar(&queryDistinctWhere, "where", "", "Filter conditions as JSON")
-	f.StringVar(&queryDistinctJsonbFilters, "jsonb-filters", "", "JSONB filters as JSON array")
+	f.StringVar(&queryDistinctWhere, "where", "", "WhereClause JSON to scope distinct values")
 
 	_ = driftQueryDistinctCmd.MarkFlagRequired("field")
 }
