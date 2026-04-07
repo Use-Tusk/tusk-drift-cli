@@ -753,7 +753,8 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Show aggregate coverage summary in service logs and write output file
 		if m.executor.IsCoverageEnabled() {
 			records := m.executor.GetCoverageRecords()
-			if summaryLines := m.executor.FormatCoverageSummaryLines(records); len(summaryLines) > 0 {
+			summaryLines, aggregate := m.executor.FormatCoverageSummaryLines(records)
+			if len(summaryLines) > 0 {
 				m.addServiceLog("")
 				for _, line := range summaryLines {
 					m.addServiceLog(line)
@@ -761,9 +762,10 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Write coverage output file if requested. Suppress console display
 			// since we already showed the summary above via FormatCoverageSummaryLines.
+			// Pass pre-computed aggregate to avoid redundant computation.
 			savedShowOutput := m.executor.IsCoverageShowOutput()
 			m.executor.SetShowCoverage(false)
-			if err := m.executor.ProcessCoverage(records); err != nil {
+			if err := m.executor.ProcessCoverageWithAggregate(records, aggregate); err != nil {
 				m.addServiceLog(fmt.Sprintf("⚠️ Failed to process coverage: %v", err))
 			}
 			m.executor.SetShowCoverage(savedShowOutput)

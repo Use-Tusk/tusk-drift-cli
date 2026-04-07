@@ -247,11 +247,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 			var req *backend.CreateDriftRunRequest
 
 			if isValidation {
+				commitSha = getCommitSHAFromEnv()
 				req = &backend.CreateDriftRunRequest{
 					ObservableServiceId: cfg.Service.ID,
 					CliVersion:          version.Version,
 					IsValidationRun:     true,
-					CommitSha:           stringPtr(getCommitSHAFromEnv()),
+					CommitSha:           stringPtr(commitSha),
 					BranchName:          stringPtr(getBranchFromEnv()),
 				}
 			} else {

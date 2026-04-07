@@ -156,6 +156,12 @@ func SnapshotToCoverageDetail(snapshot CoverageSnapshot) map[string]CoverageFile
 // All per-test data (including drafts) is retained for backend upload — the backend needs draft
 // coverage for promotion decisions ("does this draft add unique coverage?").
 func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
+	return e.ProcessCoverageWithAggregate(records, nil)
+}
+
+// ProcessCoverageWithAggregate processes coverage with an optional pre-computed aggregate.
+// If aggregate is nil, it will be computed from the records and baseline.
+func (e *Executor) ProcessCoverageWithAggregate(records []CoverageTestRecord, precomputed CoverageSnapshot) error {
 	if !e.coverageEnabled || len(records) == 0 {
 		return nil
 	}
@@ -164,12 +170,12 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 	// (local run, no cloud), include all tests.
 	suiteRecords := filterInSuiteRecords(records)
 
-	// Compute aggregate: start with baseline (all coverable lines including count=0),
-	// then merge in per-test coverage. This gives accurate denominator.
-	aggregate := mergeWithBaseline(e.coverageBaseline, suiteRecords)
-
-	// Apply include/exclude patterns from config
-	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+	// Use pre-computed aggregate if provided, otherwise compute it.
+	aggregate := precomputed
+	if aggregate == nil {
+		aggregate = mergeWithBaseline(e.coverageBaseline, suiteRecords)
+		aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+	}
 
 	// Print summary if --show-coverage was passed (not in silent config-driven mode)
 	if e.coverageShowOutput {
@@ -252,7 +258,9 @@ func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) 
 			for line, count := range fileData.Lines {
 				existing.Lines[line] += count
 			}
-			// Union branch data: sum covered counts (clamped to total)
+			// Union branch data: take max of covered counts per branch point.
+			// Using max (not sum) avoids inflating coverage when multiple tests
+			// cover the same branches at a given branch point.
 			for line, branchInfo := range fileData.Branches {
 				if existing.Branches == nil {
 					existing.Branches = make(map[string]BranchInfo)
@@ -261,11 +269,8 @@ func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) 
 				if branchInfo.Total > eb.Total {
 					eb.Total = branchInfo.Total
 				}
-				newCovered := eb.Covered + branchInfo.Covered
-				if newCovered > eb.Total || newCovered < 0 { // Clamp + overflow guard
-					eb.Covered = eb.Total
-				} else {
-					eb.Covered = newCovered
+				if branchInfo.Covered > eb.Covered {
+					eb.Covered = branchInfo.Covered
 				}
 				existing.Branches[line] = eb
 			}
@@ -457,18 +462,19 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 	}
 }
 
-// FormatCoverageSummaryLines computes the coverage summary and returns formatted
-// lines for the TUI service log panel (aggregate + per-file, no per-test).
-func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) []string {
+// FormatCoverageSummaryLines computes the aggregate and returns formatted summary lines
+// for the TUI service log panel (aggregate + per-file, no per-test).
+// Also returns the computed aggregate so callers can reuse it (avoiding redundant computation).
+func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) ([]string, CoverageSnapshot) {
 	if !e.coverageEnabled || len(records) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	records = filterInSuiteRecords(records)
 	aggregate := mergeWithBaseline(e.coverageBaseline, records)
 	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
 	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
-	return e.formatCoverageSummary(summary)
+	return e.formatCoverageSummary(summary), aggregate
 }
 
 // filterCoverageByPatterns applies include/exclude glob patterns to a snapshot.
