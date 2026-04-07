@@ -31,8 +31,12 @@ func (e *Executor) TakeCoverageSnapshot() (CoverageSnapshot, error) {
 // Returns ALL coverable lines (including uncovered at count=0) for the aggregate denominator.
 // Retries with backoff since the coverage server may not be ready immediately after service start.
 func (e *Executor) TakeCoverageBaseline() (CoverageSnapshot, error) {
+	deadline := time.Now().Add(30 * time.Second)
 	var lastErr error
 	for attempt := 0; attempt < coverageBaselineMaxRetries; attempt++ {
+		if time.Now().After(deadline) {
+			break
+		}
 		result, err := e.callCoverageEndpoint(true)
 		if err == nil {
 			return result, nil
@@ -173,7 +177,10 @@ func (e *Executor) ProcessCoverageWithAggregate(records []CoverageTestRecord, pr
 	// Use pre-computed aggregate if provided, otherwise compute it.
 	aggregate := precomputed
 	if aggregate == nil {
-		aggregate = mergeWithBaseline(e.coverageBaseline, suiteRecords)
+		e.coverageBaselineMu.Lock()
+		baseline := e.coverageBaseline
+		e.coverageBaselineMu.Unlock()
+		aggregate = mergeWithBaseline(baseline, suiteRecords)
 		aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
 	}
 
@@ -420,7 +427,10 @@ func (e *Executor) formatCoverageSummary(summary CoverageSummary) []string {
 			summary.Aggregate.BranchCoveragePct, summary.Aggregate.CoveredBranches, summary.Aggregate.TotalBranches)
 	}
 	coverageMsg += fmt.Sprintf(" across %d files", summary.Aggregate.TotalFiles)
-	if e.coverageBaseline == nil {
+	e.coverageBaselineMu.Lock()
+	baselineNil := e.coverageBaseline == nil
+	e.coverageBaselineMu.Unlock()
+	if baselineNil {
 		coverageMsg += "  ⚠️  baseline failed - denominator may be incomplete"
 	}
 	lines = append(lines, coverageMsg)
@@ -475,7 +485,10 @@ func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) ([]s
 	}
 
 	records = filterInSuiteRecords(records)
-	aggregate := mergeWithBaseline(e.coverageBaseline, records)
+	e.coverageBaselineMu.Lock()
+	baseline := e.coverageBaseline
+	e.coverageBaselineMu.Unlock()
+	aggregate := mergeWithBaseline(baseline, records)
 	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
 	summary := ComputeCoverageSummary(aggregate, e.GetCoveragePerTestSnapshot(), records)
 	return e.formatCoverageSummary(summary), aggregate
