@@ -348,9 +348,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		// Coverage requires serial execution (concurrency=1) because per-test
 		// snapshots rely on the SDK resetting counters between tests.
-		if cmd.Flags().Changed("concurrency") {
-			log.Warn("Coverage requires concurrency=1; your --concurrency flag is being overridden")
-		}
 		executor.SetConcurrency(1)
 		if showCoverage {
 			log.Stderrln("➤ Coverage collection enabled (concurrency forced to 1)")
