@@ -25,21 +25,25 @@ var driftQuerySchemaCmd = &cobra.Command{
 		if err != nil {
 			return formatApiError(err)
 		}
+		maxPayloadLength, err := driftquery.Int32Ptr("--max-payload-length", querySchemaMaxPayload)
+		if err != nil {
+			return err
+		}
 
 		input := &driftquery.GetSchemaInput{
-			ObservableServiceID: serviceID,
-			ShowExample:         querySchemaShowExample,
-			MaxPayloadLength:    querySchemaMaxPayload,
+			ObservableServiceId: serviceID,
+			ShowExample:         driftquery.BoolPtr(querySchemaShowExample),
+			MaxPayloadLength:    maxPayloadLength,
 		}
 
 		if querySchemaName != "" {
-			input.Name = &querySchemaName
+			input.Name = driftquery.StringPtr(querySchemaName)
 		}
 		if querySchemaPackageName != "" {
-			input.PackageName = &querySchemaPackageName
+			input.PackageName = driftquery.StringPtr(querySchemaPackageName)
 		}
 		if querySchemaInstrumentationName != "" {
-			input.InstrumentationName = &querySchemaInstrumentationName
+			input.InstrumentationName = driftquery.StringPtr(querySchemaInstrumentationName)
 		}
 
 		result, err := client.GetDriftSchema(context.Background(), input, authOptions)

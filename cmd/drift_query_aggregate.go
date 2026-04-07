@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Use-Tusk/tusk-cli/internal/driftquery"
 	"github.com/spf13/cobra"
@@ -29,35 +28,47 @@ var driftQueryAggregateCmd = &cobra.Command{
 			return formatApiError(err)
 		}
 
-		metrics := splitComma(queryAggMetrics)
-		if len(metrics) == 0 {
+		metricNames := splitComma(queryAggMetrics)
+		if len(metricNames) == 0 {
 			return fmt.Errorf("--metrics is required (e.g. count,avgDuration,p95Duration)")
+		}
+		metrics, err := parseAggregateMetrics(metricNames)
+		if err != nil {
+			return err
+		}
+		limit, err := driftquery.Int32Ptr("--limit", queryAggLimit)
+		if err != nil {
+			return err
 		}
 
 		input := &driftquery.AggregateSpansInput{
-			ObservableServiceID: serviceID,
+			ObservableServiceId: serviceID,
 			Metrics:             metrics,
-			Limit:               queryAggLimit,
+			Limit:               limit,
 		}
 
 		if queryAggGroupBy != "" {
-			input.GroupBy = splitComma(queryAggGroupBy)
+			groupBy, err := parseAggregateGroupFields(splitComma(queryAggGroupBy))
+			if err != nil {
+				return err
+			}
+			input.GroupBy = groupBy
 		}
 
 		if queryAggTimeBucket != "" {
-			input.TimeBucket = &queryAggTimeBucket
+			timeBucket, err := parseTimeBucket(queryAggTimeBucket)
+			if err != nil {
+				return err
+			}
+			input.TimeBucket = timeBucket
 		}
 
 		if queryAggOrderBy != "" {
-			parts := strings.SplitN(queryAggOrderBy, ":", 2)
-			if len(parts) != 2 {
-				return fmt.Errorf("invalid --order-by format %q, expected metric:direction (e.g. count:DESC)", queryAggOrderBy)
+			orderBy, err := parseMetricOrderBy(queryAggOrderBy)
+			if err != nil {
+				return err
 			}
-			direction := strings.ToUpper(parts[1])
-			if direction != "ASC" && direction != "DESC" {
-				return fmt.Errorf("invalid direction %q, expected ASC or DESC", parts[1])
-			}
-			input.OrderBy = &driftquery.MetricOrderBy{Metric: parts[0], Direction: direction}
+			input.OrderBy = orderBy
 		}
 
 		if queryAggWhere != "" {

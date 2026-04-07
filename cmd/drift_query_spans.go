@@ -21,7 +21,6 @@ var (
 	querySpansMaxPayload      int
 	querySpansOrderBy         string
 	querySpansWhere           string
-	querySpansJsonbFilters    string
 )
 
 var driftQuerySpansCmd = &cobra.Command{
@@ -34,12 +33,25 @@ var driftQuerySpansCmd = &cobra.Command{
 			return formatApiError(err)
 		}
 
+		limit, err := driftquery.Int32Ptr("--limit", querySpansLimit)
+		if err != nil {
+			return err
+		}
+		offset, err := driftquery.Int32Ptr("--offset", querySpansOffset)
+		if err != nil {
+			return err
+		}
+		maxPayloadLength, err := driftquery.Int32Ptr("--max-payload-length", querySpansMaxPayload)
+		if err != nil {
+			return err
+		}
+
 		input := &driftquery.QuerySpansInput{
-			ObservableServiceID: serviceID,
-			Limit:               querySpansLimit,
-			Offset:              querySpansOffset,
-			IncludeInputOutput:  querySpansIncludePayloads,
-			MaxPayloadLength:    querySpansMaxPayload,
+			ObservableServiceId: serviceID,
+			Limit:               limit,
+			Offset:              offset,
+			IncludePayloads:     driftquery.BoolPtr(querySpansIncludePayloads),
+			MaxPayloadLength:    maxPayloadLength,
 		}
 
 		// Build where clause: --where JSON takes precedence over convenience flags
@@ -56,20 +68,12 @@ var driftQuerySpansCmd = &cobra.Command{
 			)
 		}
 
-		if querySpansJsonbFilters != "" {
-			filters, err := parseJsonbFiltersJSON(querySpansJsonbFilters)
-			if err != nil {
-				return err
-			}
-			input.JsonbFilters = filters
-		}
-
 		if querySpansOrderBy != "" {
 			ob, err := parseOrderBy(querySpansOrderBy)
 			if err != nil {
 				return err
 			}
-			input.OrderBy = []driftquery.OrderByField{*ob}
+			input.OrderBy = []*driftquery.OrderByField{ob}
 		}
 
 		result, err := client.QueryDriftSpans(context.Background(), input, authOptions)
@@ -97,6 +101,5 @@ func init() {
 	f.BoolVar(&querySpansIncludePayloads, "include-payloads", false, "Include full inputValue/outputValue")
 	f.IntVar(&querySpansMaxPayload, "max-payload-length", 500, "Truncate payload strings to this length")
 	f.StringVar(&querySpansOrderBy, "order-by", "", "Sort results (e.g. timestamp:DESC, duration:ASC)")
-	f.StringVar(&querySpansWhere, "where", "", "Full SpanWhereClause as JSON (overrides convenience flags)")
-	f.StringVar(&querySpansJsonbFilters, "jsonb-filters", "", "JSONB filters as JSON array")
+	f.StringVar(&querySpansWhere, "where", "", "Full WhereClause as JSON (uses fields/and/or/not and overrides convenience flags)")
 }

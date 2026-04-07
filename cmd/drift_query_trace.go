@@ -23,12 +23,16 @@ var driftQueryTraceCmd = &cobra.Command{
 		if err != nil {
 			return formatApiError(err)
 		}
+		maxPayloadLength, err := driftquery.Int32Ptr("--max-payload-length", queryTraceMaxPayload)
+		if err != nil {
+			return err
+		}
 
 		input := &driftquery.GetTraceInput{
-			ObservableServiceID: serviceID,
-			TraceID:             args[0],
-			IncludePayloads:     queryTraceIncludePayloads,
-			MaxPayloadLength:    queryTraceMaxPayload,
+			ObservableServiceId: serviceID,
+			TraceId:             args[0],
+			IncludePayloads:     driftquery.BoolPtr(queryTraceIncludePayloads),
+			MaxPayloadLength:    maxPayloadLength,
 		}
 
 		result, err := client.GetDriftTrace(context.Background(), input, authOptions)
