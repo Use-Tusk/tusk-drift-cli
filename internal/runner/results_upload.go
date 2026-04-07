@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -146,10 +147,10 @@ func buildCoverageBaselineProto(snapshot CoverageSnapshot, commitSha string) *ba
 		var allLines []int32
 		var coveredLines []int32
 		for lineStr, count := range fileData.Lines {
-			if n, err := strconv.Atoi(lineStr); err == nil {
-				allLines = append(allLines, int32(n)) //nolint:gosec // line numbers are safely within int32 range
+			if n, err := strconv.Atoi(lineStr); err == nil && n >= 0 && n <= math.MaxInt32 {
+				allLines = append(allLines, int32(n)) //nolint:gosec // bounds checked above
 				if count > 0 {
-					coveredLines = append(coveredLines, int32(n)) //nolint:gosec // line numbers are safely within int32 range
+					coveredLines = append(coveredLines, int32(n)) //nolint:gosec // bounds checked above
 				}
 			}
 		}
