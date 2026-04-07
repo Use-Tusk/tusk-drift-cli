@@ -868,11 +868,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 						passed, failed := countPassedFailed(results)
 						statusMessage = fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)
 					}
-					var interactiveCoverageBaseline runner.CoverageSnapshot
+					var interactiveCoverageBaseline, interactiveCoverageOriginal runner.CoverageSnapshot
 					if coverageEnabled && isValidation {
-						interactiveCoverageBaseline = executor.GetCoverageBaselineForUpload()
+						interactiveCoverageBaseline, interactiveCoverageOriginal = executor.GetCoverageBaselineForUpload()
 					}
-					if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, interactiveCoverageBaseline, commitSha, statusMessage); err != nil {
+					if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, interactiveCoverageBaseline, interactiveCoverageOriginal, commitSha, statusMessage); err != nil {
 						log.Warn("Interactive: cloud finalize failed", "error", err)
 					}
 					mu.Lock()
@@ -1080,11 +1080,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 		// streamed is always true here so this only updates the CI status
 		// Does NOT upload results to the backend as they are already uploaded via UploadSingleTestResult during the callback
 		// Coverage baseline (if enabled) is piggybacked on this status update
-		var headlessCoverageBaseline runner.CoverageSnapshot
+		var headlessCoverageBaseline, headlessCoverageOriginal runner.CoverageSnapshot
 		if coverageEnabled && isValidation {
-			headlessCoverageBaseline = executor.GetCoverageBaselineForUpload()
+			headlessCoverageBaseline, headlessCoverageOriginal = executor.GetCoverageBaselineForUpload()
 		}
-		if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, headlessCoverageBaseline, commitSha, statusMessage); err != nil {
+		if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, headlessCoverageBaseline, headlessCoverageOriginal, commitSha, statusMessage); err != nil {
 			log.Warn("Headless: cloud finalize failed", "error", err)
 		}
 		if isValidation {

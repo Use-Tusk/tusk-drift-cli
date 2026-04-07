@@ -508,27 +508,32 @@ func (e *Executor) GetCoverageOutputPath() string {
 	return e.coverageOutputPath
 }
 
-// GetCoverageBaselineForUpload computes the full baseline by merging the raw baseline
-// with all per-test records. This ensures the denominator includes lines discovered
-// during test execution that weren't in the initial baseline snapshot.
-func (e *Executor) GetCoverageBaselineForUpload() CoverageSnapshot {
+// GetCoverageBaselineForUpload returns two snapshots:
+//   - merged: baseline + all per-test records (complete denominator for coverable lines)
+//   - originalBaseline: raw baseline only (for startup-covered lines attribution)
+//
+// The merged snapshot ensures the denominator includes lines discovered during test
+// execution that weren't in the initial baseline snapshot. The original baseline is
+// kept separate so startup coverage is not conflated with test-driven coverage.
+func (e *Executor) GetCoverageBaselineForUpload() (merged CoverageSnapshot, originalBaseline CoverageSnapshot) {
 	e.coverageBaselineMu.Lock()
 	baseline := e.coverageBaseline
 	e.coverageBaselineMu.Unlock()
 
 	records := e.GetCoverageRecords()
 	if baseline == nil && len(records) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Merge baseline with ALL per-test records (not filtered by suite status)
 	// to get the complete set of coverable lines for the denominator
 	aggregate := mergeWithBaseline(baseline, records)
 
-	// Apply include/exclude patterns
+	// Apply include/exclude patterns to both
 	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+	filteredBaseline := filterCoverageByPatterns(baseline, e.coverageIncludePatterns, e.coverageExcludePatterns)
 
-	return aggregate
+	return aggregate, filteredBaseline
 }
 
 func (e *Executor) SetCoverageOutputPath(path string) {

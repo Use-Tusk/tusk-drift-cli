@@ -109,6 +109,7 @@ func ReportDriftRunSuccess(
 	authOptions api.AuthOptions,
 	results []TestResult,
 	coverageBaseline CoverageSnapshot,
+	coverageOriginalBaseline CoverageSnapshot,
 	commitSha string,
 	statusMessageOverride ...string,
 ) error {
@@ -128,42 +129,57 @@ func ReportDriftRunSuccess(
 
 	// Attach coverage baseline if available
 	if coverageBaseline != nil {
-		statusReq.CoverageBaseline = buildCoverageBaselineProto(coverageBaseline, commitSha)
+		statusReq.CoverageBaseline = buildCoverageBaselineProto(coverageBaseline, coverageOriginalBaseline, commitSha)
 	}
 
 	return client.UpdateDriftRunCIStatus(ctx, statusReq, authOptions)
 }
 
-func buildCoverageBaselineProto(snapshot CoverageSnapshot, commitSha string) *backend.CoverageBaseline {
+// buildCoverageBaselineProto builds the proto from two snapshots:
+//   - merged: all coverable lines (baseline + per-test, for denominator)
+//   - originalBaseline: raw baseline only (for startup-covered lines)
+//
+// This separation ensures StartupCoveredLinesByFile only contains lines covered
+// during module loading, not lines covered by test execution.
+func buildCoverageBaselineProto(merged CoverageSnapshot, originalBaseline CoverageSnapshot, commitSha string) *backend.CoverageBaseline {
 	baseline := &backend.CoverageBaseline{
 		CommitSha:                 commitSha,
 		CoverableLinesByFile:      make(map[string]*backend.FileLineRanges),
 		StartupCoveredLinesByFile: make(map[string]*backend.FileLineRanges),
 	}
+
+	// Coverable lines from the merged snapshot (complete denominator)
 	totalCoverable := int32(0) //nolint:gosec // line counts are safely within int32 range
-	for filePath, fileData := range snapshot {
+	for filePath, fileData := range merged {
 		totalCoverable += int32(len(fileData.Lines)) //nolint:gosec // line counts are safely within int32 range
 
 		var allLines []int32
-		var coveredLines []int32
-		for lineStr, count := range fileData.Lines {
+		for lineStr := range fileData.Lines {
 			if n, err := strconv.Atoi(lineStr); err == nil && n >= 0 && n <= math.MaxInt32 {
 				allLines = append(allLines, int32(n)) //nolint:gosec // bounds checked above
-				if count > 0 {
+			}
+		}
+		sort.Slice(allLines, func(i, j int) bool { return allLines[i] < allLines[j] })
+		baseline.CoverableLinesByFile[filePath] = toLineRangesProto(allLines)
+	}
+	baseline.TotalCoverableLines = totalCoverable
+
+	// Startup-covered lines from the original baseline only
+	for filePath, fileData := range originalBaseline {
+		var coveredLines []int32
+		for lineStr, count := range fileData.Lines {
+			if count > 0 {
+				if n, err := strconv.Atoi(lineStr); err == nil && n >= 0 && n <= math.MaxInt32 {
 					coveredLines = append(coveredLines, int32(n)) //nolint:gosec // bounds checked above
 				}
 			}
 		}
-
-		sort.Slice(allLines, func(i, j int) bool { return allLines[i] < allLines[j] })
-		baseline.CoverableLinesByFile[filePath] = toLineRangesProto(allLines)
-
 		if len(coveredLines) > 0 {
 			sort.Slice(coveredLines, func(i, j int) bool { return coveredLines[i] < coveredLines[j] })
 			baseline.StartupCoveredLinesByFile[filePath] = toLineRangesProto(coveredLines)
 		}
 	}
-	baseline.TotalCoverableLines = totalCoverable
+
 	return baseline
 }
 
