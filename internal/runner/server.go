@@ -1008,13 +1008,28 @@ func (ms *Server) SendCoverageSnapshot(baseline bool) (*core.CoverageSnapshotRes
 		},
 	}
 
+	// Register the pending response channel BEFORE sending so we don't miss
+	// a fast SDK reply that arrives before the channel is registered.
+	respChan := make(chan *core.SDKMessage, 1)
+	ms.pendingMu.Lock()
+	ms.pendingRequests[requestID] = respChan
+	ms.pendingMu.Unlock()
+
+	defer func() {
+		ms.pendingMu.Lock()
+		delete(ms.pendingRequests, requestID)
+		ms.pendingMu.Unlock()
+	}()
+
 	if err := ms.sendProtobufResponse(conn, msg); err != nil {
 		return nil, fmt.Errorf("failed to send coverage snapshot request: %w", err)
 	}
 
-	response, err := ms.waitForSDKResponse(requestID, coverageSnapshotTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to receive coverage snapshot response: %w", err)
+	var response *core.SDKMessage
+	select {
+	case response = <-respChan:
+	case <-time.After(coverageSnapshotTimeout):
+		return nil, fmt.Errorf("failed to receive coverage snapshot response: timeout waiting for SDK response")
 	}
 
 	coverageResp := response.GetCoverageSnapshotResponse()

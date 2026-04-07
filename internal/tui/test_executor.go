@@ -767,11 +767,10 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.executor.SetShowCoverage(false)
 			if err := m.executor.ProcessCoverageWithAggregate(records, aggregate); err != nil {
 				m.addServiceLog(fmt.Sprintf("⚠️ Failed to process coverage: %v", err))
-			}
-			m.executor.SetShowCoverage(savedShowOutput)
-			if outputPath := m.executor.GetCoverageOutputPath(); outputPath != "" {
+			} else if outputPath := m.executor.GetCoverageOutputPath(); outputPath != "" {
 				m.addServiceLog(fmt.Sprintf("📄 Coverage written to %s", outputPath))
 			}
+			m.executor.SetShowCoverage(savedShowOutput)
 		}
 
 		// All-tests completed upload (non-blocking)

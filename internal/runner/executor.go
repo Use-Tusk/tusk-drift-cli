@@ -623,6 +623,21 @@ func (e *Executor) GetTestCoverageDetail(testID string) map[string]CoverageFileD
 	return copied
 }
 
+// GetCoveragePerTestSnapshot returns a shallow copy of the entire per-test coverage map.
+// The outer map is copied so callers can iterate without holding the mutex.
+func (e *Executor) GetCoveragePerTestSnapshot() map[string]map[string]CoverageFileDiff {
+	e.coveragePerTestMu.Lock()
+	defer e.coveragePerTestMu.Unlock()
+	if e.coveragePerTest == nil {
+		return nil
+	}
+	copied := make(map[string]map[string]CoverageFileDiff, len(e.coveragePerTest))
+	for k, v := range e.coveragePerTest {
+		copied[k] = v
+	}
+	return copied
+}
+
 // AddCoverageRecord stores a per-test coverage record.
 func (e *Executor) AddCoverageRecord(record CoverageTestRecord) {
 	e.coverageRecordsMu.Lock()

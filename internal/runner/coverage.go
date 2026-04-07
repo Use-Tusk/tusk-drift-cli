@@ -198,7 +198,7 @@ func (e *Executor) ProcessCoverageWithAggregate(records []CoverageTestRecord, pr
 		}
 
 		if strings.HasSuffix(strings.ToLower(outPath), ".json") {
-			if err := WriteCoverageJSON(outPath, aggregate, e.coveragePerTest, suiteRecords); err != nil {
+			if err := WriteCoverageJSON(outPath, aggregate, e.GetCoveragePerTestSnapshot(), suiteRecords); err != nil {
 				return fmt.Errorf("failed to write coverage JSON: %w", err)
 			}
 		} else {
@@ -450,7 +450,7 @@ func (e *Executor) formatCoverageSummary(summary CoverageSummary) []string {
 
 // printCoverageSummary computes and prints the coverage summary to stderr.
 func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate CoverageSnapshot) {
-	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
+	summary := ComputeCoverageSummary(aggregate, e.GetCoveragePerTestSnapshot(), records)
 	for _, line := range e.formatCoverageSummary(summary) {
 		log.Stderrln(line)
 	}
@@ -477,7 +477,7 @@ func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) ([]s
 	records = filterInSuiteRecords(records)
 	aggregate := mergeWithBaseline(e.coverageBaseline, records)
 	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
-	summary := ComputeCoverageSummary(aggregate, e.coveragePerTest, records)
+	summary := ComputeCoverageSummary(aggregate, e.GetCoveragePerTestSnapshot(), records)
 	return e.formatCoverageSummary(summary), aggregate
 }
 
@@ -512,6 +512,7 @@ func filterCoverageByPatterns(snapshot CoverageSnapshot, include, exclude []stri
 // matchesAnyPattern checks if a file path matches any of the glob patterns.
 // Uses doublestar for proper ** support.
 func matchesAnyPattern(filePath string, patterns []string) bool {
+	filePath = strings.ReplaceAll(filePath, "\\", "/")
 	for _, pattern := range patterns {
 		if matched, _ := doublestar.Match(pattern, filePath); matched {
 			return true
@@ -523,6 +524,7 @@ func matchesAnyPattern(filePath string, patterns []string) bool {
 // matchGlob matches a path against a glob pattern supporting **.
 // Exported for testing.
 func matchGlob(filePath, pattern string) bool {
+	filePath = strings.ReplaceAll(filePath, "\\", "/")
 	matched, _ := doublestar.Match(pattern, filePath)
 	return matched
 }
@@ -538,8 +540,6 @@ type CoverageExport struct {
 
 // WriteCoverageJSON writes aggregate + per-test coverage as JSON.
 func WriteCoverageJSON(path string, aggregate CoverageSnapshot, perTest map[string]map[string]CoverageFileDiff, records []CoverageTestRecord) error {
-	summary := ComputeCoverageSummary(aggregate, perTest, records)
-
 	// Build set of allowed test IDs from the filtered in-suite records
 	allowedTestIDs := make(map[string]struct{}, len(records))
 	for _, r := range records {
@@ -562,6 +562,9 @@ func WriteCoverageJSON(path string, aggregate CoverageSnapshot, perTest map[stri
 			filteredPerTest[testID] = filtered
 		}
 	}
+
+	// Compute summary from the filtered per-test data so it matches the exported data
+	summary := ComputeCoverageSummary(aggregate, filteredPerTest, records)
 
 	export := CoverageExport{
 		Summary:   summary,
