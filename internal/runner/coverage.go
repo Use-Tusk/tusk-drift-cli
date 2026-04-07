@@ -258,9 +258,10 @@ func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) 
 			for line, count := range fileData.Lines {
 				existing.Lines[line] += count
 			}
-			// Union branch data: take max of covered counts per branch point.
-			// Using max (not sum) avoids inflating coverage when multiple tests
-			// cover the same branches at a given branch point.
+			// Union branch data: sum covered counts, clamped to total.
+			// This is the same approach Istanbul/NYC use when merging reports.
+			// Without per-arm tracking, sum+clamp is the best approximation
+			// (optimistic when tests overlap on the same branches).
 			for line, branchInfo := range fileData.Branches {
 				if existing.Branches == nil {
 					existing.Branches = make(map[string]BranchInfo)
@@ -269,8 +270,11 @@ func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) 
 				if branchInfo.Total > eb.Total {
 					eb.Total = branchInfo.Total
 				}
-				if branchInfo.Covered > eb.Covered {
-					eb.Covered = branchInfo.Covered
+				newCovered := eb.Covered + branchInfo.Covered
+				if newCovered > eb.Total || newCovered < 0 {
+					eb.Covered = eb.Total
+				} else {
+					eb.Covered = newCovered
 				}
 				existing.Branches[line] = eb
 			}

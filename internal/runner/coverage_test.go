@@ -1,6 +1,10 @@
 package runner
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -422,5 +426,127 @@ func TestFilterCoverageByPatterns(t *testing.T) {
 	t.Run("no patterns returns all", func(t *testing.T) {
 		result := filterCoverageByPatterns(snapshot, nil, nil)
 		assert.Len(t, result, 6)
+	})
+}
+
+func TestWriteCoverageLCOV(t *testing.T) {
+	t.Run("writes valid LCOV format", func(t *testing.T) {
+		aggregate := CoverageSnapshot{
+			"src/server.js": FileCoverageData{
+				Lines: map[string]int{
+					"1": 1, "2": 3, "5": 0, "10": 1,
+				},
+				Branches: map[string]BranchInfo{
+					"5": {Total: 2, Covered: 1},
+				},
+				TotalBranches:   2,
+				CoveredBranches: 1,
+			},
+		}
+		path := filepath.Join(t.TempDir(), "coverage.lcov")
+		err := WriteCoverageLCOV(path, aggregate)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(path) //nolint:gosec // test file, path from t.TempDir()
+		require.NoError(t, err)
+		content := string(data)
+
+		assert.Contains(t, content, "SF:src/server.js")
+		assert.Contains(t, content, "DA:1,1")
+		assert.Contains(t, content, "DA:5,0")
+		assert.Contains(t, content, "LF:4")
+		assert.Contains(t, content, "LH:3")
+		assert.Contains(t, content, "BRF:2")
+		assert.Contains(t, content, "BRH:1")
+		assert.Contains(t, content, "end_of_record")
+	})
+
+	t.Run("empty snapshot writes empty file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "coverage.lcov")
+		err := WriteCoverageLCOV(path, CoverageSnapshot{})
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(path) //nolint:gosec // test file, path from t.TempDir()
+		require.NoError(t, err)
+		assert.Empty(t, strings.TrimSpace(string(data)))
+	})
+
+	t.Run("multiple files sorted deterministically", func(t *testing.T) {
+		aggregate := CoverageSnapshot{
+			"z/last.js":  FileCoverageData{Lines: map[string]int{"1": 1}},
+			"a/first.js": FileCoverageData{Lines: map[string]int{"1": 1}},
+		}
+		path := filepath.Join(t.TempDir(), "coverage.lcov")
+		err := WriteCoverageLCOV(path, aggregate)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(path) //nolint:gosec // test file, path from t.TempDir()
+		require.NoError(t, err)
+		content := string(data)
+
+		firstIdx := strings.Index(content, "SF:a/first.js")
+		lastIdx := strings.Index(content, "SF:z/last.js")
+		assert.True(t, firstIdx < lastIdx, "files should be sorted alphabetically")
+	})
+}
+
+func TestWriteCoverageJSON(t *testing.T) {
+	t.Run("writes valid JSON with expected structure", func(t *testing.T) {
+		aggregate := CoverageSnapshot{
+			"src/server.js": FileCoverageData{
+				Lines: map[string]int{
+					"1": 1, "2": 3, "5": 0,
+				},
+				TotalBranches:   4,
+				CoveredBranches: 2,
+			},
+		}
+		perTest := map[string]map[string]CoverageFileDiff{
+			"test-1": {
+				"src/server.js": {CoveredLines: []int{1, 2}, CoveredCount: 2},
+			},
+		}
+		records := []CoverageTestRecord{
+			{TestID: "test-1", TestName: "GET /api"},
+		}
+
+		path := filepath.Join(t.TempDir(), "coverage.json")
+		err := WriteCoverageJSON(path, aggregate, perTest, records)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(path) //nolint:gosec // test file, path from t.TempDir()
+		require.NoError(t, err)
+
+		var result map[string]interface{}
+		err = json.Unmarshal(data, &result)
+		require.NoError(t, err)
+
+		// Top-level keys: aggregate (raw snapshot), per_test, summary (computed)
+		assert.Contains(t, result, "aggregate")
+		assert.Contains(t, result, "per_test")
+		assert.Contains(t, result, "summary")
+
+		summary := result["summary"].(map[string]interface{})
+		assert.Contains(t, summary, "aggregate")
+		assert.Contains(t, summary, "per_file")
+		assert.Contains(t, summary, "timestamp")
+
+		agg := summary["aggregate"].(map[string]interface{})
+		assert.Equal(t, float64(3), agg["total_coverable_lines"])
+		assert.Equal(t, float64(2), agg["total_covered_lines"])
+	})
+
+	t.Run("empty snapshot writes valid JSON", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "coverage.json")
+		err := WriteCoverageJSON(path, CoverageSnapshot{}, nil, nil)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(path) //nolint:gosec // test file, path from t.TempDir()
+		require.NoError(t, err)
+
+		var result map[string]interface{}
+		err = json.Unmarshal(data, &result)
+		require.NoError(t, err)
+		assert.Contains(t, result, "aggregate")
 	})
 }
