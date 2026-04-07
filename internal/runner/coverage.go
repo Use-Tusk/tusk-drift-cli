@@ -31,7 +31,7 @@ func (e *Executor) TakeCoverageSnapshot() (CoverageSnapshot, error) {
 // Returns ALL coverable lines (including uncovered at count=0) for the aggregate denominator.
 // Retries with backoff since the coverage server may not be ready immediately after service start.
 func (e *Executor) TakeCoverageBaseline() (CoverageSnapshot, error) {
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(90 * time.Second)
 	var lastErr error
 	for attempt := 0; attempt < coverageBaselineMaxRetries; attempt++ {
 		if time.Now().After(deadline) {
