@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	coverageBaselineMaxRetries   = 15
-	coverageBaselineRetryDelay   = 200 * time.Millisecond
-	coverageSnapshotTimeout      = 60 * time.Second
+	coverageBaselineMaxRetries = 15
+	coverageBaselineRetryDelay = 200 * time.Millisecond
+	coverageSnapshotTimeout    = 60 * time.Second
 )
 
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
@@ -107,12 +107,12 @@ type CoverageTestRecord struct {
 
 // CoverageFileDiff represents per-test coverage for a single file.
 type CoverageFileDiff struct {
-	CoveredLines    []int                  `json:"covered_lines"`
-	CoverableLines  int                    `json:"coverable_lines"`
-	CoveredCount    int                    `json:"covered_count"`
-	TotalBranches   int                    `json:"total_branches"`
-	CoveredBranches int                    `json:"covered_branches"`
-	Branches        map[string]BranchInfo  `json:"branches,omitempty"`
+	CoveredLines    []int                 `json:"covered_lines"`
+	CoverableLines  int                   `json:"coverable_lines"`
+	CoveredCount    int                   `json:"covered_count"`
+	TotalBranches   int                   `json:"total_branches"`
+	CoveredBranches int                   `json:"covered_branches"`
+	Branches        map[string]BranchInfo `json:"branches,omitempty"`
 }
 
 // SnapshotToCoverageDetail converts a CoverageSnapshot to per-file CoverageFileDiff format.
@@ -187,7 +187,7 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 				outPath = filepath.Join(cwd, outPath)
 			}
 		}
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(outPath), 0o750); err != nil {
 			return fmt.Errorf("failed to create coverage output directory: %w", err)
 		}
 
@@ -221,22 +221,20 @@ func mergeWithBaseline(baseline CoverageSnapshot, records []CoverageTestRecord) 
 	// Baseline lines include startup-covered counts (count > 0 for lines executed
 	// during module loading). These count toward "covered" in the aggregate,
 	// matching industry standard behavior (Istanbul, NYC, coverage.py, etc.).
-	if baseline != nil {
-		for filePath, fileData := range baseline {
-			lines := make(map[string]int, len(fileData.Lines))
-			for line, count := range fileData.Lines {
-				lines[line] = count
-			}
-			branches := make(map[string]BranchInfo, len(fileData.Branches))
-			for line, info := range fileData.Branches {
-				branches[line] = info // BranchInfo is a value type, safe to copy
-			}
-			merged[filePath] = FileCoverageData{
-				Lines:           lines,
-				TotalBranches:   fileData.TotalBranches,
-				CoveredBranches: fileData.CoveredBranches,
-				Branches:        branches,
-			}
+	for filePath, fileData := range baseline {
+		lines := make(map[string]int, len(fileData.Lines))
+		for line, count := range fileData.Lines {
+			lines[line] = count
+		}
+		branches := make(map[string]BranchInfo, len(fileData.Branches))
+		for line, info := range fileData.Branches {
+			branches[line] = info // BranchInfo is a value type, safe to copy
+		}
+		merged[filePath] = FileCoverageData{
+			Lines:           lines,
+			TotalBranches:   fileData.TotalBranches,
+			CoveredBranches: fileData.CoveredBranches,
+			Branches:        branches,
 		}
 	}
 
@@ -296,14 +294,14 @@ type CoverageSummary struct {
 }
 
 type CoverageAggregate struct {
-	TotalCoverableLines  int     `json:"total_coverable_lines"`
-	TotalCoveredLines    int     `json:"total_covered_lines"`
-	CoveragePct          float64 `json:"coverage_pct"`
-	TotalFiles           int     `json:"total_files"`
-	CoveredFiles         int     `json:"covered_files"`
-	TotalBranches        int     `json:"total_branches"`
-	CoveredBranches      int     `json:"covered_branches"`
-	BranchCoveragePct    float64 `json:"branch_coverage_pct"`
+	TotalCoverableLines int     `json:"total_coverable_lines"`
+	TotalCoveredLines   int     `json:"total_covered_lines"`
+	CoveragePct         float64 `json:"coverage_pct"`
+	TotalFiles          int     `json:"total_files"`
+	CoveredFiles        int     `json:"covered_files"`
+	TotalBranches       int     `json:"total_branches"`
+	CoveredBranches     int     `json:"covered_branches"`
+	BranchCoveragePct   float64 `json:"branch_coverage_pct"`
 }
 
 type CoverageFileSummary struct {
@@ -565,7 +563,7 @@ func WriteCoverageJSON(path string, aggregate CoverageSnapshot, perTest map[stri
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // WriteCoverageLCOV writes aggregate coverage data in LCOV format.
@@ -640,7 +638,7 @@ func WriteCoverageLCOV(path string, aggregate CoverageSnapshot) error {
 		b.WriteString("end_of_record\n")
 	}
 
-	return os.WriteFile(path, []byte(b.String()), 0644)
+	return os.WriteFile(path, []byte(b.String()), 0o600)
 }
 
 // filterInSuiteRecords returns only records from in-suite tests.
@@ -680,7 +678,6 @@ func dedup(sorted []int) []int {
 	}
 	return result
 }
-
 
 // normalizeCoveragePaths converts absolute file paths to repo-relative paths.
 //

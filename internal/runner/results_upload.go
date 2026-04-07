@@ -139,17 +139,17 @@ func buildCoverageBaselineProto(snapshot CoverageSnapshot, commitSha string) *ba
 		CoverableLinesByFile:      make(map[string]*backend.FileLineRanges),
 		StartupCoveredLinesByFile: make(map[string]*backend.FileLineRanges),
 	}
-	totalCoverable := int32(0)
+	totalCoverable := int32(0) //nolint:gosec // line counts are safely within int32 range
 	for filePath, fileData := range snapshot {
-		totalCoverable += int32(len(fileData.Lines))
+		totalCoverable += int32(len(fileData.Lines)) //nolint:gosec // line counts are safely within int32 range
 
 		var allLines []int32
 		var coveredLines []int32
 		for lineStr, count := range fileData.Lines {
 			if n, err := strconv.Atoi(lineStr); err == nil {
-				allLines = append(allLines, int32(n))
+				allLines = append(allLines, int32(n)) //nolint:gosec // line numbers are safely within int32 range
 				if count > 0 {
-					coveredLines = append(coveredLines, int32(n))
+					coveredLines = append(coveredLines, int32(n)) //nolint:gosec // line numbers are safely within int32 range
 				}
 			}
 		}
@@ -319,7 +319,7 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 				}
 				totalCovered := int32(0)
 				for filePath, fd := range detail {
-					totalCovered += int32(fd.CoveredCount)
+					totalCovered += int32(fd.CoveredCount) //nolint:gosec // coverage counts are safely within int32 range
 					sorted := toInt32Slice(fd.CoveredLines)
 					covData.CoveredLinesByFile[filePath] = toLineRangesProto(sorted)
 				}
@@ -336,7 +336,7 @@ func BuildTraceTestResultsProto(e *Executor, results []TestResult, tests []Test)
 func toInt32Slice(ints []int) []int32 {
 	result := make([]int32, len(ints))
 	for i, v := range ints {
-		result[i] = int32(v)
+		result[i] = int32(v) //nolint:gosec // line numbers are safely within int32 range
 	}
 	return result
 }

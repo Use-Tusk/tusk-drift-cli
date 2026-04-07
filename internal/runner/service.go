@@ -336,7 +336,7 @@ func (e *Executor) StopService() error {
 		}
 		// Clean up V8 coverage temp directory
 		if e.coverageTempDir != "" {
-			os.RemoveAll(e.coverageTempDir)
+			_ = os.RemoveAll(e.coverageTempDir)
 			e.coverageTempDir = ""
 		}
 		log.ServiceLog("Service stopped")

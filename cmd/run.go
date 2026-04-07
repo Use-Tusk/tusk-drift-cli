@@ -463,7 +463,6 @@ func runTests(cmd *cobra.Command, args []string) error {
 				test,
 			)
 
-
 			mu.Lock()
 			attemptedCount++
 			if err != nil {
@@ -502,32 +501,34 @@ func runTests(cmd *cobra.Command, args []string) error {
 	if coverageEnabled {
 		existingCallback := executor.OnTestCompleted
 		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
-			// Take coverage snapshot FIRST so data is available for upload
+			// Take coverage snapshot FIRST so data is available for upload.
+			// Always continue to existingCallback even on error so test results still upload.
 			lineCounts, err := executor.TakeCoverageSnapshot()
 			if err != nil {
 				log.Warn("Failed to take coverage snapshot", "testID", test.TraceID, "error", err)
-				return
 			}
 
-			executor.AddCoverageRecord(runner.CoverageTestRecord{
-				TestID:      test.TraceID,
-				TestName:    test.DisplayName,
-				SuiteStatus: test.SuiteStatus,
-				Coverage:    lineCounts,
-			})
+			if err == nil {
+				executor.AddCoverageRecord(runner.CoverageTestRecord{
+					TestID:      test.TraceID,
+					TestName:    test.DisplayName,
+					SuiteStatus: test.SuiteStatus,
+					Coverage:    lineCounts,
+				})
 
-			// Store detail for TUI display
-			detail := runner.SnapshotToCoverageDetail(lineCounts)
-			executor.SetTestCoverageDetail(test.TraceID, detail)
+				// Store detail for TUI display
+				detail := runner.SnapshotToCoverageDetail(lineCounts)
+				executor.SetTestCoverageDetail(test.TraceID, detail)
 
-			// Print sub-line in --print mode when --show-coverage is active
-			if !interactive && showCoverage {
-				totalLines := 0
-				for _, fd := range detail {
-					totalLines += fd.CoveredCount
-				}
-				if totalLines > 0 {
-					log.UserProgress(fmt.Sprintf("  ↳ coverage: %d lines across %d files", totalLines, len(detail)))
+				// Print sub-line in --print mode when --show-coverage is active
+				if !interactive && showCoverage {
+					totalLines := 0
+					for _, fd := range detail {
+						totalLines += fd.CoveredCount
+					}
+					if totalLines > 0 {
+						log.UserProgress(fmt.Sprintf("  ↳ coverage: %d lines across %d files", totalLines, len(detail)))
+					}
 				}
 			}
 
