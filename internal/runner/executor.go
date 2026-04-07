@@ -101,12 +101,12 @@ type Executor struct {
 	coverageIncludePatterns []string
 	coverageExcludePatterns []string
 	coverageStripPrefix     string
-	coveragePerTest      map[string]map[string]CoverageFileDiff
-	coveragePerTestMu    sync.Mutex
-	coverageBaseline     CoverageSnapshot
-	coverageBaselineMu   sync.Mutex
-	coverageRecords      []CoverageTestRecord
-	coverageRecordsMu    sync.Mutex
+	coveragePerTest         map[string]map[string]CoverageFileDiff
+	coveragePerTestMu       sync.Mutex
+	coverageBaseline        CoverageSnapshot
+	coverageBaselineMu      sync.Mutex
+	coverageRecords         []CoverageTestRecord
+	coverageRecordsMu       sync.Mutex
 }
 
 func NewExecutor() *Executor {

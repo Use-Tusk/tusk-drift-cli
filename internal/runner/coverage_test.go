@@ -336,7 +336,6 @@ func TestNormalizeCoveragePaths(t *testing.T) {
 	// We test the function handles edge cases; full integration is tested E2E.
 }
 
-
 func TestMatchGlob(t *testing.T) {
 	tests := []struct {
 		path    string

@@ -135,7 +135,7 @@ func ReportDriftRunSuccess(
 
 func buildCoverageBaselineProto(snapshot CoverageSnapshot, commitSha string) *backend.CoverageBaseline {
 	baseline := &backend.CoverageBaseline{
-		CommitSha:                  commitSha,
+		CommitSha:                 commitSha,
 		CoverableLinesByFile:      make(map[string]*backend.FileLineRanges),
 		StartupCoveredLinesByFile: make(map[string]*backend.FileLineRanges),
 	}

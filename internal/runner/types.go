@@ -44,7 +44,6 @@ type TestResult struct {
 	Duration          int         `json:"duration"`                      // In milliseconds
 	Deviations        []Deviation `json:"deviations,omitempty"`
 	Error             string      `json:"error,omitempty"`
-
 }
 
 type Trace struct {
