@@ -46,3 +46,7 @@ An interactive session is started by default; use `-p`/`--print` for noninteract
 - `tusk drift run --cloud --ci`: creates a Tusk Drift run, fetches your test suite from Tusk Drift Cloud, and uploads test results. Use `-a/--all-cloud-trace-tests` to run all tests instead of the run-scoped suite.
 - `tusk drift run --cloud --ci --validate-suite-if-default-branch`: on the default branch, creates a validation run, fetches draft and in-suite tests, and validates they can be replayed before adding them to the suite. On other branches, this flag is ignored and the command behaves like `--cloud --ci`.
 - `--trace-test-id` may be used with `--cloud` to run a single cloud trace test.
+
+### Coding agent analysis
+
+Use `--save-results agent` to write per-deviation markdown files with rich context (request, response diff, outbound call details) that coding agents can use to analyze and fix regressions locally. Install the Tusk skill to handle this automatically: https://github.com/Use-Tusk/tusk-skills

@@ -192,9 +192,7 @@ func (e *Executor) getReplaySandboxConfigPath() string {
 
 func (e *Executor) SetResultsOutput(dir string) {
 	e.resultsDir = dir
-
-	timestamp := time.Now().Format("20060102-150405")
-	e.ResultsFile = filepath.Join(dir, fmt.Sprintf("results-%s.json", timestamp))
+	e.ResultsFile = filepath.Join(dir, "results.json")
 }
 
 func (e *Executor) RunTests(tests []Test) ([]TestResult, error) {

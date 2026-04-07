@@ -24,7 +24,10 @@ var listContent string
 //go:embed short_docs/drift/drift_filter.md
 var filterContent string
 
-var listJSON bool
+var (
+	listJSON bool
+	noRedact bool
+)
 
 var listCmd = &cobra.Command{
 	Use:          "list",
@@ -58,6 +61,8 @@ func bindListFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&cloud, "cloud", "c", false, "List trace tests from Tusk Drift Cloud")
 	cmd.Flags().BoolVar(&enableServiceLogs, "enable-service-logs", false, "Send logs from your service to a file in .tusk/logs if you start a test. Logs from the SDK will be present.")
 	cmd.Flags().BoolVar(&listJSON, "json", false, "Output trace list as JSON (non-interactive)")
+	cmd.Flags().BoolVar(&noRedact, "no-redact", false, "Disable secret redaction in the details panel (for debugging)")
+	_ = cmd.Flags().MarkHidden("no-redact")
 	cmd.Flags().SortFlags = false
 }
 
@@ -185,7 +190,7 @@ func listTests(cmd *cobra.Command, args []string) error {
 		suiteOpts.ServiceID = cfg.Service.ID
 	}
 
-	return tui.ShowTestListWithExecutor(tests, executor, suiteOpts)
+	return tui.ShowTestListWithExecutor(tests, executor, suiteOpts, noRedact)
 }
 
 func outputTestsAsJSON(tests []runner.Test) error {
