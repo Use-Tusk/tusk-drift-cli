@@ -632,6 +632,10 @@ func (ms *Server) acceptConnections() {
 				continue
 			}
 
+			ms.activeConnsMu.Lock()
+			ms.activeConns[conn] = struct{}{}
+			ms.activeConnsMu.Unlock()
+
 			ms.wg.Add(1)
 			go ms.handleConnection(conn)
 		}
@@ -641,10 +645,6 @@ func (ms *Server) acceptConnections() {
 // handleConnection processes a single SDK connection
 func (ms *Server) handleConnection(conn net.Conn) {
 	defer ms.wg.Done()
-
-	ms.activeConnsMu.Lock()
-	ms.activeConns[conn] = struct{}{}
-	ms.activeConnsMu.Unlock()
 
 	defer func() {
 		ms.activeConnsMu.Lock()
