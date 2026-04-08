@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -136,6 +137,17 @@ func GetLogsDir() string {
 // EnsureDir creates a directory if it doesn't exist
 func EnsureDir(dir string) error {
 	return os.MkdirAll(dir, 0o750)
+}
+
+// GetGitRootDir returns the root of the current git repository.
+// Returns empty string and an error if not in a git repo.
+func GetGitRootDir() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git root: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // FindTraceFile searches for a JSONL trace file containing the given trace ID.

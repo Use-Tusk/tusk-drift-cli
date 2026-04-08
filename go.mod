@@ -4,9 +4,10 @@ go 1.25.0
 
 require (
 	github.com/Use-Tusk/fence v0.1.36
-	github.com/Use-Tusk/tusk-drift-schemas v0.1.33
+	github.com/Use-Tusk/tusk-drift-schemas v0.1.34
 	github.com/agnivade/levenshtein v1.0.3
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7
 	github.com/charmbracelet/bubbletea v1.3.9
 	github.com/charmbracelet/glamour v0.10.0
@@ -44,7 +45,6 @@ require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
-	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect
 	github.com/bodgit/sevenzip v1.6.1 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect

@@ -43,8 +43,11 @@ func (e *Executor) StartService() error {
 
 	log.Debug("Starting service", "command", cfg.Service.Start.Command)
 
-	// Wrap command with fence sandboxing (if supported and enabled)
 	command := cfg.Service.Start.Command
+
+	// Coverage: nothing to set here, env vars injected below after sandbox wrapping
+
+	// Wrap command with fence sandboxing (if supported and enabled)
 	replayOverridePath := e.getReplayComposeOverride()
 	if replayOverridePath != "" && isComposeBasedStartCommand(command) {
 		commandWithReplayOverride, injected, injectErr := injectComposeOverrideFile(command, replayOverridePath)
@@ -146,6 +149,26 @@ func (e *Executor) StartService() error {
 	}
 
 	env = append(env, "TUSK_DRIFT_MODE=REPLAY")
+
+	// Coverage: inject env vars that SDK coverage servers listen for.
+	// NODE_V8_COVERAGE is required by the Node SDK to enable V8 coverage collection.
+	// Coverage env vars:
+	// TUSK_COVERAGE=true - language-agnostic signal for both Node and Python SDKs
+	// NODE_V8_COVERAGE=<dir> - Node-specific: tells V8 to collect coverage data
+	// TS_NODE_EMIT=true - Node-specific: forces ts-node to write compiled JS to disk
+	if e.coverageEnabled {
+		env = append(env, "TUSK_COVERAGE=true")
+		// Node.js: V8 coverage needs a directory to write JSON files
+		v8CoverageDir, err := os.MkdirTemp("", "tusk-v8-coverage-*")
+		if err != nil {
+			return fmt.Errorf("failed to create temp dir for V8 coverage: %w", err)
+		}
+		e.coverageTempDir = v8CoverageDir
+		env = append(env, fmt.Sprintf("NODE_V8_COVERAGE=%s", v8CoverageDir))
+		env = append(env, "TS_NODE_EMIT=true")
+		log.Debug("Coverage enabled", "v8_dir", v8CoverageDir)
+	}
+
 	e.serviceCmd.Env = env
 
 	// Always capture service logs during startup.
@@ -310,6 +333,11 @@ func (e *Executor) StopService() error {
 		if e.fenceManager != nil {
 			e.fenceManager.Cleanup()
 			e.fenceManager = nil
+		}
+		// Clean up V8 coverage temp directory
+		if e.coverageTempDir != "" {
+			_ = os.RemoveAll(e.coverageTempDir)
+			e.coverageTempDir = ""
 		}
 		log.ServiceLog("Service stopped")
 	}()

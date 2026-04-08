@@ -92,6 +92,21 @@ type Executor struct {
 	replayComposeOverride   string
 	replayEnvVars           map[string]string
 	replaySandboxConfigPath string
+
+	// Coverage
+	coverageEnabled         bool
+	coverageShowOutput      bool
+	coverageOutputPath      string
+	coverageTempDir         string
+	coverageIncludePatterns []string
+	coverageExcludePatterns []string
+	coverageStripPrefix     string
+	coveragePerTest         map[string]map[string]CoverageFileDiff
+	coveragePerTestMu       sync.Mutex
+	coverageBaseline        CoverageSnapshot
+	coverageBaselineMu      sync.Mutex
+	coverageRecords         []CoverageTestRecord
+	coverageRecordsMu       sync.Mutex
 }
 
 func NewExecutor() *Executor {
@@ -471,6 +486,179 @@ func (e *Executor) SetTestTimeout(timeout time.Duration) {
 
 func (e *Executor) SetOnTestCompleted(callback func(TestResult, Test)) {
 	e.OnTestCompleted = callback
+}
+
+func (e *Executor) SetCoverageEnabled(enabled bool) {
+	e.coverageEnabled = enabled
+}
+
+func (e *Executor) IsCoverageEnabled() bool {
+	return e.coverageEnabled
+}
+
+func (e *Executor) SetShowCoverage(show bool) {
+	e.coverageShowOutput = show
+}
+
+func (e *Executor) IsCoverageShowOutput() bool {
+	return e.coverageShowOutput
+}
+
+func (e *Executor) GetCoverageOutputPath() string {
+	return e.coverageOutputPath
+}
+
+// GetCoverageBaselineForUpload returns two snapshots:
+//   - merged: baseline + all per-test records (complete denominator for coverable lines)
+//   - originalBaseline: raw baseline only (for startup-covered lines attribution)
+//
+// The merged snapshot ensures the denominator includes lines discovered during test
+// execution that weren't in the initial baseline snapshot. The original baseline is
+// kept separate so startup coverage is not conflated with test-driven coverage.
+func (e *Executor) GetCoverageBaselineForUpload() (merged CoverageSnapshot, originalBaseline CoverageSnapshot) {
+	e.coverageBaselineMu.Lock()
+	baseline := e.coverageBaseline
+	e.coverageBaselineMu.Unlock()
+
+	// If no baseline was captured, skip the aggregate upload entirely.
+	// Without a baseline denominator, coverage % would be near 100% (misleading).
+	// Per-test coverage is still uploaded via TraceTestCoverageData independently.
+	if baseline == nil {
+		return nil, nil
+	}
+
+	records := e.GetCoverageRecords()
+	if len(records) == 0 {
+		return nil, nil
+	}
+
+	// Merge baseline with ALL per-test records (not filtered by suite status)
+	// to get the complete set of coverable lines for the denominator
+	aggregate := mergeWithBaseline(baseline, records)
+
+	// Apply include/exclude patterns to both
+	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+	filteredBaseline := filterCoverageByPatterns(baseline, e.coverageIncludePatterns, e.coverageExcludePatterns)
+
+	return aggregate, filteredBaseline
+}
+
+func (e *Executor) SetCoverageOutputPath(path string) {
+	e.coverageOutputPath = path
+}
+
+func (e *Executor) SetCoverageIncludePatterns(patterns []string) {
+	e.coverageIncludePatterns = patterns
+}
+
+func (e *Executor) SetCoverageExcludePatterns(patterns []string) {
+	e.coverageExcludePatterns = patterns
+}
+
+func (e *Executor) SetCoverageStripPrefix(prefix string) {
+	e.coverageStripPrefix = prefix
+}
+
+// SetCoverageBaseline merges new baseline data into the existing baseline.
+// Called per environment group - accumulates across service restarts.
+func (e *Executor) SetCoverageBaseline(baseline CoverageSnapshot) {
+	e.coverageBaselineMu.Lock()
+	defer e.coverageBaselineMu.Unlock()
+	if e.coverageBaseline == nil {
+		e.coverageBaseline = make(CoverageSnapshot)
+	}
+	for filePath, fileData := range baseline {
+		existing, ok := e.coverageBaseline[filePath]
+		if !ok {
+			existing = FileCoverageData{
+				Lines:    make(map[string]int),
+				Branches: make(map[string]BranchInfo),
+			}
+		}
+		for line, count := range fileData.Lines {
+			if existingCount, ok := existing.Lines[line]; !ok || existingCount == 0 {
+				existing.Lines[line] = count
+			}
+		}
+		// Merge branch data (keep max per line)
+		for line, branchInfo := range fileData.Branches {
+			if existing.Branches == nil {
+				existing.Branches = make(map[string]BranchInfo)
+			}
+			if eb, ok := existing.Branches[line]; !ok || branchInfo.Total > eb.Total {
+				existing.Branches[line] = branchInfo
+			}
+		}
+		// Recompute file-level totals from merged per-line data
+		totalB, covB := 0, 0
+		for _, b := range existing.Branches {
+			totalB += b.Total
+			covB += b.Covered
+		}
+		existing.TotalBranches = totalB
+		existing.CoveredBranches = covB
+		e.coverageBaseline[filePath] = existing
+	}
+}
+
+// SetTestCoverageDetail stores per-test coverage diff for display in TUI/print.
+func (e *Executor) SetTestCoverageDetail(testID string, detail map[string]CoverageFileDiff) {
+	e.coveragePerTestMu.Lock()
+	defer e.coveragePerTestMu.Unlock()
+	if e.coveragePerTest == nil {
+		e.coveragePerTest = make(map[string]map[string]CoverageFileDiff)
+	}
+	e.coveragePerTest[testID] = detail
+}
+
+// GetTestCoverageDetail returns a copy of per-test coverage diff for a given test.
+func (e *Executor) GetTestCoverageDetail(testID string) map[string]CoverageFileDiff {
+	e.coveragePerTestMu.Lock()
+	defer e.coveragePerTestMu.Unlock()
+	if e.coveragePerTest == nil {
+		return nil
+	}
+	original := e.coveragePerTest[testID]
+	if original == nil {
+		return nil
+	}
+	// Return a copy to avoid concurrent map access from TUI goroutines
+	copied := make(map[string]CoverageFileDiff, len(original))
+	for k, v := range original {
+		copied[k] = v
+	}
+	return copied
+}
+
+// GetCoveragePerTestSnapshot returns a shallow copy of the entire per-test coverage map.
+// The outer map is copied so callers can iterate without holding the mutex.
+func (e *Executor) GetCoveragePerTestSnapshot() map[string]map[string]CoverageFileDiff {
+	e.coveragePerTestMu.Lock()
+	defer e.coveragePerTestMu.Unlock()
+	if e.coveragePerTest == nil {
+		return nil
+	}
+	copied := make(map[string]map[string]CoverageFileDiff, len(e.coveragePerTest))
+	for k, v := range e.coveragePerTest {
+		copied[k] = v
+	}
+	return copied
+}
+
+// AddCoverageRecord stores a per-test coverage record.
+func (e *Executor) AddCoverageRecord(record CoverageTestRecord) {
+	e.coverageRecordsMu.Lock()
+	defer e.coverageRecordsMu.Unlock()
+	e.coverageRecords = append(e.coverageRecords, record)
+}
+
+// GetCoverageRecords returns a copy of all coverage records.
+func (e *Executor) GetCoverageRecords() []CoverageTestRecord {
+	e.coverageRecordsMu.Lock()
+	defer e.coverageRecordsMu.Unlock()
+	records := make([]CoverageTestRecord, len(e.coverageRecords))
+	copy(records, e.coverageRecords)
+	return records
 }
 
 func (e *Executor) SetSuiteSpans(spans []*core.Span) {

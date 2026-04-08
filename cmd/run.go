@@ -56,6 +56,10 @@ var (
 	// Validation mode
 	validateSuiteIfDefaultBranch bool
 	validateSuite                bool
+
+	// Coverage mode
+	showCoverage       bool
+	coverageOutputPath string
 )
 
 //go:embed short_docs/drift/drift_run.md
@@ -115,6 +119,10 @@ func bindRunFlags(cmd *cobra.Command) {
 	// Validation mode flags
 	cmd.Flags().BoolVar(&validateSuiteIfDefaultBranch, "validate-suite-if-default-branch", false, "[Cloud] Validate traces on default branch before adding to suite")
 	cmd.Flags().BoolVar(&validateSuite, "validate-suite", false, "[Cloud] Force validation mode regardless of branch")
+
+	// Coverage mode
+	cmd.Flags().BoolVar(&showCoverage, "show-coverage", false, "Collect and display code coverage during test execution")
+	cmd.Flags().StringVar(&coverageOutputPath, "coverage-output", "", "Write coverage data to file (LCOV by default, JSON if path ends in .json)")
 
 	_ = cmd.Flags().MarkHidden("client-id")
 	cmd.Flags().SortFlags = false
@@ -239,11 +247,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 			var req *backend.CreateDriftRunRequest
 
 			if isValidation {
+				commitSha = getCommitSHAFromEnv()
 				req = &backend.CreateDriftRunRequest{
 					ObservableServiceId: cfg.Service.ID,
 					CliVersion:          version.Version,
 					IsValidationRun:     true,
-					CommitSha:           stringPtr(getCommitSHAFromEnv()),
+					CommitSha:           stringPtr(commitSha),
 					BranchName:          stringPtr(getBranchFromEnv()),
 				}
 			} else {
@@ -313,6 +322,39 @@ func runTests(cmd *cobra.Command, args []string) error {
 	}
 
 	executor.SetEnableServiceLogs(enableServiceLogs || debug)
+
+	// Coverage activation:
+	// - Config-driven: coverage.enabled=true in config activates during validation runs (silent, for upload)
+	// - Flag-driven: --show-coverage or --coverage-output activates anytime (for local dev/debugging)
+	coverageFromConfig := getConfigErr == nil && cfg.Coverage.Enabled && isValidation
+	coverageFromFlags := showCoverage || coverageOutputPath != ""
+	coverageEnabled := coverageFromConfig || coverageFromFlags
+	if coverageEnabled {
+		executor.SetCoverageEnabled(true)
+		executor.SetShowCoverage(showCoverage)
+		if coverageOutputPath != "" {
+			executor.SetCoverageOutputPath(coverageOutputPath)
+		}
+		if getConfigErr == nil {
+			if len(cfg.Coverage.Include) > 0 {
+				executor.SetCoverageIncludePatterns(cfg.Coverage.Include)
+			}
+			if len(cfg.Coverage.Exclude) > 0 {
+				executor.SetCoverageExcludePatterns(cfg.Coverage.Exclude)
+			}
+			if cfg.Coverage.StripPathPrefix != "" {
+				executor.SetCoverageStripPrefix(cfg.Coverage.StripPathPrefix)
+			}
+		}
+		// Coverage requires serial execution (concurrency=1) because per-test
+		// snapshots rely on the SDK resetting counters between tests.
+		executor.SetConcurrency(1)
+		if showCoverage {
+			log.Stderrln("➤ Coverage collection enabled (concurrency forced to 1)")
+		} else {
+			log.Debug("Coverage collection enabled via config (concurrency forced to 1)")
+		}
+	}
 
 	// Initialize results saving (--save-results json|agent)
 	var agentWriter *runner.AgentWriter
@@ -450,6 +492,51 @@ func runTests(cmd *cobra.Command, args []string) error {
 			writeAgentResult(res, test)
 			if executor.GetServer() != nil {
 				executor.GetServer().CleanupTraceSpans(test.TraceID)
+			}
+		})
+	}
+
+	// Coverage: wrap the OnTestCompleted callback to take snapshots between tests.
+	// Snapshot runs BEFORE the existing callback (which uploads results) so that
+	// per-test coverage data is available when building the upload proto.
+	if coverageEnabled {
+		existingCallback := executor.OnTestCompleted
+		executor.SetOnTestCompleted(func(res runner.TestResult, test runner.Test) {
+			// Take coverage snapshot FIRST so data is available for upload.
+			// Always continue to existingCallback even on error so test results still upload.
+			lineCounts, err := executor.TakeCoverageSnapshot()
+			if err != nil {
+				log.Warn("Failed to take coverage snapshot", "testID", test.TraceID, "error", err)
+			}
+
+			if err == nil {
+				executor.AddCoverageRecord(runner.CoverageTestRecord{
+					TestID:      test.TraceID,
+					TestName:    test.DisplayName,
+					SuiteStatus: test.SuiteStatus,
+					Coverage:    lineCounts,
+				})
+
+				// Store detail for TUI display
+				detail := runner.SnapshotToCoverageDetail(lineCounts)
+				executor.SetTestCoverageDetail(test.TraceID, detail)
+
+				// Print sub-line in --print mode when --show-coverage is active
+				if !interactive && showCoverage {
+					totalLines := 0
+					for _, fd := range detail {
+						totalLines += fd.CoveredCount
+					}
+					if totalLines > 0 {
+						log.UserProgress(fmt.Sprintf("  ↳ coverage: %d lines across %d files", totalLines, len(detail)))
+					}
+				}
+			}
+
+			// Now run the existing callback (which uploads results).
+			// Coverage data is available via GetTestCoverageDetail() for the upload.
+			if existingCallback != nil {
+				existingCallback(res, test)
 			}
 		})
 	}
@@ -781,7 +868,11 @@ func runTests(cmd *cobra.Command, args []string) error {
 						passed, failed := countPassedFailed(results)
 						statusMessage = fmt.Sprintf("Validation complete: %d passed, %d failed", passed, failed)
 					}
-					if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
+					var interactiveCoverageBaseline, interactiveCoverageOriginal runner.CoverageSnapshot
+					if coverageEnabled && isValidation {
+						interactiveCoverageBaseline, interactiveCoverageOriginal = executor.GetCoverageBaselineForUpload()
+					}
+					if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, interactiveCoverageBaseline, interactiveCoverageOriginal, commitSha, statusMessage); err != nil {
 						log.Warn("Interactive: cloud finalize failed", "error", err)
 					}
 					mu.Lock()
@@ -896,6 +987,19 @@ func runTests(cmd *cobra.Command, args []string) error {
 			log.Stderrln(fmt.Sprintf("➤ Running %d tests (concurrency: %d)...\n", len(tests), executor.GetConcurrency()))
 		}
 
+		// Coverage: take baseline with ?baseline=true to capture ALL coverable lines
+		// (including uncovered at count=0) for the aggregate denominator.
+		// This also resets counters so the first test gets clean data.
+		if coverageEnabled {
+			baseline, err := executor.TakeCoverageBaseline()
+			if err != nil {
+				log.Warn("Failed to take baseline coverage snapshot", "error", err)
+			} else {
+				executor.SetCoverageBaseline(baseline)
+				log.Debug("Coverage baseline taken (counters reset, all coverable lines captured)")
+			}
+		}
+
 		results, err = executor.RunTests(tests)
 		if err != nil {
 			cmd.SilenceUsage = true
@@ -946,6 +1050,15 @@ func runTests(cmd *cobra.Command, args []string) error {
 	_ = os.Stdout.Sync()
 	time.Sleep(1 * time.Millisecond)
 
+	// Coverage: print summary and write output file
+	if coverageEnabled {
+		if records := executor.GetCoverageRecords(); len(records) > 0 {
+			if err := executor.ProcessCoverage(records); err != nil {
+				log.Warn("Failed to process coverage", "error", err)
+			}
+		}
+	}
+
 	var outputErr error
 	if !interactive {
 		// Results already streamed, just print summary
@@ -966,7 +1079,12 @@ func runTests(cmd *cobra.Command, args []string) error {
 		}
 		// streamed is always true here so this only updates the CI status
 		// Does NOT upload results to the backend as they are already uploaded via UploadSingleTestResult during the callback
-		if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, statusMessage); err != nil {
+		// Coverage baseline (if enabled) is piggybacked on this status update
+		var headlessCoverageBaseline, headlessCoverageOriginal runner.CoverageSnapshot
+		if coverageEnabled && isValidation {
+			headlessCoverageBaseline, headlessCoverageOriginal = executor.GetCoverageBaselineForUpload()
+		}
+		if err := runner.ReportDriftRunSuccess(context.Background(), client, driftRunID, authOptions, results, headlessCoverageBaseline, headlessCoverageOriginal, commitSha, statusMessage); err != nil {
 			log.Warn("Headless: cloud finalize failed", "error", err)
 		}
 		if isValidation {

@@ -36,6 +36,7 @@ type Config struct {
 	Replay        ReplayConfig        `koanf:"replay"`
 	Traces        TracesConfig        `koanf:"traces"`
 	Results       ResultsConfig       `koanf:"results"`
+	Coverage      CoverageConfig      `koanf:"coverage"`
 }
 
 type ServiceConfig struct {
@@ -113,6 +114,13 @@ type TracesConfig struct {
 
 type ResultsConfig struct {
 	Dir string `koanf:"dir"`
+}
+
+type CoverageConfig struct {
+	Enabled         bool     `koanf:"enabled"`
+	Include         []string `koanf:"include"`
+	Exclude         []string `koanf:"exclude"`
+	StripPathPrefix string   `koanf:"strip_path_prefix"`
 }
 
 // Load loads the config file and applies environment overrides.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -620,6 +621,40 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.executor.OnTestCompleted != nil {
 				m.executor.OnTestCompleted(msg.result, test)
 			}
+
+			// Show per-file coverage breakdown in test log panel
+			if m.executor.IsCoverageEnabled() {
+				if detail := m.executor.GetTestCoverageDetail(test.TraceID); len(detail) > 0 {
+					totalLines := 0
+					for _, fd := range detail {
+						totalLines += fd.CoveredCount
+					}
+					m.addTestLog(test.TraceID, fmt.Sprintf("  📊 Coverage: %d lines across %d files", totalLines, len(detail)))
+					// Sort file paths for deterministic display
+					filePaths := make([]string, 0, len(detail))
+					for fp := range detail {
+						filePaths = append(filePaths, fp)
+					}
+					slices.Sort(filePaths)
+					for _, filePath := range filePaths {
+						fd := detail[filePath]
+						// Paths are already git-relative from normalizeCoveragePaths.
+						// Only try Rel() on absolute paths (shouldn't happen, but defensive).
+						shortPath := filePath
+						if filepath.IsAbs(filePath) {
+							if cwd, err := os.Getwd(); err == nil {
+								if rel, err := filepath.Rel(cwd, filePath); err == nil {
+									shortPath = rel
+								}
+							}
+						}
+						m.addTestLog(test.TraceID, fmt.Sprintf("     %-40s %d lines", shortPath, fd.CoveredCount))
+					}
+				} else {
+					m.addTestLog(test.TraceID, "  📊 Coverage: 0 new lines")
+				}
+			}
+
 			if m.opts != nil && m.opts.OnTestCompleted != nil {
 				res := msg.result
 				go m.opts.OnTestCompleted(res, test, m.executor)
@@ -714,6 +749,29 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.header.SetCompleted()
 		m.addServiceLog("\n" + strings.Repeat("=", 60))
 		m.addServiceLog("🏁 All tests completed!")
+
+		// Show aggregate coverage summary in service logs and write output file
+		if m.executor.IsCoverageEnabled() {
+			records := m.executor.GetCoverageRecords()
+			summaryLines, aggregate := m.executor.FormatCoverageSummaryLines(records)
+			if len(summaryLines) > 0 {
+				m.addServiceLog("")
+				for _, line := range summaryLines {
+					m.addServiceLog(line)
+				}
+			}
+			// Write coverage output file if requested. Suppress console display
+			// since we already showed the summary above via FormatCoverageSummaryLines.
+			// Pass pre-computed aggregate to avoid redundant computation.
+			savedShowOutput := m.executor.IsCoverageShowOutput()
+			m.executor.SetShowCoverage(false)
+			if err := m.executor.ProcessCoverageWithAggregate(records, aggregate); err != nil {
+				m.addServiceLog(fmt.Sprintf("⚠️ Failed to process coverage: %v", err))
+			} else if outputPath := m.executor.GetCoverageOutputPath(); outputPath != "" {
+				m.addServiceLog(fmt.Sprintf("📄 Coverage written to %s", outputPath))
+			}
+			m.executor.SetShowCoverage(savedShowOutput)
+		}
 
 		// All-tests completed upload (non-blocking)
 		if m.opts != nil && m.opts.OnAllCompleted != nil {
@@ -1042,6 +1100,17 @@ func (m *testExecutorModel) startNextEnvironmentGroup() tea.Cmd {
 		m.serverStarted = true
 		m.serviceStarted = true
 		m.addServiceLog("✅ Environment ready")
+
+		// Coverage: take baseline snapshot to capture all coverable lines and reset counters
+		if m.executor.IsCoverageEnabled() {
+			baseline, err := m.executor.TakeCoverageBaseline()
+			if err != nil {
+				m.addServiceLog("⚠️ Coverage baseline failed: " + err.Error())
+			} else {
+				m.executor.SetCoverageBaseline(baseline)
+				m.addServiceLog("✅ Coverage baseline captured")
+			}
+		}
 
 		// Build list of global test indices for this environment
 		envIdx := m.currentGroupIndex - 1 // We already incremented it above

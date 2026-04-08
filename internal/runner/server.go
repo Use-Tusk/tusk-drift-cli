@@ -696,6 +696,9 @@ func (ms *Server) handleConnection(conn net.Conn) {
 		case core.MessageType_MESSAGE_TYPE_SET_TIME_TRAVEL:
 			// SDK is responding to our SetTimeTravel request
 			ms.handleSetTimeTravelResponse(&sdkMsg)
+		case core.MessageType_MESSAGE_TYPE_COVERAGE_SNAPSHOT:
+			log.Debug("Received coverage snapshot response", "requestId", sdkMsg.RequestId)
+			ms.handleCoverageSnapshotResponse(&sdkMsg)
 		default:
 			log.Debug("Unknown message type", "type", sdkMsg.Type)
 		}
@@ -979,6 +982,78 @@ func (ms *Server) waitForSDKResponse(requestID string, timeout time.Duration) (*
 		return resp, nil
 	case <-time.After(timeout):
 		return nil, fmt.Errorf("timeout waiting for SDK response")
+	}
+}
+
+// SendCoverageSnapshot sends a coverage snapshot request to the SDK and waits for the response.
+// Returns per-file coverage data. If baseline=true, includes all coverable lines (count=0 for uncovered).
+func (ms *Server) SendCoverageSnapshot(baseline bool) (*core.CoverageSnapshotResponse, error) {
+	ms.mu.RLock()
+	conn := ms.sdkConnection
+	ms.mu.RUnlock()
+
+	if conn == nil {
+		return nil, fmt.Errorf("no SDK connection available")
+	}
+
+	requestID := fmt.Sprintf("coverage-%d", time.Now().UnixNano())
+
+	msg := &core.CLIMessage{
+		Type:      core.MessageType_MESSAGE_TYPE_COVERAGE_SNAPSHOT,
+		RequestId: requestID,
+		Payload: &core.CLIMessage_CoverageSnapshotRequest{
+			CoverageSnapshotRequest: &core.CoverageSnapshotRequest{
+				Baseline: baseline,
+			},
+		},
+	}
+
+	// Register the pending response channel BEFORE sending so we don't miss
+	// a fast SDK reply that arrives before the channel is registered.
+	respChan := make(chan *core.SDKMessage, 1)
+	ms.pendingMu.Lock()
+	ms.pendingRequests[requestID] = respChan
+	ms.pendingMu.Unlock()
+
+	defer func() {
+		ms.pendingMu.Lock()
+		delete(ms.pendingRequests, requestID)
+		ms.pendingMu.Unlock()
+	}()
+
+	if err := ms.sendProtobufResponse(conn, msg); err != nil {
+		return nil, fmt.Errorf("failed to send coverage snapshot request: %w", err)
+	}
+
+	var response *core.SDKMessage
+	select {
+	case response = <-respChan:
+	case <-time.After(coverageSnapshotTimeout):
+		return nil, fmt.Errorf("failed to receive coverage snapshot response: timeout waiting for SDK response")
+	}
+
+	coverageResp := response.GetCoverageSnapshotResponse()
+	if coverageResp == nil {
+		return nil, fmt.Errorf("unexpected response type for coverage snapshot")
+	}
+
+	if !coverageResp.Success {
+		return nil, fmt.Errorf("SDK coverage snapshot failed: %s", coverageResp.Error)
+	}
+
+	return coverageResp, nil
+}
+
+// handleCoverageSnapshotResponse routes coverage snapshot responses to pending request channels
+func (ms *Server) handleCoverageSnapshotResponse(msg *core.SDKMessage) {
+	ms.pendingMu.Lock()
+	respChan, ok := ms.pendingRequests[msg.RequestId]
+	ms.pendingMu.Unlock()
+
+	if ok {
+		respChan <- msg
+	} else {
+		log.Debug("Received coverage snapshot response with unknown request ID", "requestId", msg.RequestId)
 	}
 }
 
