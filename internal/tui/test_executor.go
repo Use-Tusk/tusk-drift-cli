@@ -53,7 +53,7 @@ type testExecutorModel struct {
 	actualLeftPanelWidth int // For accurate mouse coordinates
 
 	// Control flags
-	serverStarted  bool
+	serverStarted bool
 	serviceStarted bool
 
 	// Environment grouping
@@ -467,6 +467,7 @@ func (m *testExecutorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sizeWarning.Dismiss()
 				return m, nil
 			case "q", "ctrl+c":
+				m.forceExitAfter(5 * time.Second)
 				m.cleanup()
 				return m, tea.Quit
 			}
@@ -882,6 +883,7 @@ func (m *testExecutorModel) handleTableNavigation(msg tea.KeyMsg) (tea.Model, te
 		return m, m.logPanel.CopyAllLogs()
 
 	case "q", "ctrl+c":
+		m.forceExitAfter(5 * time.Second)
 		m.cleanup()
 		return m, tea.Quit
 	}
@@ -1277,6 +1279,19 @@ func (m *testExecutorModel) hasAnyDeviations() bool {
 		}
 	}
 	return false
+}
+
+// forceExitAfter spawns a goroutine that force-exits the process if cleanup
+// doesn't complete within the given duration. In the TUI, Bubble Tea's raw
+// terminal mode means Ctrl+C is a key event, not an OS signal, so the event
+// loop is blocked while cleanup runs synchronously. This is the only way to
+// guarantee the process won't hang.
+func (m *testExecutorModel) forceExitAfter(d time.Duration) {
+	go func() {
+		time.Sleep(d)
+		fmt.Fprintf(os.Stderr, "\nCleanup timed out, force exiting\n")
+		os.Exit(2)
+	}()
 }
 
 func (m *testExecutorModel) cleanup() {
