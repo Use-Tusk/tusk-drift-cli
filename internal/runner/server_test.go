@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,54 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestServerStopClosesActiveConnections(t *testing.T) {
+	config.Invalidate()
+
+	testServiceConfig := &config.ServiceConfig{
+		ID:   "test-stop-conns",
+		Port: 3000,
+		Start: config.StartConfig{
+			Command: "node server.js",
+		},
+		Communication: config.CommunicationConfig{
+			Type:    "tcp",
+			TCPPort: 0, // let OS pick a port
+		},
+	}
+
+	server, err := NewServer("test-stop-conns", testServiceConfig)
+	require.NoError(t, err)
+
+	err = server.Start()
+	require.NoError(t, err)
+
+	// Connect a client that stays idle (simulates SDK connection blocked on read)
+	actualPort := server.listener.Addr().(*net.TCPAddr).Port
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", actualPort))
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
+
+	// Wait for the server to accept and track the connection
+	require.Eventually(t, func() bool {
+		server.activeConnsMu.Lock()
+		defer server.activeConnsMu.Unlock()
+		return len(server.activeConns) > 0
+	}, 2*time.Second, 5*time.Millisecond)
+
+	// Stop should return promptly — not hang on wg.Wait()
+	done := make(chan error, 1)
+	go func() {
+		done <- server.Stop()
+	}()
+
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("server.Stop() hung — active connections were not closed")
+	}
+}
 
 func TestIsVersionCompatible(t *testing.T) {
 	tcs := []struct {
