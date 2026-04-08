@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,9 +17,10 @@ import (
 )
 
 const (
-	coverageBaselineMaxRetries = 15
+	coverageBaselineMaxRetries = 4
 	coverageBaselineRetryDelay = 200 * time.Millisecond
 	coverageSnapshotTimeout    = 60 * time.Second
+	coverageBaselineDeadline   = 90 * time.Second
 )
 
 // TakeCoverageSnapshot calls the SDK's coverage snapshot endpoint.
@@ -29,12 +31,16 @@ func (e *Executor) TakeCoverageSnapshot() (CoverageSnapshot, error) {
 
 // TakeCoverageBaseline calls the SDK's coverage snapshot endpoint with ?baseline=true.
 // Returns ALL coverable lines (including uncovered at count=0) for the aggregate denominator.
-// Retries with backoff since the coverage server may not be ready immediately after service start.
+// Retries briefly since the coverage server may not be ready immediately after service start.
+// In practice, the SDK initializes coverage before the HTTP server starts, so the baseline
+// should succeed on the first attempt.
 func (e *Executor) TakeCoverageBaseline() (CoverageSnapshot, error) {
-	deadline := time.Now().Add(90 * time.Second)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(coverageBaselineDeadline))
+	defer cancel()
+
 	var lastErr error
 	for attempt := 0; attempt < coverageBaselineMaxRetries; attempt++ {
-		if time.Now().After(deadline) {
+		if ctx.Err() != nil {
 			break
 		}
 		result, err := e.callCoverageEndpoint(true)
@@ -42,7 +48,11 @@ func (e *Executor) TakeCoverageBaseline() (CoverageSnapshot, error) {
 			return result, nil
 		}
 		lastErr = err
-		time.Sleep(coverageBaselineRetryDelay)
+
+		select {
+		case <-ctx.Done():
+		case <-time.After(coverageBaselineRetryDelay):
+		}
 	}
 	return nil, fmt.Errorf("coverage baseline failed after retries: %w", lastErr)
 }
@@ -155,6 +165,37 @@ func SnapshotToCoverageDetail(snapshot CoverageSnapshot) map[string]CoverageFile
 	return result
 }
 
+// CoverageReportView is a pre-computed view of coverage data, built once and
+// passed to all consumers (print, JSON export, TUI) for consistency.
+type CoverageReportView struct {
+	SuiteRecords []CoverageTestRecord
+	Aggregate    CoverageSnapshot
+	PerTest      map[string]map[string]CoverageFileDiff
+	Summary      CoverageSummary
+}
+
+// BuildCoverageReportView constructs a CoverageReportView by applying suite filtering,
+// include/exclude patterns, and computing the summary — all exactly once.
+func (e *Executor) BuildCoverageReportView(records []CoverageTestRecord) *CoverageReportView {
+	suiteRecords := filterInSuiteRecords(records)
+
+	e.coverageBaselineMu.Lock()
+	baseline := e.coverageBaseline
+	e.coverageBaselineMu.Unlock()
+
+	aggregate := mergeWithBaseline(baseline, suiteRecords)
+	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+	perTest := e.GetCoveragePerTestSnapshot()
+	summary := ComputeCoverageSummary(aggregate, perTest, suiteRecords)
+
+	return &CoverageReportView{
+		SuiteRecords: suiteRecords,
+		Aggregate:    aggregate,
+		PerTest:      perTest,
+		Summary:      summary,
+	}
+}
+
 // ProcessCoverage computes aggregate coverage, optionally prints summary, writes file, and prepares for upload.
 // During validation runs, the aggregate and output files only include IN_SUITE tests (not drafts).
 // All per-test data (including drafts) is retained for backend upload — the backend needs draft
@@ -163,31 +204,30 @@ func (e *Executor) ProcessCoverage(records []CoverageTestRecord) error {
 	return e.ProcessCoverageWithAggregate(records, nil)
 }
 
-// ProcessCoverageWithAggregate processes coverage with an optional pre-computed aggregate.
-// If aggregate is nil, it will be computed from the records and baseline.
+// ProcessCoverageWithAggregate processes coverage with an optional pre-computed view.
+// If precomputed is nil, it will be computed from the records and baseline.
 func (e *Executor) ProcessCoverageWithAggregate(records []CoverageTestRecord, precomputed CoverageSnapshot) error {
 	if !e.coverageEnabled || len(records) == 0 {
 		return nil
 	}
 
-	// Filter to in-suite tests for the aggregate. If no suite status is set
-	// (local run, no cloud), include all tests.
-	suiteRecords := filterInSuiteRecords(records)
-
-	// Use pre-computed aggregate if provided, otherwise compute it.
-	aggregate := precomputed
-	if aggregate == nil {
-		e.coverageBaselineMu.Lock()
-		baseline := e.coverageBaseline
-		e.coverageBaselineMu.Unlock()
-		aggregate = mergeWithBaseline(baseline, suiteRecords)
-		aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
+	// Use pre-computed aggregate if provided, otherwise build the view.
+	var aggregate CoverageSnapshot
+	var suiteRecords []CoverageTestRecord
+	if precomputed != nil {
+		aggregate = precomputed
+		suiteRecords = filterInSuiteRecords(records)
+	} else {
+		view := e.BuildCoverageReportView(records)
+		aggregate = view.Aggregate
+		suiteRecords = view.SuiteRecords
 	}
 
 	// Print summary if --show-coverage was passed (not in silent config-driven mode)
 	if e.coverageShowOutput {
 		log.Stderrln("\n➤ Processing coverage data...")
-		e.printCoverageSummary(suiteRecords, aggregate)
+		summary := ComputeCoverageSummary(aggregate, e.GetCoveragePerTestSnapshot(), suiteRecords)
+		e.printCoverageSummary(summary)
 	}
 
 	// Write coverage file if requested.
@@ -458,9 +498,8 @@ func (e *Executor) formatCoverageSummary(summary CoverageSummary) []string {
 	return lines
 }
 
-// printCoverageSummary computes and prints the coverage summary to stderr.
-func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate CoverageSnapshot) {
-	summary := ComputeCoverageSummary(aggregate, e.GetCoveragePerTestSnapshot(), records)
+// printCoverageSummary prints the coverage summary to stderr.
+func (e *Executor) printCoverageSummary(summary CoverageSummary) {
 	for _, line := range e.formatCoverageSummary(summary) {
 		log.Stderrln(line)
 	}
@@ -476,7 +515,7 @@ func (e *Executor) printCoverageSummary(records []CoverageTestRecord, aggregate 
 	}
 }
 
-// FormatCoverageSummaryLines computes the aggregate and returns formatted summary lines
+// FormatCoverageSummaryLines builds a CoverageReportView and returns formatted summary lines
 // for the TUI service log panel (aggregate + per-file, no per-test).
 // Also returns the computed aggregate so callers can reuse it (avoiding redundant computation).
 func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) ([]string, CoverageSnapshot) {
@@ -484,14 +523,8 @@ func (e *Executor) FormatCoverageSummaryLines(records []CoverageTestRecord) ([]s
 		return nil, nil
 	}
 
-	records = filterInSuiteRecords(records)
-	e.coverageBaselineMu.Lock()
-	baseline := e.coverageBaseline
-	e.coverageBaselineMu.Unlock()
-	aggregate := mergeWithBaseline(baseline, records)
-	aggregate = filterCoverageByPatterns(aggregate, e.coverageIncludePatterns, e.coverageExcludePatterns)
-	summary := ComputeCoverageSummary(aggregate, e.GetCoveragePerTestSnapshot(), records)
-	return e.formatCoverageSummary(summary), aggregate
+	view := e.BuildCoverageReportView(records)
+	return e.formatCoverageSummary(view.Summary), view.Aggregate
 }
 
 // filterCoverageByPatterns applies include/exclude glob patterns to a snapshot.

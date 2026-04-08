@@ -520,8 +520,15 @@ func (e *Executor) GetCoverageBaselineForUpload() (merged CoverageSnapshot, orig
 	baseline := e.coverageBaseline
 	e.coverageBaselineMu.Unlock()
 
+	// If no baseline was captured, skip the aggregate upload entirely.
+	// Without a baseline denominator, coverage % would be near 100% (misleading).
+	// Per-test coverage is still uploaded via TraceTestCoverageData independently.
+	if baseline == nil {
+		return nil, nil
+	}
+
 	records := e.GetCoverageRecords()
-	if baseline == nil && len(records) == 0 {
+	if len(records) == 0 {
 		return nil, nil
 	}
 
