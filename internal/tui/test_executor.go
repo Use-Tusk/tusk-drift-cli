@@ -53,7 +53,7 @@ type testExecutorModel struct {
 	actualLeftPanelWidth int // For accurate mouse coordinates
 
 	// Control flags
-	serverStarted bool
+	serverStarted  bool
 	serviceStarted bool
 
 	// Environment grouping
