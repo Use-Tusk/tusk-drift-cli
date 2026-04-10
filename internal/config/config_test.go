@@ -20,6 +20,150 @@ func evalSymlinks(path string) string {
 	return resolved
 }
 
+func TestNestedRecordingSamplingConfig(t *testing.T) {
+	defer Invalidate()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+recording:
+  sampling:
+    mode: adaptive
+    base_rate: 0.25
+    min_rate: 0.05
+`), 0o600))
+
+	require.NoError(t, Load(configPath))
+
+	cfg, err := Get()
+	require.NoError(t, err)
+	assert.Equal(t, "adaptive", cfg.Recording.Sampling.Mode)
+	require.NotNil(t, cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.25, *cfg.Recording.Sampling.BaseRate)
+	require.NotNil(t, cfg.Recording.Sampling.MinRate)
+	assert.Equal(t, 0.05, *cfg.Recording.Sampling.MinRate)
+	assert.Equal(t, 0.25, cfg.Recording.SamplingRate)
+}
+
+func TestLegacyRecordingSamplingRateBackfillsNestedSamplingConfig(t *testing.T) {
+	defer Invalidate()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+recording:
+  sampling_rate: 0.25
+`), 0o600))
+
+	require.NoError(t, Load(configPath))
+
+	cfg, err := Get()
+	require.NoError(t, err)
+	assert.Equal(t, 0.25, cfg.Recording.SamplingRate)
+	assert.Equal(t, "fixed", cfg.Recording.Sampling.Mode)
+	require.NotNil(t, cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.25, *cfg.Recording.Sampling.BaseRate)
+	assert.Nil(t, cfg.Recording.Sampling.MinRate)
+}
+
+func TestRecordingSamplingRateEnvOverrideBeatsNestedBaseRate(t *testing.T) {
+	defer Invalidate()
+	t.Setenv("TUSK_RECORDING_SAMPLING_RATE", "0.5")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+recording:
+  sampling:
+    mode: adaptive
+    base_rate: 0.25
+    min_rate: 0.05
+`), 0o600))
+
+	require.NoError(t, Load(configPath))
+
+	cfg, err := Get()
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.5, *cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.5, cfg.Recording.SamplingRate)
+	assert.Equal(t, "adaptive", cfg.Recording.Sampling.Mode)
+	require.NotNil(t, cfg.Recording.Sampling.MinRate)
+	assert.Equal(t, 0.05, *cfg.Recording.Sampling.MinRate)
+}
+
+func TestValidateRejectsInvalidRecordingSamplingMode(t *testing.T) {
+	cfg := &Config{
+		Service: ServiceConfig{
+			Port: 3000,
+			Communication: CommunicationConfig{
+				Type:    "auto",
+				TCPPort: 9001,
+			},
+		},
+		Recording: RecordingConfig{
+			Sampling: RecordingSamplingConfig{
+				Mode: "adapttive",
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "recording.sampling.mode must be 'fixed' or 'adaptive'")
+}
+
+func TestValidateRejectsOutOfRangeRecordingSamplingRates(t *testing.T) {
+	baseRate := 5.0
+	minRate := -0.1
+	cfg := &Config{
+		Service: ServiceConfig{
+			Port: 3000,
+			Communication: CommunicationConfig{
+				Type:    "auto",
+				TCPPort: 9001,
+			},
+		},
+		Recording: RecordingConfig{
+			Sampling: RecordingSamplingConfig{
+				Mode:     "adaptive",
+				BaseRate: &baseRate,
+				MinRate:  &minRate,
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "recording.sampling.base_rate must be between 0.0 and 1.0")
+	assert.ErrorContains(t, err, "recording.sampling.min_rate must be between 0.0 and 1.0")
+}
+
+func TestValidateRejectsRecordingMinRateGreaterThanBaseRate(t *testing.T) {
+	baseRate := 0.1
+	minRate := 0.9
+	cfg := &Config{
+		Service: ServiceConfig{
+			Port: 3000,
+			Communication: CommunicationConfig{
+				Type:    "auto",
+				TCPPort: 9001,
+			},
+		},
+		Recording: RecordingConfig{
+			Sampling: RecordingSamplingConfig{
+				Mode:     "adaptive",
+				BaseRate: &baseRate,
+				MinRate:  &minRate,
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "recording.sampling.min_rate must be less than or equal to recording.sampling.base_rate")
+}
+
 func TestFindConfigFile_ParentTraversal(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer func() { _ = os.Chdir(wd) }()

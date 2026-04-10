@@ -89,10 +89,17 @@ type ComparisonConfig struct {
 	IgnoreEpochTimestamps *bool    `koanf:"ignore_epoch_timestamps"`
 }
 
+type RecordingSamplingConfig struct {
+	Mode     string   `koanf:"mode"`
+	BaseRate *float64 `koanf:"base_rate"`
+	MinRate  *float64 `koanf:"min_rate"`
+}
+
 type RecordingConfig struct {
-	SamplingRate          float64 `koanf:"sampling_rate"`
-	ExportSpans           *bool   `koanf:"export_spans"`
-	EnableEnvVarRecording *bool   `koanf:"enable_env_var_recording"`
+	SamplingRate          float64                 `koanf:"sampling_rate"`
+	Sampling              RecordingSamplingConfig `koanf:"sampling"`
+	ExportSpans           *bool                   `koanf:"export_spans"`
+	EnableEnvVarRecording *bool                   `koanf:"enable_env_var_recording"`
 }
 
 type ReplayConfig struct {
@@ -165,6 +172,12 @@ func Load(configFile string) error {
 			if err := k.Set(configKey, val); err != nil {
 				return fmt.Errorf("error setting %s from env: %w", envKey, err)
 			}
+
+			if envKey == "TUSK_RECORDING_SAMPLING_RATE" {
+				if err := k.Set("recording.sampling.base_rate", val); err != nil {
+					return fmt.Errorf("error setting %s nested base rate from env: %w", envKey, err)
+				}
+			}
 		}
 	}
 
@@ -215,8 +228,22 @@ func parseAndValidate() (*Config, error) {
 	if cfg.TestExecution.Timeout == "" {
 		cfg.TestExecution.Timeout = "30s"
 	}
-	if cfg.Recording.SamplingRate == 0 {
+	if cfg.Recording.Sampling.BaseRate != nil {
+		cfg.Recording.SamplingRate = *cfg.Recording.Sampling.BaseRate
+	}
+	if cfg.Recording.SamplingRate == 0 && cfg.Recording.Sampling.BaseRate == nil {
 		cfg.Recording.SamplingRate = 0.1
+	}
+	if cfg.Recording.Sampling.Mode == "" {
+		cfg.Recording.Sampling.Mode = "fixed"
+	}
+	if cfg.Recording.Sampling.BaseRate == nil {
+		baseRate := cfg.Recording.SamplingRate
+		cfg.Recording.Sampling.BaseRate = &baseRate
+	}
+	if cfg.Recording.Sampling.MinRate == nil && cfg.Recording.Sampling.Mode == "adaptive" {
+		minRate := 0.001
+		cfg.Recording.Sampling.MinRate = &minRate
 	}
 	if cfg.Recording.ExportSpans == nil {
 		defaultExportSpans := false
@@ -296,6 +323,29 @@ func (cfg *Config) Validate() error {
 	validSandboxModes := map[string]bool{"auto": true, "strict": true, "off": true}
 	if cfg.Replay.Sandbox.Mode != "" && !validSandboxModes[cfg.Replay.Sandbox.Mode] {
 		errs = append(errs, fmt.Errorf("replay.sandbox.mode must be 'auto', 'strict', or 'off', got %s", cfg.Replay.Sandbox.Mode))
+	}
+
+	validSamplingModes := map[string]bool{"fixed": true, "adaptive": true}
+	if cfg.Recording.Sampling.Mode != "" && !validSamplingModes[cfg.Recording.Sampling.Mode] {
+		errs = append(errs, fmt.Errorf("recording.sampling.mode must be 'fixed' or 'adaptive', got %s", cfg.Recording.Sampling.Mode))
+	}
+
+	if cfg.Recording.Sampling.BaseRate != nil {
+		if *cfg.Recording.Sampling.BaseRate < 0 || *cfg.Recording.Sampling.BaseRate > 1 {
+			errs = append(errs, fmt.Errorf("recording.sampling.base_rate must be between 0.0 and 1.0, got %v", *cfg.Recording.Sampling.BaseRate))
+		}
+	}
+
+	if cfg.Recording.Sampling.MinRate != nil {
+		if *cfg.Recording.Sampling.MinRate < 0 || *cfg.Recording.Sampling.MinRate > 1 {
+			errs = append(errs, fmt.Errorf("recording.sampling.min_rate must be between 0.0 and 1.0, got %v", *cfg.Recording.Sampling.MinRate))
+		}
+	}
+
+	if cfg.Recording.Sampling.BaseRate != nil && cfg.Recording.Sampling.MinRate != nil {
+		if *cfg.Recording.Sampling.MinRate > *cfg.Recording.Sampling.BaseRate {
+			errs = append(errs, fmt.Errorf("recording.sampling.min_rate must be less than or equal to recording.sampling.base_rate (got min_rate=%v, base_rate=%v)", *cfg.Recording.Sampling.MinRate, *cfg.Recording.Sampling.BaseRate))
+		}
 	}
 
 	if len(errs) > 0 {
