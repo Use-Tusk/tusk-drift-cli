@@ -113,6 +113,57 @@ func TestValidateRejectsInvalidRecordingSamplingMode(t *testing.T) {
 	assert.ErrorContains(t, err, "recording.sampling.mode must be 'fixed' or 'adaptive'")
 }
 
+func TestValidateRejectsOutOfRangeRecordingSamplingRates(t *testing.T) {
+	baseRate := 5.0
+	minRate := -0.1
+	cfg := &Config{
+		Service: ServiceConfig{
+			Port: 3000,
+			Communication: CommunicationConfig{
+				Type:    "auto",
+				TCPPort: 9001,
+			},
+		},
+		Recording: RecordingConfig{
+			Sampling: RecordingSamplingConfig{
+				Mode:     "adaptive",
+				BaseRate: &baseRate,
+				MinRate:  &minRate,
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "recording.sampling.base_rate must be between 0.0 and 1.0")
+	assert.ErrorContains(t, err, "recording.sampling.min_rate must be between 0.0 and 1.0")
+}
+
+func TestValidateRejectsRecordingMinRateGreaterThanBaseRate(t *testing.T) {
+	baseRate := 0.1
+	minRate := 0.9
+	cfg := &Config{
+		Service: ServiceConfig{
+			Port: 3000,
+			Communication: CommunicationConfig{
+				Type:    "auto",
+				TCPPort: 9001,
+			},
+		},
+		Recording: RecordingConfig{
+			Sampling: RecordingSamplingConfig{
+				Mode:     "adaptive",
+				BaseRate: &baseRate,
+				MinRate:  &minRate,
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "recording.sampling.min_rate must be less than or equal to recording.sampling.base_rate")
+}
+
 func TestFindConfigFile_ParentTraversal(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer func() { _ = os.Chdir(wd) }()

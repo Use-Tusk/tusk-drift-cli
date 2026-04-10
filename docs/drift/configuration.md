@@ -332,8 +332,8 @@ For authentication in cloud mode, either use:
     <tr>
       <td><code>recording.sampling.min_rate</code></td>
       <td>number</td>
-      <td>0.001</td>
-      <td>Lower bound for adaptive sampling after load shedding is applied.</td>
+      <td><code>0.001</code> in <code>adaptive</code> mode; unset in <code>fixed</code> mode</td>
+      <td>Lower bound for adaptive sampling after load shedding is applied. This is only defaulted in <code>adaptive</code> mode and remains unset in <code>fixed</code> mode.</td>
     </tr>
     <tr>
       <td><code>recording.sampling_rate</code></td>

@@ -330,6 +330,24 @@ func (cfg *Config) Validate() error {
 		errs = append(errs, fmt.Errorf("recording.sampling.mode must be 'fixed' or 'adaptive', got %s", cfg.Recording.Sampling.Mode))
 	}
 
+	if cfg.Recording.Sampling.BaseRate != nil {
+		if *cfg.Recording.Sampling.BaseRate < 0 || *cfg.Recording.Sampling.BaseRate > 1 {
+			errs = append(errs, fmt.Errorf("recording.sampling.base_rate must be between 0.0 and 1.0, got %v", *cfg.Recording.Sampling.BaseRate))
+		}
+	}
+
+	if cfg.Recording.Sampling.MinRate != nil {
+		if *cfg.Recording.Sampling.MinRate < 0 || *cfg.Recording.Sampling.MinRate > 1 {
+			errs = append(errs, fmt.Errorf("recording.sampling.min_rate must be between 0.0 and 1.0, got %v", *cfg.Recording.Sampling.MinRate))
+		}
+	}
+
+	if cfg.Recording.Sampling.BaseRate != nil && cfg.Recording.Sampling.MinRate != nil {
+		if *cfg.Recording.Sampling.MinRate > *cfg.Recording.Sampling.BaseRate {
+			errs = append(errs, fmt.Errorf("recording.sampling.min_rate must be less than or equal to recording.sampling.base_rate (got min_rate=%v, base_rate=%v)", *cfg.Recording.Sampling.MinRate, *cfg.Recording.Sampling.BaseRate))
+		}
+	}
+
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
