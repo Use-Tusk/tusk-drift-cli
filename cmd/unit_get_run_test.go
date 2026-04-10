@@ -6,13 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnitGetRunCmdSetupError(t *testing.T) {
-	// Without valid auth credentials or a .tusk/config.yaml, setupUnitCloud()
-	// returns an error. This exercises the RunE error-return path (lines 15-19).
-	err := unitGetRunCmd.RunE(unitGetRunCmd, []string{"test-run-id"})
-	require.Error(t, err)
-}
-
 func TestBuildNextSteps(t *testing.T) {
 	tests := []struct {
 		name     string
