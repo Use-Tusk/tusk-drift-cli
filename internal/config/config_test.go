@@ -31,7 +31,7 @@ recording:
     mode: adaptive
     base_rate: 0.25
     min_rate: 0.05
-`), 0o00))
+`), 0o600))
 
 	require.NoError(t, Load(configPath))
 
