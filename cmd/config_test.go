@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
@@ -65,7 +67,22 @@ func TestConfigGetCmd(t *testing.T) {
 func TestConfigSetCmd(t *testing.T) {
 	origConfig := cliconfig.CLIConfig
 	t.Cleanup(func() { cliconfig.CLIConfig = origConfig })
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	origHome := os.Getenv("HOME")
+
+	// Sandbox all config resolution paths across OSes:
+	// - Linux typically honors XDG_CONFIG_HOME
+	// - macOS uses HOME/Library/Application Support via os.UserConfigDir
+	sandbox := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", sandbox)
+	t.Setenv("HOME", sandbox)
+
+	cfgPath := cliconfig.GetPath()
+	require.NotEmpty(t, cfgPath)
+	require.True(t, strings.HasPrefix(cfgPath, sandbox))
+
+	if origHome != "" {
+		require.False(t, strings.HasPrefix(cfgPath, origHome))
+	}
 
 	t.Run("analytics true clears developer mode", func(t *testing.T) {
 		cliconfig.CLIConfig = &cliconfig.Config{IsTuskDeveloper: true}
