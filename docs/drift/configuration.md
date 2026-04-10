@@ -318,10 +318,28 @@ For authentication in cloud mode, either use:
   </thead>
   <tbody>
     <tr>
+      <td><code>recording.sampling.mode</code></td>
+      <td>string</td>
+      <td><code>fixed</code></td>
+      <td>Sampling strategy for Drift SDK recording. Supported values: <code>fixed</code> and <code>adaptive</code>.</td>
+    </tr>
+    <tr>
+      <td><code>recording.sampling.base_rate</code></td>
+      <td>number</td>
+      <td>0.1</td>
+      <td>Base sampling fraction when recording traces. In <code>fixed</code> mode this is the effective rate. In <code>adaptive</code> mode the SDK may temporarily reduce below this base rate under pressure.</td>
+    </tr>
+    <tr>
+      <td><code>recording.sampling.min_rate</code></td>
+      <td>number</td>
+      <td>0.001</td>
+      <td>Lower bound for adaptive sampling after load shedding is applied.</td>
+    </tr>
+    <tr>
       <td><code>recording.sampling_rate</code></td>
       <td>number</td>
       <td>0.1</td>
-      <td>Target sampling fraction when recording traces.</td>
+      <td><i>Deprecated.</i> Legacy alias for <code>recording.sampling.base_rate</code>. Still accepted for backwards compatibility.</td>
     </tr>
     <tr>
       <td><code>recording.export_spans</code></td>

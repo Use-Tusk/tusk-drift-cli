@@ -89,10 +89,17 @@ type ComparisonConfig struct {
 	IgnoreEpochTimestamps *bool    `koanf:"ignore_epoch_timestamps"`
 }
 
+type RecordingSamplingConfig struct {
+	Mode     string   `koanf:"mode"`
+	BaseRate *float64 `koanf:"base_rate"`
+	MinRate  *float64 `koanf:"min_rate"`
+}
+
 type RecordingConfig struct {
-	SamplingRate          float64 `koanf:"sampling_rate"`
-	ExportSpans           *bool   `koanf:"export_spans"`
-	EnableEnvVarRecording *bool   `koanf:"enable_env_var_recording"`
+	SamplingRate          float64                 `koanf:"sampling_rate"`
+	Sampling              RecordingSamplingConfig `koanf:"sampling"`
+	ExportSpans           *bool                   `koanf:"export_spans"`
+	EnableEnvVarRecording *bool                   `koanf:"enable_env_var_recording"`
 }
 
 type ReplayConfig struct {
@@ -215,8 +222,22 @@ func parseAndValidate() (*Config, error) {
 	if cfg.TestExecution.Timeout == "" {
 		cfg.TestExecution.Timeout = "30s"
 	}
-	if cfg.Recording.SamplingRate == 0 {
+	if cfg.Recording.Sampling.BaseRate != nil {
+		cfg.Recording.SamplingRate = *cfg.Recording.Sampling.BaseRate
+	}
+	if cfg.Recording.SamplingRate == 0 && cfg.Recording.Sampling.BaseRate == nil {
 		cfg.Recording.SamplingRate = 0.1
+	}
+	if cfg.Recording.Sampling.Mode == "" {
+		cfg.Recording.Sampling.Mode = "fixed"
+	}
+	if cfg.Recording.Sampling.BaseRate == nil {
+		baseRate := cfg.Recording.SamplingRate
+		cfg.Recording.Sampling.BaseRate = &baseRate
+	}
+	if cfg.Recording.Sampling.MinRate == nil && cfg.Recording.Sampling.Mode == "adaptive" {
+		minRate := 0.001
+		cfg.Recording.Sampling.MinRate = &minRate
 	}
 	if cfg.Recording.ExportSpans == nil {
 		defaultExportSpans := false

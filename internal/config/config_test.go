@@ -20,6 +20,31 @@ func evalSymlinks(path string) string {
 	return resolved
 }
 
+func TestNestedRecordingSamplingConfig(t *testing.T) {
+	defer Invalidate()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+recording:
+  sampling:
+    mode: adaptive
+    base_rate: 0.25
+    min_rate: 0.05
+`), 0o644))
+
+	require.NoError(t, Load(configPath))
+
+	cfg, err := Get()
+	require.NoError(t, err)
+	assert.Equal(t, "adaptive", cfg.Recording.Sampling.Mode)
+	require.NotNil(t, cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.25, *cfg.Recording.Sampling.BaseRate)
+	require.NotNil(t, cfg.Recording.Sampling.MinRate)
+	assert.Equal(t, 0.05, *cfg.Recording.Sampling.MinRate)
+	assert.Equal(t, 0.25, cfg.Recording.SamplingRate)
+}
+
 func TestFindConfigFile_ParentTraversal(t *testing.T) {
 	wd, _ := os.Getwd()
 	defer func() { _ = os.Chdir(wd) }()
