@@ -31,7 +31,7 @@ recording:
     mode: adaptive
     base_rate: 0.25
     min_rate: 0.05
-`), 0o644))
+`), 0o00))
 
 	require.NoError(t, Load(configPath))
 
@@ -43,6 +43,74 @@ recording:
 	require.NotNil(t, cfg.Recording.Sampling.MinRate)
 	assert.Equal(t, 0.05, *cfg.Recording.Sampling.MinRate)
 	assert.Equal(t, 0.25, cfg.Recording.SamplingRate)
+}
+
+func TestLegacyRecordingSamplingRateBackfillsNestedSamplingConfig(t *testing.T) {
+	defer Invalidate()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+recording:
+  sampling_rate: 0.25
+`), 0o600))
+
+	require.NoError(t, Load(configPath))
+
+	cfg, err := Get()
+	require.NoError(t, err)
+	assert.Equal(t, 0.25, cfg.Recording.SamplingRate)
+	assert.Equal(t, "fixed", cfg.Recording.Sampling.Mode)
+	require.NotNil(t, cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.25, *cfg.Recording.Sampling.BaseRate)
+	assert.Nil(t, cfg.Recording.Sampling.MinRate)
+}
+
+func TestRecordingSamplingRateEnvOverrideBeatsNestedBaseRate(t *testing.T) {
+	defer Invalidate()
+	t.Setenv("TUSK_RECORDING_SAMPLING_RATE", "0.5")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+recording:
+  sampling:
+    mode: adaptive
+    base_rate: 0.25
+    min_rate: 0.05
+`), 0o600))
+
+	require.NoError(t, Load(configPath))
+
+	cfg, err := Get()
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.5, *cfg.Recording.Sampling.BaseRate)
+	assert.Equal(t, 0.5, cfg.Recording.SamplingRate)
+	assert.Equal(t, "adaptive", cfg.Recording.Sampling.Mode)
+	require.NotNil(t, cfg.Recording.Sampling.MinRate)
+	assert.Equal(t, 0.05, *cfg.Recording.Sampling.MinRate)
+}
+
+func TestValidateRejectsInvalidRecordingSamplingMode(t *testing.T) {
+	cfg := &Config{
+		Service: ServiceConfig{
+			Port: 3000,
+			Communication: CommunicationConfig{
+				Type:    "auto",
+				TCPPort: 9001,
+			},
+		},
+		Recording: RecordingConfig{
+			Sampling: RecordingSamplingConfig{
+				Mode: "adapttive",
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "recording.sampling.mode must be 'fixed' or 'adaptive'")
 }
 
 func TestFindConfigFile_ParentTraversal(t *testing.T) {

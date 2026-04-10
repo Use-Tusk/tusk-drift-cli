@@ -172,6 +172,12 @@ func Load(configFile string) error {
 			if err := k.Set(configKey, val); err != nil {
 				return fmt.Errorf("error setting %s from env: %w", envKey, err)
 			}
+
+			if envKey == "TUSK_RECORDING_SAMPLING_RATE" {
+				if err := k.Set("recording.sampling.base_rate", val); err != nil {
+					return fmt.Errorf("error setting %s nested base rate from env: %w", envKey, err)
+				}
+			}
 		}
 	}
 
@@ -317,6 +323,11 @@ func (cfg *Config) Validate() error {
 	validSandboxModes := map[string]bool{"auto": true, "strict": true, "off": true}
 	if cfg.Replay.Sandbox.Mode != "" && !validSandboxModes[cfg.Replay.Sandbox.Mode] {
 		errs = append(errs, fmt.Errorf("replay.sandbox.mode must be 'auto', 'strict', or 'off', got %s", cfg.Replay.Sandbox.Mode))
+	}
+
+	validSamplingModes := map[string]bool{"fixed": true, "adaptive": true}
+	if cfg.Recording.Sampling.Mode != "" && !validSamplingModes[cfg.Recording.Sampling.Mode] {
+		errs = append(errs, fmt.Errorf("recording.sampling.mode must be 'fixed' or 'adaptive', got %s", cfg.Recording.Sampling.Mode))
 	}
 
 	if len(errs) > 0 {
