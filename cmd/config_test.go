@@ -72,9 +72,12 @@ func TestConfigSetCmd(t *testing.T) {
 	// Sandbox all config resolution paths across OSes:
 	// - Linux typically honors XDG_CONFIG_HOME
 	// - macOS uses HOME/Library/Application Support via os.UserConfigDir
+	// - Windows uses APPDATA/LOCALAPPDATA via os.UserConfigDir
 	sandbox := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", sandbox)
 	t.Setenv("HOME", sandbox)
+	t.Setenv("APPDATA", sandbox)
+	t.Setenv("LOCALAPPDATA", sandbox)
 
 	cfgPath := cliconfig.GetPath()
 	require.NotEmpty(t, cfgPath)
