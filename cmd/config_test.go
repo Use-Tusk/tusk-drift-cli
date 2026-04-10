@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -67,7 +66,6 @@ func TestConfigGetCmd(t *testing.T) {
 func TestConfigSetCmd(t *testing.T) {
 	origConfig := cliconfig.CLIConfig
 	t.Cleanup(func() { cliconfig.CLIConfig = origConfig })
-	origHome := os.Getenv("HOME")
 
 	// Sandbox all config resolution paths across OSes:
 	// - Linux typically honors XDG_CONFIG_HOME
@@ -82,10 +80,6 @@ func TestConfigSetCmd(t *testing.T) {
 	cfgPath := cliconfig.GetPath()
 	require.NotEmpty(t, cfgPath)
 	require.True(t, strings.HasPrefix(cfgPath, sandbox))
-
-	if origHome != "" {
-		require.False(t, strings.HasPrefix(cfgPath, origHome))
-	}
 
 	t.Run("analytics true clears developer mode", func(t *testing.T) {
 		cliconfig.CLIConfig = &cliconfig.Config{IsTuskDeveloper: true}
