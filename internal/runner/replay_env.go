@@ -28,6 +28,7 @@ var replayProcessEnvVarPrefixesToSkip = []string{
 	"RBENV_",
 	"SDKMAN_",
 	"VOLTA_",
+	"UV_",
 }
 
 func shouldSkipReplayEnvVarForProcess(key string) bool {
