@@ -68,6 +68,8 @@ type Server struct {
 	wg                     sync.WaitGroup
 	mu                     sync.RWMutex
 	connWriteMutex         sync.Mutex
+	activeConns            map[net.Conn]struct{}
+	activeConnsMu          sync.Mutex
 	sdkVersion             string
 	sdkConnected           bool
 	sdkConnectedChan       chan struct{}
@@ -176,6 +178,7 @@ func NewServer(serviceID string, cfg *config.ServiceConfig) (*Server, error) {
 		communicationType:  commType,
 		tcpPort:            cfg.Communication.TCPPort,
 		pendingRequests:    make(map[string]chan *core.SDKMessage),
+		activeConns:        make(map[net.Conn]struct{}),
 	}
 
 	return server, nil
@@ -308,6 +311,13 @@ func (ms *Server) Stop() error {
 	if ms.listener != nil {
 		_ = ms.listener.Close()
 	}
+
+	// Close all active connections so blocked reads unblock
+	ms.activeConnsMu.Lock()
+	for conn := range ms.activeConns {
+		_ = conn.Close()
+	}
+	ms.activeConnsMu.Unlock()
 
 	// Clean up socket file only for Unix sockets
 	if ms.communicationType == CommunicationUnix {
@@ -622,6 +632,10 @@ func (ms *Server) acceptConnections() {
 				continue
 			}
 
+			ms.activeConnsMu.Lock()
+			ms.activeConns[conn] = struct{}{}
+			ms.activeConnsMu.Unlock()
+
 			ms.wg.Add(1)
 			go ms.handleConnection(conn)
 		}
@@ -631,7 +645,13 @@ func (ms *Server) acceptConnections() {
 // handleConnection processes a single SDK connection
 func (ms *Server) handleConnection(conn net.Conn) {
 	defer ms.wg.Done()
-	defer func() { _ = conn.Close() }()
+
+	defer func() {
+		ms.activeConnsMu.Lock()
+		delete(ms.activeConns, conn)
+		ms.activeConnsMu.Unlock()
+		_ = conn.Close()
+	}()
 
 	for {
 		// Read message length (4 bytes)

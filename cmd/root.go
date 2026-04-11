@@ -185,6 +185,13 @@ func setupSignalHandling() {
 		go func() {
 			sig := <-c
 			fmt.Fprintf(os.Stderr, "Received %s signal, cleaning up\n", sig)
+
+			go func() {
+				<-c
+				fmt.Fprintf(os.Stderr, "\nForce exit\n")
+				os.Exit(2)
+			}()
+
 			runCleanup()
 			os.Exit(1)
 		}()
