@@ -31,6 +31,7 @@ recording:
     mode: adaptive
     base_rate: 0.25
     min_rate: 0.05
+    log_transitions: false
 `), 0o600))
 
 	require.NoError(t, Load(configPath))
@@ -42,6 +43,8 @@ recording:
 	assert.Equal(t, 0.25, *cfg.Recording.Sampling.BaseRate)
 	require.NotNil(t, cfg.Recording.Sampling.MinRate)
 	assert.Equal(t, 0.05, *cfg.Recording.Sampling.MinRate)
+	require.NotNil(t, cfg.Recording.Sampling.LogTransitions)
+	assert.False(t, *cfg.Recording.Sampling.LogTransitions)
 	assert.Equal(t, 0.25, cfg.Recording.SamplingRate)
 }
 
@@ -69,6 +72,7 @@ recording:
 func TestRecordingSamplingRateEnvOverrideBeatsNestedBaseRate(t *testing.T) {
 	defer Invalidate()
 	t.Setenv("TUSK_RECORDING_SAMPLING_RATE", "0.5")
+	t.Setenv("TUSK_RECORDING_SAMPLING_LOG_TRANSITIONS", "false")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -78,6 +82,7 @@ recording:
     mode: adaptive
     base_rate: 0.25
     min_rate: 0.05
+    log_transitions: true
 `), 0o600))
 
 	require.NoError(t, Load(configPath))
@@ -90,6 +95,8 @@ recording:
 	assert.Equal(t, "adaptive", cfg.Recording.Sampling.Mode)
 	require.NotNil(t, cfg.Recording.Sampling.MinRate)
 	assert.Equal(t, 0.05, *cfg.Recording.Sampling.MinRate)
+	require.NotNil(t, cfg.Recording.Sampling.LogTransitions)
+	assert.False(t, *cfg.Recording.Sampling.LogTransitions)
 }
 
 func TestValidateRejectsInvalidRecordingSamplingMode(t *testing.T) {
