@@ -336,6 +336,12 @@ For authentication in cloud mode, either use:
       <td>Lower bound for adaptive sampling after load shedding is applied. This is only defaulted in <code>adaptive</code> mode and remains unset in <code>fixed</code> mode.</td>
     </tr>
     <tr>
+      <td><code>recording.sampling.log_transitions</code></td>
+      <td>boolean</td>
+      <td><code>true</code></td>
+      <td>Whether the SDK should emit adaptive sampling transition logs. This is SDK-facing only and can be overridden by <code>TUSK_RECORDING_SAMPLING_LOG_TRANSITIONS</code>.</td>
+    </tr>
+    <tr>
       <td><code>recording.sampling_rate</code></td>
       <td>number</td>
       <td>0.1</td>
@@ -471,6 +477,7 @@ Configuration for code coverage collection. See [`docs/drift/coverage.md`](cover
 - `TUSK_API_URL` → `tusk_api.url`
 - `TUSK_RESULTS_DIR` → `results.dir`
 - `TUSK_RECORDING_SAMPLING_RATE` → `recording.sampling_rate`
+- `TUSK_RECORDING_SAMPLING_LOG_TRANSITIONS` → `recording.sampling.log_transitions`
 
 ## Minimal config examples
 

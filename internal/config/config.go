@@ -90,9 +90,10 @@ type ComparisonConfig struct {
 }
 
 type RecordingSamplingConfig struct {
-	Mode     string   `koanf:"mode"`
-	BaseRate *float64 `koanf:"base_rate"`
-	MinRate  *float64 `koanf:"min_rate"`
+	Mode           string   `koanf:"mode"`
+	BaseRate       *float64 `koanf:"base_rate"`
+	MinRate        *float64 `koanf:"min_rate"`
+	LogTransitions *bool    `koanf:"log_transitions"`
 }
 
 type RecordingConfig struct {
@@ -159,12 +160,13 @@ func Load(configFile string) error {
 
 	// Support environment variable overrides for specific config keys
 	envOverrides := map[string]string{
-		"TUSK_TRACES_DIR":              "traces.dir",
-		"TUSK_API_URL":                 "tusk_api.url",
-		"TUSK_AUTH0_DOMAIN":            "tusk_api.auth0_domain",
-		"TUSK_AUTH0_CLIENT_ID":         "tusk_api.auth0_client_id",
-		"TUSK_RESULTS_DIR":             "results.dir",
-		"TUSK_RECORDING_SAMPLING_RATE": "recording.sampling_rate",
+		"TUSK_TRACES_DIR":                         "traces.dir",
+		"TUSK_API_URL":                            "tusk_api.url",
+		"TUSK_AUTH0_DOMAIN":                       "tusk_api.auth0_domain",
+		"TUSK_AUTH0_CLIENT_ID":                    "tusk_api.auth0_client_id",
+		"TUSK_RESULTS_DIR":                        "results.dir",
+		"TUSK_RECORDING_SAMPLING_RATE":            "recording.sampling_rate",
+		"TUSK_RECORDING_SAMPLING_LOG_TRANSITIONS": "recording.sampling.log_transitions",
 	}
 
 	for envKey, configKey := range envOverrides {
@@ -244,6 +246,10 @@ func parseAndValidate() (*Config, error) {
 	if cfg.Recording.Sampling.MinRate == nil && cfg.Recording.Sampling.Mode == "adaptive" {
 		minRate := 0.001
 		cfg.Recording.Sampling.MinRate = &minRate
+	}
+	if cfg.Recording.Sampling.LogTransitions == nil {
+		defaultLogTransitions := true
+		cfg.Recording.Sampling.LogTransitions = &defaultLogTransitions
 	}
 	if cfg.Recording.ExportSpans == nil {
 		defaultExportSpans := false
