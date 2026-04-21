@@ -2,6 +2,8 @@ module github.com/Use-Tusk/tusk-cli
 
 go 1.25.0
 
+replace github.com/Use-Tusk/tusk-drift-schemas => ../tusk-drift-schemas
+
 require (
 	github.com/Use-Tusk/fence v0.1.36
 	github.com/Use-Tusk/tusk-drift-schemas v0.1.34
