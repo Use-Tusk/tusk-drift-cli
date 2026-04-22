@@ -120,11 +120,6 @@ func runReview(cmd *cobra.Command, args []string) error {
 		return &ExitCodeError{Code: 2, Err: err}
 	}
 
-	client, authOptions, err := setupReviewCloud()
-	if err != nil {
-		return err
-	}
-
 	patch, err := review.BuildPatch(ctx, review.PatchOptions{
 		RepoRoot:        repoRoot,
 		Base:            reviewBase,
@@ -138,6 +133,11 @@ func runReview(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		return mapPatchError(err)
+	}
+
+	client, authOptions, err := setupReviewCloud()
+	if err != nil {
+		return err
 	}
 
 	// Quick stderr header for non-TTY callers so they know something's happening
@@ -216,6 +216,10 @@ func runReview(cmd *cobra.Command, args []string) error {
 		// Backend already rendered the failure reason into display_message/
 		// display_json which we just wrote to stdout. Bubble up a sentinel
 		// error (no duplicate stderr) purely so the process exits with code 1.
+		// SilenceErrors prevents Cobra from printing a stray "Error: \n" line
+		// for errSilentFail (whose Error() returns ""); normal errors from
+		// earlier returns are still printed by Cobra.
+		cmd.SilenceErrors = true
 		return errSilentFail
 	case backend.CodeReviewRunStatus_CODE_REVIEW_RUN_STATUS_CANCELLED:
 		return nil

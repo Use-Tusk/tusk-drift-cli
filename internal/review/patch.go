@@ -109,18 +109,21 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 		stderr = os.Stderr
 	}
 
-	untracked, err := listUntracked(opts.RepoRoot)
+	untracked, err := listUntracked(ctx, opts.RepoRoot)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(untracked) > 0 {
-		if err := gitRun(opts.RepoRoot, append([]string{"add", "-N", "--"}, untracked...)...); err != nil {
+		if err := gitRun(ctx, opts.RepoRoot, append([]string{"add", "-N", "--"}, untracked...)...); err != nil {
 			return nil, fmt.Errorf("git add -N: %w", err)
 		}
 		restore := func() {
-			// Idempotent — if a path is no longer staged, this is a no-op.
-			_ = gitRun(opts.RepoRoot, append([]string{"restore", "--staged", "--"}, untracked...)...)
+			// Cleanup must use a fresh context — ctx may already be cancelled
+			// (Ctrl+C) at the time this runs, and we still need the restore
+			// to succeed. Idempotent — if a path is no longer staged, this is
+			// a no-op.
+			_ = gitRun(context.Background(), opts.RepoRoot, append([]string{"restore", "--staged", "--"}, untracked...)...)
 		}
 		if opts.RegisterCleanup != nil {
 			opts.RegisterCleanup(restore)
@@ -129,7 +132,7 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 		defer restore()
 	}
 
-	baseSha, baseRef, err := resolveBase(opts.RepoRoot, opts.Base)
+	baseSha, baseRef, err := resolveBase(ctx, opts.RepoRoot, opts.Base)
 	if err != nil {
 		return nil, err
 	}
@@ -146,14 +149,15 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 
 	// Generate binary patch.
 	diffArgs := append([]string{"diff", "--binary", baseSha, "--"}, pathspecs...)
-	patchBytes, err := gitOutput(opts.RepoRoot, diffArgs...)
+	patchBytes, err := gitOutput(ctx, opts.RepoRoot, diffArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --binary: %w", err)
 	}
 
-	// Generate numstat for per-file line counts.
-	numstatArgs := append([]string{"diff", "--numstat", baseSha, "--"}, pathspecs...)
-	numstatBytes, err := gitOutput(opts.RepoRoot, numstatArgs...)
+	// Generate numstat for per-file line counts. `-z` writes NUL-terminated
+	// records so paths containing spaces or other whitespace survive intact.
+	numstatArgs := append([]string{"diff", "--numstat", "-z", baseSha, "--"}, pathspecs...)
+	numstatBytes, err := gitOutput(ctx, opts.RepoRoot, numstatArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --numstat: %w", err)
 	}
@@ -231,8 +235,8 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 
 // listUntracked returns the set of untracked (and not-ignored) paths under
 // repoRoot, suitable for `git add -N`.
-func listUntracked(repoRoot string) ([]string, error) {
-	out, err := gitOutput(repoRoot, "status", "--porcelain=v1", "--untracked-files=normal")
+func listUntracked(ctx context.Context, repoRoot string) ([]string, error) {
+	out, err := gitOutput(ctx, repoRoot, "status", "--porcelain=v1", "--untracked-files=normal")
 	if err != nil {
 		return nil, fmt.Errorf("git status: %w", err)
 	}
@@ -258,13 +262,17 @@ func listUntracked(repoRoot string) ([]string, error) {
 // resolveBase turns the user-provided base (or empty → origin/HEAD auto-detect)
 // into a resolved commit SHA. Returns (sha, ref) where ref is the original
 // input (informational) or "origin/HEAD" for auto-detection.
-func resolveBase(repoRoot string, userBase string) (string, string, error) {
+func resolveBase(ctx context.Context, repoRoot string, userBase string) (string, string, error) {
 	if userBase != "" {
-		out, err := gitOutput(repoRoot, "rev-parse", "--verify", userBase+"^{commit}")
+		out, err := gitOutput(ctx, repoRoot, "rev-parse", "--verify", userBase+"^{commit}")
 		if err != nil {
+			// `git rev-parse --verify` writes its failure reason to stderr
+			// (e.g. "fatal: Needed a single revision"), which `gitOutput`
+			// has already captured into err. `out` (stdout) is empty on
+			// failure — using it here would produce an empty reason.
 			return "", "", &BaseResolutionError{
 				Message: fmt.Sprintf("couldn't resolve --base %q to a commit: %s\n\nTry:\n  tusk review --base origin/main",
-					userBase, strings.TrimSpace(string(out))),
+					userBase, strings.TrimSpace(err.Error())),
 			}
 		}
 		return strings.TrimSpace(string(out)), userBase, nil
@@ -274,7 +282,7 @@ func resolveBase(repoRoot string, userBase string) (string, string, error) {
 	if err := CheckOriginHead(repoRoot); err != nil {
 		return "", "", err
 	}
-	baseOut, err := gitOutput(repoRoot, "merge-base", "origin/HEAD", "HEAD")
+	baseOut, err := gitOutput(ctx, repoRoot, "merge-base", "origin/HEAD", "HEAD")
 	if err != nil {
 		shallow := isShallow(repoRoot)
 		msg := "couldn't determine base commit for this branch.\n\n"
@@ -292,18 +300,37 @@ func resolveBase(repoRoot string, userBase string) (string, string, error) {
 	return strings.TrimSpace(string(baseOut)), "origin/HEAD", nil
 }
 
-// parseNumstat parses the output of `git diff --numstat` into per-file
+// parseNumstat parses the output of `git diff --numstat -z` into per-file
 // summaries. Binary files show "- -" for their counts; we record them as
 // zero changed lines but still include them in the file count.
+//
+// With `-z`, records are NUL-terminated. The added/deleted counts are
+// tab-delimited, followed by either:
+//   - a single path (non-renamed), OR
+//   - three NUL-terminated tokens: "<added>\t<deleted>\t" + "<old>\0<new>\0"
+//     for renames/copies (the `-M`/`-C` case — safe to handle even if we
+//     don't explicitly enable those flags, since users can via git config).
+//
+// NUL-terminated parsing is mandatory for correctness: `git diff --numstat`
+// without `-z` double-quotes paths containing special characters, and paths
+// with embedded whitespace would otherwise be split by any field-based
+// parser.
 func parseNumstat(out []byte) []FileSummary {
 	var summaries []FileSummary
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	records := strings.Split(string(out), "\x00")
+	i := 0
+	for i < len(records) {
+		rec := records[i]
+		if rec == "" {
+			i++
 			continue
 		}
-		parts := strings.Fields(line)
+		// The first record contains "<added>\t<deleted>\t<path-or-empty>".
+		// If the trailing path is empty, the next two records are the
+		// rename's old and new paths.
+		parts := strings.SplitN(rec, "\t", 3)
 		if len(parts) < 3 {
+			i++
 			continue
 		}
 		added := 0
@@ -314,9 +341,22 @@ func parseNumstat(out []byte) []FileSummary {
 		if n, err := strconv.Atoi(parts[1]); err == nil {
 			del = n
 		}
-		// Path may be a single token or a rename "old => new"; use the last
-		// token which is the post-rename path for size-cap reporting.
-		path := parts[len(parts)-1]
+		path := parts[2]
+		if path == "" {
+			// Rename/copy: next two records are "old\0new\0". Use the new path.
+			if i+2 < len(records) {
+				path = records[i+2]
+				i += 3
+			} else {
+				i++
+				continue
+			}
+		} else {
+			i++
+		}
+		if path == "" {
+			continue
+		}
 		summaries = append(summaries, FileSummary{
 			Path:       path,
 			AddedLines: added,
@@ -406,9 +446,10 @@ func humanBytes(n int) string {
 }
 
 // gitOutput runs git in repoRoot and returns combined stdout (stderr is
-// captured and included in the error on failure).
-func gitOutput(repoRoot string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", args...) //nolint:gosec // args are controlled
+// captured and included in the error on failure). The process is launched
+// with ctx so callers can cancel or time out in-flight git operations.
+func gitOutput(ctx context.Context, repoRoot string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // args are controlled
 	cmd.Dir = repoRoot
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -420,7 +461,7 @@ func gitOutput(repoRoot string, args ...string) ([]byte, error) {
 }
 
 // gitRun runs git and returns any error (with stderr captured in the message).
-func gitRun(repoRoot string, args ...string) error {
-	_, err := gitOutput(repoRoot, args...)
+func gitRun(ctx context.Context, repoRoot string, args ...string) error {
+	_, err := gitOutput(ctx, repoRoot, args...)
 	return err
 }

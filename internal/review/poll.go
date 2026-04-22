@@ -39,11 +39,16 @@ func Poll(ctx context.Context, client *api.TuskClient, auth api.AuthOptions, run
 	if opts.Interval <= 0 {
 		opts.Interval = 2 * time.Second
 	}
-	var stderr io.Writer = os.Stderr
+	// TTY detection must track whichever file descriptor we're actually
+	// writing to — checking os.Stderr while writing to an overridden
+	// opts.Stderr (e.g. a test pipe) would emit spinner escape sequences
+	// into the wrong destination.
+	stderrFile := os.Stderr
 	if opts.Stderr != nil {
-		stderr = opts.Stderr
+		stderrFile = opts.Stderr
 	}
-	stderrIsTTY := !opts.Quiet && isatty.IsTerminal(os.Stderr.Fd())
+	var stderr io.Writer = stderrFile
+	stderrIsTTY := !opts.Quiet && isatty.IsTerminal(stderrFile.Fd())
 
 	ticker := time.NewTicker(opts.Interval)
 	defer ticker.Stop()

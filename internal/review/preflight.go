@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/Use-Tusk/tusk-cli/internal/log"
 )
 
 // PreflightError is returned for user-actionable pre-flight failures (e.g.
@@ -97,11 +99,43 @@ func Preflight(repoRoot string) error {
 	// --repo + --base bypass that this command is designed to allow.
 
 	// Detached HEAD is a warning, not a refusal.
-	if err := runGitSilent(repoRoot, "symbolic-ref", "-q", "HEAD"); err != nil {
+	//
+	// `git symbolic-ref -q HEAD` exits 1 *only* when HEAD is not a symbolic
+	// ref (i.e. detached); other failure modes (corrupt repo, git missing)
+	// exit 128. We only want to surface the detached-head warning in the
+	// exit-1 case — treating any non-zero exit as "detached" would
+	// mis-diagnose those other failures.
+	if detached, err := isDetachedHEAD(repoRoot); err != nil {
+		// Don't block the command on an unexpected symbolic-ref failure;
+		// the real patch-generation step will surface a better error if
+		// the repo is broken. Do log for debuggability.
+		log.Debug("symbolic-ref HEAD check failed", "error", err)
+	} else if detached {
 		_, _ = fmt.Fprintln(os.Stderr, "warning: HEAD is detached; review results may look odd.")
 	}
 
 	return nil
+}
+
+// isDetachedHEAD reports whether HEAD is currently detached. Returns
+// (false, err) for unexpected git failures so callers can distinguish
+// "definitely not detached" from "can't tell".
+func isDetachedHEAD(repoRoot string) (bool, error) {
+	cmd := exec.Command("git", "symbolic-ref", "-q", "HEAD") //nolint:gosec
+	cmd.Dir = repoRoot
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			// Exit 1 with `-q` is the documented "not a symbolic ref" signal.
+			if exitErr.ExitCode() == 1 {
+				return true, nil
+			}
+		}
+		return false, fmt.Errorf("git symbolic-ref -q HEAD: %w (%s)", err, strings.TrimSpace(stderr.String()))
+	}
+	return false, nil
 }
 
 // CheckOriginHead confirms that `origin/HEAD` is set on this clone, which

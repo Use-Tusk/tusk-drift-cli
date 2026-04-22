@@ -62,6 +62,8 @@ func runReviewStatus(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if final.GetStatus() == backend.CodeReviewRunStatus_CODE_REVIEW_RUN_STATUS_FAILED {
+			// Silence Cobra's "Error:" prefix for the empty errSilentFail.
+			cmd.SilenceErrors = true
 			return errSilentFail
 		}
 		return nil
@@ -77,6 +79,7 @@ func runReviewStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if resp.GetStatus() == backend.CodeReviewRunStatus_CODE_REVIEW_RUN_STATUS_FAILED {
+		cmd.SilenceErrors = true
 		return errSilentFail
 	}
 	return nil
