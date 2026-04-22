@@ -174,9 +174,17 @@ func runReview(cmd *cobra.Command, args []string) error {
 			return &ExitCodeError{Code: 2, Err: err}
 		}
 		if api.IsRepoNotFoundError(err) {
-			// SOHAN-TODO: audit this error message
 			return &ExitCodeError{Code: 2, Err: fmt.Errorf(
-				"this repo (%s/%s) is not connected to Tusk.\nConnect it at https://app.usetusk.ai/onboarding, or pass --repo to target a different connected repo.",
+				"repo %s/%s is not connected to Tusk under your current org.\n\n"+
+					"If this is the repo you meant to review:\n"+
+					"  • Connect it at https://app.usetusk.ai/repos\n"+
+					"    (installs the GitHub/GitLab app and grants access)\n"+
+					"  • Or, if you belong to multiple Tusk orgs, switch:\n"+
+					"      tusk auth select-org\n\n"+
+					"If this is not the repo you meant:\n"+
+					"  • Pass --repo owner/name to target a different connected repo\n"+
+					"  • Check whether origin is a fork (git remote -v); you likely\n"+
+					"    want the upstream, not the fork",
 				owner, name)}
 		}
 		if api.IsPatchInvalidError(err) {
