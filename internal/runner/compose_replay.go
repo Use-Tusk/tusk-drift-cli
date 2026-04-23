@@ -67,7 +67,17 @@ func createReplayComposeOverrideFile(envVars map[string]string, groupName string
 	if safeGroup == "" {
 		safeGroup = "default"
 	}
-	tempFile, err := os.CreateTemp("", fmt.Sprintf("tusk-replay-env-override-%s-*.yml", safeGroup))
+	// Write under .tusk/ (project cwd) rather than /tmp. Fence's sandbox
+	// overmounts /tmp with a fresh tmpfs (bwrap --tmpfs /tmp), so files
+	// created there by the CLI before launching the sandboxed service are
+	// invisible to the sandboxed docker client and the -f flag fails with
+	// "no such file or directory". The project cwd, including .tusk/, is
+	// reachable inside the sandbox via the recursive root bind.
+	overrideDir := filepath.Join(utils.GetTuskRoot(), utils.TuskDirName, "tmp")
+	if err := os.MkdirAll(overrideDir, 0o700); err != nil {
+		return "", fmt.Errorf("failed to create replay compose override dir: %w", err)
+	}
+	tempFile, err := os.CreateTemp(overrideDir, fmt.Sprintf("tusk-replay-env-override-%s-*.yml", safeGroup))
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary replay compose override file: %w", err)
 	}
