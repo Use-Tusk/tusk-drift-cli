@@ -32,13 +32,25 @@ type FileSummary struct {
 }
 
 // PatchResult is what BuildPatch returns on success.
+//
+// Terminology (see v2-plan.md "Three roles of SHAs / refs"):
+//   - LastPushedSha is the commit the sandbox will clone. It's guaranteed
+//     reachable on origin because the CLI resolves it from a remote-tracking
+//     ref (@{u}) or, for branches with no upstream, from merge-base with
+//     origin/HEAD. The uploaded patch is the diff between this SHA and the
+//     working tree.
+//   - Review scope is NOT set from this SHA. The backend picks the review
+//     base branch (open PR's base, or repo default) server-side and diffs
+//     the reconstructed working tree against that.
 type PatchResult struct {
-	Patch        []byte
-	BaseSha      string
-	BaseRef      string // The ref the base resolved from (e.g. "origin/main"), informational.
-	ChangedFiles []FileSummary
-	ChangedLines int
-	FileCount    int
+	Patch         []byte
+	LastPushedSha string
+	BaseRef       string // The ref label the pivot resolved from (e.g. "@{u}", "origin/HEAD", or the user's --base value).
+	BranchName    string // Current branch (empty string on detached HEAD).
+	LocalHeadSha  string // git rev-parse HEAD — informational, sent to backend for audit.
+	ChangedFiles  []FileSummary
+	ChangedLines  int
+	FileCount     int
 }
 
 // ErrEmptyPatch is returned when the working tree diff against the base is
@@ -132,9 +144,21 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 		defer restore()
 	}
 
-	baseSha, baseRef, err := resolveBase(ctx, opts.RepoRoot, opts.Base)
+	lastPushedSha, baseRef, err := resolveBase(ctx, opts.RepoRoot, opts.Base)
 	if err != nil {
 		return nil, err
+	}
+
+	// Branch name and local HEAD SHA — sent to the backend so it can look up
+	// the open PR for this branch (seat resolution, base-branch defaulting,
+	// PR context). Detached HEAD → empty branch name; backend tolerates it.
+	branchName, err := currentBranchName(ctx, opts.RepoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve current branch: %w", err)
+	}
+	localHeadSha, err := resolveLocalHead(ctx, opts.RepoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve HEAD: %w", err)
 	}
 
 	// Merge .tuskignore entries with --exclude flags.
@@ -148,7 +172,7 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 	pathspecs := BuildPathspecExclusions(extraExcludes, opts.Includes)
 
 	// Generate binary patch.
-	diffArgs := append([]string{"diff", "--binary", baseSha, "--"}, pathspecs...)
+	diffArgs := append([]string{"diff", "--binary", lastPushedSha, "--"}, pathspecs...)
 	patchBytes, err := gitOutput(ctx, opts.RepoRoot, diffArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --binary: %w", err)
@@ -156,7 +180,7 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 
 	// Generate numstat for per-file line counts. `-z` writes NUL-terminated
 	// records so paths containing spaces or other whitespace survive intact.
-	numstatArgs := append([]string{"diff", "--numstat", "-z", baseSha, "--"}, pathspecs...)
+	numstatArgs := append([]string{"diff", "--numstat", "-z", lastPushedSha, "--"}, pathspecs...)
 	numstatBytes, err := gitOutput(ctx, opts.RepoRoot, numstatArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --numstat: %w", err)
@@ -224,12 +248,14 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 	}
 
 	return &PatchResult{
-		Patch:        patchBytes,
-		BaseSha:      baseSha,
-		BaseRef:      baseRef,
-		ChangedFiles: files,
-		ChangedLines: totalLines,
-		FileCount:    fileCount,
+		Patch:         patchBytes,
+		LastPushedSha: lastPushedSha,
+		BaseRef:       baseRef,
+		BranchName:    branchName,
+		LocalHeadSha:  localHeadSha,
+		ChangedFiles:  files,
+		ChangedLines:  totalLines,
+		FileCount:     fileCount,
 	}, nil
 }
 
@@ -259,17 +285,26 @@ func listUntracked(ctx context.Context, repoRoot string) ([]string, error) {
 	return untracked, nil
 }
 
-// resolveBase turns the user-provided base (or empty → origin/HEAD auto-detect)
-// into a resolved commit SHA. Returns (sha, ref) where ref is the original
-// input (informational) or "origin/HEAD" for auto-detection.
+// resolveBase picks the commit the sandbox will clone (and that the upload
+// patch is relative to) — NOT the review base branch. v2 semantics: per the
+// v2-plan "Three roles of SHAs" table, this is the `last_pushed_sha`.
+//
+// Resolution order:
+//  1. Explicit --base <ref>: user override. Resolved via `git rev-parse`.
+//  2. @{u} (upstream tracking ref): preferred auto-detect. If set, this is
+//     the commit this branch currently points at on origin, guaranteed
+//     reachable for the sandbox clone.
+//  3. Fallback: `merge-base origin/HEAD HEAD` — used when the branch has no
+//     upstream (never pushed / tracking not configured). Requires
+//     origin/HEAD to be set on the clone; this is the only path that
+//     invokes CheckOriginHead.
+//
+// Returns (sha, refLabel) where refLabel is a short human-readable label
+// for the stderr header: the user's --base string, "@{u}", or "origin/HEAD".
 func resolveBase(ctx context.Context, repoRoot string, userBase string) (string, string, error) {
 	if userBase != "" {
 		out, err := gitOutput(ctx, repoRoot, "rev-parse", "--verify", userBase+"^{commit}")
 		if err != nil {
-			// `git rev-parse --verify` writes its failure reason to stderr
-			// (e.g. "fatal: Needed a single revision"), which `gitOutput`
-			// has already captured into err. `out` (stdout) is empty on
-			// failure — using it here would produce an empty reason.
 			return "", "", &BaseResolutionError{
 				Message: fmt.Sprintf("couldn't resolve --base %q to a commit: %s\n\nTry:\n  tusk review --base origin/main",
 					userBase, strings.TrimSpace(err.Error())),
@@ -278,7 +313,13 @@ func resolveBase(ctx context.Context, repoRoot string, userBase string) (string,
 		return strings.TrimSpace(string(out)), userBase, nil
 	}
 
-	// Auto-detect via origin/HEAD.
+	// Preferred: upstream tracking ref. Only works if the branch was pushed
+	// (or configured to track a remote branch).
+	if sha, err := resolveUpstream(ctx, repoRoot); err == nil {
+		return sha, "@{u}", nil
+	}
+
+	// Fallback: merge-base with origin's default branch. Requires origin/HEAD.
 	if err := CheckOriginHead(repoRoot); err != nil {
 		return "", "", err
 	}
@@ -286,18 +327,64 @@ func resolveBase(ctx context.Context, repoRoot string, userBase string) (string,
 	if err != nil {
 		shallow := isShallow(repoRoot)
 		msg := "couldn't determine base commit for this branch.\n\n"
-		msg += "Cause: `git merge-base origin/HEAD HEAD` failed — this branch may not share history with origin's default branch."
+		msg += "Cause: your branch has no upstream (try `git push -u origin <branch>`) and `git merge-base origin/HEAD HEAD` also failed."
 		if shallow {
-			msg += " Also: this is a shallow clone."
+			msg += " Additionally, this is a shallow clone."
 		}
 		msg += "\n\nThings to try:"
 		if shallow {
 			msg += "\n  • git fetch --unshallow"
 		}
-		msg += "\n  • Pass the base explicitly: tusk review --base <branch-or-sha>"
+		msg += "\n  • Push this branch so its upstream is set: git push -u origin <branch>"
+		msg += "\n  • Or pass the base explicitly: tusk review --base <branch-or-sha>"
 		return "", "", &BaseResolutionError{Message: msg}
 	}
 	return strings.TrimSpace(string(baseOut)), "origin/HEAD", nil
+}
+
+// resolveUpstream returns the commit SHA that this branch's upstream
+// (`@{u}`) currently points at. Non-nil error = no upstream configured or
+// the ref has gone away; callers treat that as "fall through to
+// merge-base." Never produces a BaseResolutionError — the failure here is
+// expected whenever the branch is unpushed.
+func resolveUpstream(ctx context.Context, repoRoot string) (string, error) {
+	out, err := gitOutput(ctx, repoRoot, "rev-parse", "--verify", "@{u}")
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(string(out))
+	if sha == "" {
+		return "", fmt.Errorf("empty @{u} resolution")
+	}
+	return sha, nil
+}
+
+// currentBranchName returns the current branch (e.g. "feature/foo"), or an
+// empty string on detached HEAD. Anything else (git missing, broken repo)
+// is returned as an error.
+//
+// Kept in `internal/review` so this package stays self-contained — the
+// cmd-package `getCurrentGitBranch` helper in unit_helpers.go does similar
+// work but treats detached HEAD as a hard error, which we don't want here:
+// v2 spec explicitly tolerates detached HEAD on the CLI side (the backend
+// resolves PR context via branch name when available, repo default otherwise).
+func currentBranchName(ctx context.Context, repoRoot string) (string, error) {
+	out, err := gitOutput(ctx, repoRoot, "branch", "--show-current")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// resolveLocalHead returns `git rev-parse HEAD` — the full SHA of whatever
+// commit the working tree is currently checked out on. Used only for audit;
+// the backend records it on LocalCheckCommit.
+func resolveLocalHead(ctx context.Context, repoRoot string) (string, error) {
+	out, err := gitOutput(ctx, repoRoot, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // parseNumstat parses the output of `git diff --numstat -z` into per-file

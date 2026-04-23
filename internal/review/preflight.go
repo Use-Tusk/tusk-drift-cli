@@ -83,7 +83,7 @@ func Preflight(repoRoot string) error {
 		if _, err := os.Stat(op.path); err == nil {
 			return &PreflightError{
 				Message: fmt.Sprintf(
-					"working tree is mid-%s. Finish (`%s`) before running `tusk review`.",
+					"working tree is mid-%s. Finish (`%s`) before running `tusk review run`.",
 					op.name, op.next),
 			}
 		}

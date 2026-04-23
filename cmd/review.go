@@ -32,32 +32,36 @@ var (
 	reviewJSON        bool
 	reviewOutput      string
 	reviewQuiet       bool
+	reviewNoPoll      bool
 	// Used by the status subcommand only.
 	reviewStatusWatch bool
 )
 
+// reviewCmd is a parent group only — subcommands (run, status) do the work.
+// This matches the tusk unit / tusk drift pattern and leaves room for future
+// subcommands (cancel, list, resolve, ...) without the ambiguity of a
+// top-level command that's both runnable and a group.
 var reviewCmd = &cobra.Command{
 	Use:          "review",
-	Short:        "Run Tusk code review on your local working tree",
+	Short:        "Commands for Tusk code review workflows",
 	Long:         utils.RenderMarkdown(reviewOverviewContent),
 	SilenceUsage: true,
-	RunE:         runReview,
 }
 
 func init() {
 	rootCmd.AddCommand(reviewCmd)
-	bindReviewFlags(reviewCmd)
 }
 
 func bindReviewFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&reviewRepo, "repo", "", "Repository in owner/name format (defaults to git origin remote)")
-	cmd.Flags().StringVar(&reviewBase, "base", "", "Base ref or SHA to diff against (defaults to merge-base with origin/HEAD)")
+	cmd.Flags().StringVar(&reviewBase, "base", "", "Override the clone pivot (defaults to your branch's upstream @{u}, then merge-base with origin/HEAD)")
 	cmd.Flags().StringVar(&reviewMinSeverity, "min-severity", "", "Minimum severity to surface: low|medium|high|critical")
 	cmd.Flags().StringArrayVar(&reviewExcludes, "exclude", nil, "Extra path glob(s) to exclude from the patch (repeatable)")
 	cmd.Flags().StringArrayVar(&reviewIncludes, "include", nil, "Cancel a default skip for matching files (repeatable)")
 	cmd.Flags().BoolVar(&reviewJSON, "json", false, "Write the result as JSON (to stdout or --output)")
 	cmd.Flags().StringVar(&reviewOutput, "output", "", "Write the result to a file instead of stdout")
 	cmd.Flags().BoolVar(&reviewQuiet, "quiet", false, "Suppress stderr progress output")
+	cmd.Flags().BoolVar(&reviewNoPoll, "no-poll", false, "Submit the review and exit immediately; check status later via 'tusk review status <run-id>'")
 	cmd.Flags().SortFlags = false
 }
 
@@ -142,26 +146,30 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	// Quick stderr header for non-TTY callers so they know something's happening
 	// even before the first progress poll. The backend will replace this with
-	// richer phase text once it starts rendering.
+	// richer phase text once it starts rendering. Note the "last pushed" label
+	// — this is the clone pivot (what the sandbox fetches), NOT the review
+	// base. The backend picks the review base branch server-side.
 	if !reviewQuiet {
 		baseLabel := patch.BaseRef
 		if baseLabel == "" {
-			baseLabel = patch.BaseSha
+			baseLabel = patch.LastPushedSha
 		}
-		shortSha := patch.BaseSha
+		shortSha := patch.LastPushedSha
 		if len(shortSha) > 7 {
 			shortSha = shortSha[:7]
 		}
-		log.Stderrln(fmt.Sprintf("Reviewing %d lines across %d files (base: %s @ %s)",
+		log.Stderrln(fmt.Sprintf("Reviewing %d lines across %d files (last pushed: %s @ %s)",
 			patch.ChangedLines, patch.FileCount, baseLabel, shortSha))
 	}
 
 	createReq := &backend.CreateLocalCodeReviewRunRequest{
-		OwnerName:  owner,
-		RepoName:   name,
-		BaseSha:    patch.BaseSha,
-		Patch:      patch.Patch,
-		CliVersion: fmt.Sprintf("tusk-cli/%s", version.Version),
+		OwnerName:     owner,
+		RepoName:      name,
+		LastPushedSha: patch.LastPushedSha,
+		Patch:         patch.Patch,
+		CliVersion:    fmt.Sprintf("tusk-cli/%s", version.Version),
+		BranchName:    patch.BranchName,
+		LocalHeadSha:  patch.LocalHeadSha,
 	}
 	if reviewMinSeverity != "" {
 		s := reviewMinSeverity
@@ -190,7 +198,31 @@ func runReview(cmd *cobra.Command, args []string) error {
 		if api.IsPatchInvalidError(err) {
 			return &ExitCodeError{Code: 2, Err: err}
 		}
+		if api.IsNoSeatError(err) {
+			// Backend already produced the tailored remediation text
+			// (JWT-without-linked-username vs API-key-without-PR vs
+			// no-active-seat). Render verbatim.
+			return &ExitCodeError{Code: 2, Err: err}
+		}
+		if api.IsNotAuthorizedError(err) {
+			// Client's plan doesn't have the code-review feature. Backend
+			// message already points at the billing page — render verbatim.
+			return &ExitCodeError{Code: 2, Err: err}
+		}
 		return formatApiError(err)
+	}
+
+	// --no-poll: submit and exit. Skip cancellation-cleanup registration
+	// entirely — the backend run is now independent of this CLI process,
+	// and Ctrl+C shouldn't reach back and cancel it.
+	if reviewNoPoll {
+		if err := writeRunIdResult(runID, reviewJSON, reviewOutput); err != nil {
+			return err
+		}
+		if !reviewQuiet {
+			log.Stderrln(fmt.Sprintf("Run submitted. Check status with: tusk review status %s", runID))
+		}
+		return nil
 	}
 
 	// Cancellation cleanup MUST be registered before the poll loop so that
@@ -263,7 +295,7 @@ func mapPatchError(err error) error {
 		for _, p := range submodule.Paths {
 			lines = append(lines, "  "+p)
 		}
-		lines = append(lines, "\nCommit submodule updates separately, or exclude them via:\n  tusk review --exclude '<path>/**'")
+		lines = append(lines, "\nCommit submodule updates separately, or exclude them via:\n  tusk review run --exclude '<path>/**'")
 		return &ExitCodeError{Code: 2, Err: errors.New(strings.Join(lines, "\n"))}
 	}
 	return err
@@ -281,6 +313,39 @@ func formatTopContributors(files []review.FileSummary) string {
 	}
 	sb.WriteString("\nAdd these to .tuskignore or pass --exclude '<glob>' to skip them.")
 	return sb.String()
+}
+
+// writeRunIdResult is used by --no-poll: write just the run id to the
+// selected sink so consumers can pipe it into `tusk review status`. In
+// --json mode, wraps it in `{"runId": "..."}` for programmatic callers.
+func writeRunIdResult(runID string, jsonMode bool, outputPath string) error {
+	out, cleanup, err := openOutputSink(outputPath)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	if jsonMode {
+		payload, _ := json.Marshal(map[string]string{"runId": runID})
+		_, err := fmt.Fprintln(out, string(payload))
+		return err
+	}
+	_, err = fmt.Fprintln(out, runID)
+	return err
+}
+
+// openOutputSink returns a writer (plus a cleanup fn) for the given output
+// path. Empty path → os.Stdout with a no-op cleanup. Non-empty → create +
+// truncate + return a cleanup that closes the file.
+func openOutputSink(outputPath string) (*os.File, func(), error) {
+	if outputPath == "" {
+		return os.Stdout, func() {}, nil
+	}
+	f, err := os.Create(outputPath) //nolint:gosec // user-specified path
+	if err != nil {
+		return nil, nil, fmt.Errorf("open --output: %w", err)
+	}
+	return f, func() { _ = f.Close() }, nil
 }
 
 // writeResult writes the backend-rendered final output to the selected sink
