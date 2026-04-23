@@ -83,6 +83,7 @@ const (
 	TestRunServiceAPIPath    = "/api/drift/test_run_service"
 	ClientServiceAPIPath     = "/api/drift/client_service"
 	SpanExportServiceAPIPath = "/api/drift/tusk.drift.backend.v1.SpanExportService"
+	CodeReviewServiceAPIPath = "/api/drift/code_review_service"
 )
 
 // GetBaseURL returns the API base URL with the following priority:
@@ -234,6 +235,11 @@ func (c *TuskClient) makeClientServiceRequest(ctx context.Context, endpoint stri
 
 	// Client service requests are typically simple requests that don't need retries
 	return c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, endpoint, req, resp, auth, DefaultRetryConfig(0))
+}
+
+func (c *TuskClient) makeCodeReviewServiceRequest(ctx context.Context, endpoint string, req proto.Message, resp proto.Message, auth AuthOptions, config RetryConfig) error {
+	fullServiceAPIPath := c.baseURL + CodeReviewServiceAPIPath
+	return c.makeProtoRequestWithRetryConfig(ctx, fullServiceAPIPath, endpoint, req, resp, auth, config)
 }
 
 // SkippableError is returned for errors that should be treated as a no-op in CI mode

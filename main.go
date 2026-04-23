@@ -16,6 +16,6 @@ func main() {
 	analytics.GlobalTracker.Close()
 
 	if err != nil {
-		os.Exit(1)
+		os.Exit(cmd.ExitCodeOf(err))
 	}
 }
