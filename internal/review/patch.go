@@ -45,7 +45,7 @@ type FileSummary struct {
 type PatchResult struct {
 	Patch         []byte
 	LastPushedSha string
-	BaseRef       string // The ref label the pivot resolved from (e.g. "@{u}", "origin/HEAD", or the user's --base value).
+	BaseRef       string // The ref label the pivot resolved from ("@{u}" or "origin/HEAD").
 	BranchName    string // Current branch (empty string on detached HEAD).
 	LocalHeadSha  string // git rev-parse HEAD — informational, sent to backend for audit.
 	ChangedFiles  []FileSummary
@@ -99,7 +99,6 @@ func IsBaseResolutionError(err error) bool {
 // PatchOptions drives BuildPatch.
 type PatchOptions struct {
 	RepoRoot        string
-	Base            string // user-provided --base ref/sha; empty → auto-detect via origin/HEAD
 	ExtraExcludes   []string
 	Includes        []string
 	RegisterCleanup func(fn func()) // typically cmd.RegisterCleanup; may be nil for tests
@@ -144,7 +143,7 @@ func BuildPatch(ctx context.Context, opts PatchOptions) (*PatchResult, error) {
 		defer restore()
 	}
 
-	lastPushedSha, baseRef, err := resolveBase(ctx, opts.RepoRoot, opts.Base)
+	lastPushedSha, baseRef, err := resolveBase(ctx, opts.RepoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -290,29 +289,17 @@ func listUntracked(ctx context.Context, repoRoot string) ([]string, error) {
 // v2-plan "Three roles of SHAs" table, this is the `last_pushed_sha`.
 //
 // Resolution order:
-//  1. Explicit --base <ref>: user override. Resolved via `git rev-parse`.
-//  2. @{u} (upstream tracking ref): preferred auto-detect. If set, this is
-//     the commit this branch currently points at on origin, guaranteed
-//     reachable for the sandbox clone.
-//  3. Fallback: `merge-base origin/HEAD HEAD` — used when the branch has no
+//  1. @{u} (upstream tracking ref): preferred. If set, this is the commit
+//     this branch currently points at on origin, guaranteed reachable for
+//     the sandbox clone.
+//  2. Fallback: `merge-base origin/HEAD HEAD` — used when the branch has no
 //     upstream (never pushed / tracking not configured). Requires
 //     origin/HEAD to be set on the clone; this is the only path that
 //     invokes CheckOriginHead.
 //
 // Returns (sha, refLabel) where refLabel is a short human-readable label
-// for the stderr header: the user's --base string, "@{u}", or "origin/HEAD".
-func resolveBase(ctx context.Context, repoRoot string, userBase string) (string, string, error) {
-	if userBase != "" {
-		out, err := gitOutput(ctx, repoRoot, "rev-parse", "--verify", userBase+"^{commit}")
-		if err != nil {
-			return "", "", &BaseResolutionError{
-				Message: fmt.Sprintf("couldn't resolve --base %q to a commit: %s\n\nTry:\n  tusk review run --base origin/main",
-					userBase, strings.TrimSpace(err.Error())),
-			}
-		}
-		return strings.TrimSpace(string(out)), userBase, nil
-	}
-
+// for the stderr header: "@{u}" or "origin/HEAD".
+func resolveBase(ctx context.Context, repoRoot string) (string, string, error) {
 	// Preferred: upstream tracking ref. Only works if the branch was pushed
 	// (or configured to track a remote branch).
 	if sha, err := resolveUpstream(ctx, repoRoot); err == nil {
@@ -327,7 +314,7 @@ func resolveBase(ctx context.Context, repoRoot string, userBase string) (string,
 	if err != nil {
 		shallow := isShallow(repoRoot)
 		msg := "couldn't determine base commit for this branch.\n\n"
-		msg += "Cause: your branch has no upstream (try `git push -u origin <branch>`) and `git merge-base origin/HEAD HEAD` also failed."
+		msg += "Cause: your branch has no upstream and `git merge-base origin/HEAD HEAD` failed."
 		if shallow {
 			msg += " Additionally, this is a shallow clone."
 		}
@@ -336,7 +323,6 @@ func resolveBase(ctx context.Context, repoRoot string, userBase string) (string,
 			msg += "\n  • git fetch --unshallow"
 		}
 		msg += "\n  • Push this branch so its upstream is set: git push -u origin <branch>"
-		msg += "\n  • Or pass the base explicitly: tusk review run --base <branch-or-sha>"
 		return "", "", &BaseResolutionError{Message: msg}
 	}
 	return strings.TrimSpace(string(baseOut)), "origin/HEAD", nil

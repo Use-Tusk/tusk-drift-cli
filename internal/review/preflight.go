@@ -90,13 +90,13 @@ func Preflight(repoRoot string) error {
 	}
 
 	// `origin` presence is NOT checked here — either:
-	//   - the user passed --repo + --base (no origin needed at all), OR
+	//   - the user passed --repo (no origin needed for repo identity), OR
 	//   - the repo-identity step (resolveReviewRepo) will fail with a
 	//     specific "run inside a git repo with an origin remote" message, OR
 	//   - the base-resolution step will call CheckOriginHead for a targeted
-	//     "origin/HEAD not set" error.
-	// Firing a generic origin-missing error in preflight would block the
-	// --repo + --base bypass that this command is designed to allow.
+	//     "origin/HEAD not set" error when the fallback is needed.
+	// Firing a generic origin-missing error in preflight would produce
+	// unhelpful errors for users who provided --repo.
 
 	// Detached HEAD is a warning, not a refusal.
 	//
@@ -139,11 +139,9 @@ func isDetachedHEAD(repoRoot string) (bool, error) {
 }
 
 // CheckOriginHead confirms that `origin/HEAD` is set on this clone, which
-// `git merge-base` relies on for auto-detecting the base branch. Returns a
-// *PreflightError with remediation text when missing.
-//
-// Only called when the user did NOT pass `--base` — explicit base bypasses
-// the origin/HEAD requirement.
+// `git merge-base` relies on for auto-detecting the clone pivot when the
+// branch has no upstream. Returns a *PreflightError with remediation text
+// when missing.
 func CheckOriginHead(repoRoot string) error {
 	if err := runGitSilent(repoRoot, "symbolic-ref", "refs/remotes/origin/HEAD"); err != nil {
 		shallow := isShallow(repoRoot)
@@ -156,7 +154,6 @@ func CheckOriginHead(repoRoot string) error {
 		if shallow {
 			msg += "\n     git fetch --unshallow"
 		}
-		msg += "\n\nOr pass --base explicitly:\n  tusk review run --base main"
 		return &PreflightError{Message: msg}
 	}
 	return nil

@@ -25,7 +25,6 @@ var reviewOverviewContent string
 
 var (
 	reviewRepo        string
-	reviewBase        string
 	reviewMinSeverity string
 	reviewExcludes    []string
 	reviewIncludes    []string
@@ -54,7 +53,6 @@ func init() {
 
 func bindReviewFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&reviewRepo, "repo", "", "Repository in owner/name format (defaults to git origin remote)")
-	cmd.Flags().StringVar(&reviewBase, "base", "", "Override the clone pivot (defaults to your branch's upstream @{u}, then merge-base with origin/HEAD)")
 	cmd.Flags().StringVar(&reviewMinSeverity, "min-severity", "", "Minimum severity to surface: low|medium|high|critical")
 	cmd.Flags().StringArrayVar(&reviewExcludes, "exclude", nil, "Extra path glob(s) to exclude from the patch (repeatable)")
 	cmd.Flags().StringArrayVar(&reviewIncludes, "include", nil, "Cancel a default skip for matching files (repeatable)")
@@ -100,7 +98,6 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	log.Debug("Starting tusk review",
 		"repo", reviewRepo,
-		"base", reviewBase,
 		"min-severity", reviewMinSeverity,
 		"json", reviewJSON,
 		"output", reviewOutput,
@@ -126,7 +123,6 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	patch, err := review.BuildPatch(ctx, review.PatchOptions{
 		RepoRoot:        repoRoot,
-		Base:            reviewBase,
 		ExtraExcludes:   reviewExcludes,
 		Includes:        reviewIncludes,
 		RegisterCleanup: RegisterCleanup,
