@@ -306,7 +306,7 @@ func resolveBase(ctx context.Context, repoRoot string, userBase string) (string,
 		out, err := gitOutput(ctx, repoRoot, "rev-parse", "--verify", userBase+"^{commit}")
 		if err != nil {
 			return "", "", &BaseResolutionError{
-				Message: fmt.Sprintf("couldn't resolve --base %q to a commit: %s\n\nTry:\n  tusk review --base origin/main",
+				Message: fmt.Sprintf("couldn't resolve --base %q to a commit: %s\n\nTry:\n  tusk review run --base origin/main",
 					userBase, strings.TrimSpace(err.Error())),
 			}
 		}
@@ -336,7 +336,7 @@ func resolveBase(ctx context.Context, repoRoot string, userBase string) (string,
 			msg += "\n  • git fetch --unshallow"
 		}
 		msg += "\n  • Push this branch so its upstream is set: git push -u origin <branch>"
-		msg += "\n  • Or pass the base explicitly: tusk review --base <branch-or-sha>"
+		msg += "\n  • Or pass the base explicitly: tusk review run --base <branch-or-sha>"
 		return "", "", &BaseResolutionError{Message: msg}
 	}
 	return strings.TrimSpace(string(baseOut)), "origin/HEAD", nil

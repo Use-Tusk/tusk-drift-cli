@@ -23,7 +23,7 @@ func init() {
 	reviewCmd.AddCommand(reviewStatusCmd)
 
 	// Reuse the main review command's --json, --output, --quiet globals so
-	// `tusk review status ... --json` behaves identically to `tusk review --json`.
+	// `tusk review status ... --json` behaves identically to `tusk review run --json`.
 	reviewStatusCmd.Flags().BoolVar(&reviewJSON, "json", false, "Write the result as JSON (to stdout or --output)")
 	reviewStatusCmd.Flags().StringVar(&reviewOutput, "output", "", "Write the result to a file instead of stdout")
 	reviewStatusCmd.Flags().BoolVar(&reviewQuiet, "quiet", false, "Suppress stderr progress output")

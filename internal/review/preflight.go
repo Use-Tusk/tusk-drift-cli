@@ -156,7 +156,7 @@ func CheckOriginHead(repoRoot string) error {
 		if shallow {
 			msg += "\n     git fetch --unshallow"
 		}
-		msg += "\n\nOr pass --base explicitly:\n  tusk review --base main"
+		msg += "\n\nOr pass --base explicitly:\n  tusk review run --base main"
 		return &PreflightError{Message: msg}
 	}
 	return nil
