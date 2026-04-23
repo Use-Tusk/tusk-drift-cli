@@ -87,7 +87,18 @@ func (e *Executor) StartService() error {
 				log.ServiceLog(fmt.Sprintf("🔧 Merged custom Fence config into replay sandbox: %s", utils.ResolveTuskPath(sandboxConfigPath)))
 			}
 			e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
-			e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
+			// When the service is launched via docker / docker-compose, the
+			// host-facing port is bound by the Docker daemon (outside the
+			// sandbox's network namespace) via the container's port mapping.
+			// A fence reverse bridge on the same port would collide with the
+			// Docker daemon's bind, failing container networking setup.
+			// Skip the bridge in that case — the service is reachable on the
+			// host port directly via dockerd's iptables rules.
+			if !isDockerCommand(cfg.Service.Start.Command) {
+				e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
+			} else {
+				log.Debug("Skipping fence reverse bridge: docker-based service binds host port via daemon", "port", cfg.Service.Port)
+			}
 
 			if err := e.fenceManager.Initialize(); err != nil {
 				if requireSandbox {
