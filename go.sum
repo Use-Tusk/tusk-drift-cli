@@ -31,8 +31,8 @@ github.com/Masterminds/sprig/v3 v3.3.0 h1:mQh0Yrg1XPo6vjYXgtf5OtijNAKJRNcTdOOGZe
 github.com/Masterminds/sprig/v3 v3.3.0/go.mod h1:Zy1iXRYNqNLUolqCpL4uhk6SHUMAOSCzdgBfDb35Lz0=
 github.com/STARRY-S/zip v0.2.3 h1:luE4dMvRPDOWQdeDdUxUoZkzUIpTccdKdhHHsQJ1fm4=
 github.com/STARRY-S/zip v0.2.3/go.mod h1:lqJ9JdeRipyOQJrYSOtpNAiaesFO6zVDsE8GIGFaoSk=
-github.com/Use-Tusk/fence v0.1.36 h1:8S15y8cp3X+xXukx6AN0Ky/aX9/dZyW3fLw5XOQ8YtE=
-github.com/Use-Tusk/fence v0.1.36/go.mod h1:YkowBDzXioVKJE16vg9z3gSVC6vhzkIZZw2dFf7MW/o=
+github.com/Use-Tusk/fence v0.1.51 h1:GGr4bx/eFYYA3WNNIIE7RAkJJu5zlW6nsTdrAqEzTQc=
+github.com/Use-Tusk/fence v0.1.51/go.mod h1:ADX3cEerqZumoA+RXDtLC1p+8vUqcNaaaXEK33vHnVs=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.36 h1:baojaWiEFEdRU61CLYAbFievXxDLlWTFW/ijL4IpdiE=
 github.com/Use-Tusk/tusk-drift-schemas v0.1.36/go.mod h1:pa3EvTj9kKxl9f904RVFkj9YK1zB75QogboKi70zalM=
 github.com/agnivade/levenshtein v1.0.3 h1:M5ZnqLOoZR8ygVq0FfkXsNOKzMCk0xRiow0R5+5VkQ0=
