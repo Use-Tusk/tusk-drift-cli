@@ -67,6 +67,12 @@ func createReplayComposeOverrideFile(envVars map[string]string, groupName string
 	if safeGroup == "" {
 		safeGroup = "default"
 	}
+	// The override file lives in the OS temp dir (/tmp on Linux). Fence
+	// tmpfs-overmounts /tmp inside its Linux sandbox, so a naive `docker
+	// compose -f /tmp/...` inside the sandbox can't see this file. Callers
+	// that pass this path into a sandboxed command must register it via
+	// fence.Manager.ExposeHostPath before launching the sandbox — see
+	// StartService in service.go, which does this automatically.
 	tempFile, err := os.CreateTemp("", fmt.Sprintf("tusk-replay-env-override-%s-*.yml", safeGroup))
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary replay compose override file: %w", err)

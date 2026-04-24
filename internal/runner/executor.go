@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-cli/internal/config"
 	"github.com/Use-Tusk/tusk-cli/internal/log"
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
@@ -87,7 +86,7 @@ type Executor struct {
 	sandboxMode             string
 	lastServiceSandboxed    bool
 	debug                   bool
-	fenceManager            *fence.Manager
+	sandbox                 sandboxManager
 	requireInboundReplay    bool
 	replayComposeOverride   string
 	replayEnvVars           map[string]string
@@ -142,7 +141,7 @@ func (e *Executor) GetEffectiveSandboxMode() string {
 	if e.sandboxMode != "" {
 		return e.sandboxMode
 	}
-	if fence.IsSupported() {
+	if isSandboxSupported() {
 		return SandboxModeStrict
 	}
 	return SandboxModeAuto

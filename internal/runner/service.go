@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Use-Tusk/fence/pkg/fence"
 	"github.com/Use-Tusk/tusk-cli/internal/config"
 	"github.com/Use-Tusk/tusk-cli/internal/log"
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
@@ -68,7 +68,7 @@ func (e *Executor) StartService() error {
 
 	requireSandbox := effectiveSandboxMode == SandboxModeStrict
 	if effectiveSandboxMode != SandboxModeOff && !e.sandboxBypass {
-		if !fence.IsSupported() {
+		if !isSandboxSupported() {
 			if requireSandbox {
 				return fmt.Errorf("strict replay sandbox unavailable: sandbox not supported on this platform")
 			}
@@ -79,37 +79,61 @@ func (e *Executor) StartService() error {
 			if e.getReplaySandboxConfigPath() != "" {
 				sandboxConfigPath = e.getReplaySandboxConfigPath()
 			}
-			fenceCfg, err := createReplayFenceConfig(sandboxConfigPath)
-			if err != nil {
-				return fmt.Errorf("failed to prepare replay sandbox config: %w", err)
-			}
 			if sandboxConfigPath != "" {
 				log.ServiceLog(fmt.Sprintf("🔧 Merged custom Fence config into replay sandbox: %s", utils.ResolveTuskPath(sandboxConfigPath)))
 			}
-			e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
-			e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
 
-			if err := e.fenceManager.Initialize(); err != nil {
-				if requireSandbox {
-					e.fenceManager = nil
-					return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(err))
+			// Build the list of host paths that must be visible inside
+			// the sandbox. The replay compose env-override (when present)
+			// is the main case: it lives under /tmp on the host, which
+			// fence tmpfs-overmounts — without this exposure the sandboxed
+			// docker client can't see the file passed to `-f`.
+			var exposedHostPaths []exposedHostPath
+			if replayOverridePath != "" {
+				exposedHostPaths = append(exposedHostPaths, exposedHostPath{
+					Path:     replayOverridePath,
+					Writable: false,
+				})
+			}
+
+			// For docker / docker-compose / podman commands, the daemon
+			// binds the host port outside the sandbox netns, so the
+			// sandbox must NOT set up a reverse bridge on that port (it
+			// would collide with the daemon's own bind). For everything
+			// else, the sandbox proxies inbound traffic into its netns as
+			// usual.
+			sbx, sbxErr := newReplaySandboxManager(replaySandboxOptions{
+				UserConfigPath:   sandboxConfigPath,
+				Debug:            e.debug,
+				ExposedPort:      cfg.Service.Port,
+				BindsOnHost:      serviceDelegatesToHostDaemon(cfg.Service.Start.Command),
+				ExposedHostPaths: exposedHostPaths,
+			})
+			if sbxErr != nil {
+				// User-config errors (bad JSON, denied localhost, ...) are
+				// always fatal. User asked for a sandbox and got the config
+				// wrong; silently proceeding without isolation would violate
+				// that intent.
+				var cfgErr *sandboxConfigError
+				if errors.As(sbxErr, &cfgErr) {
+					return fmt.Errorf("failed to prepare replay sandbox config: %w", sbxErr)
 				}
-				log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
+				if requireSandbox {
+					return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(sbxErr))
+				}
+				log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(sbxErr)))
 				log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
-				e.fenceManager = nil
 			} else {
-				wrappedCmd, err := e.fenceManager.WrapCommand(command)
-				if err != nil {
+				wrappedCmd, wrapErr := sbx.WrapCommand(command)
+				if wrapErr != nil {
+					sbx.Cleanup()
 					if requireSandbox {
-						e.fenceManager.Cleanup()
-						e.fenceManager = nil
-						return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(err))
+						return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(wrapErr))
 					}
-					log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
+					log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(wrapErr)))
 					log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
-					e.fenceManager.Cleanup()
-					e.fenceManager = nil
 				} else {
+					e.sandbox = sbx
 					command = wrappedCmd
 					e.lastServiceSandboxed = true
 					log.ServiceLog("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
@@ -187,9 +211,9 @@ func (e *Executor) StartService() error {
 	}
 
 	if err := e.serviceCmd.Start(); err != nil {
-		if e.fenceManager != nil {
-			e.fenceManager.Cleanup()
-			e.fenceManager = nil
+		if e.sandbox != nil {
+			e.sandbox.Cleanup()
+			e.sandbox = nil
 		}
 		return fmt.Errorf("failed to start service: %w", err)
 	}
@@ -214,125 +238,14 @@ func (e *Executor) StartService() error {
 	return nil
 }
 
-// createReplayFenceConfig creates the effective fence config for replay mode.
-// This blocks localhost outbound connections to force the service to use SDK mocks.
-func createReplayFenceConfig(userConfigPath string) (*fence.Config, error) {
-	cfg := baseReplayFenceConfig()
-	if userConfigPath == "" {
-		return cfg, nil
-	}
-
-	resolvedPath := utils.ResolveTuskPath(userConfigPath)
-	userCfg, err := fence.LoadConfigResolved(resolvedPath)
-	if err != nil {
-		return nil, fmt.Errorf("load custom fence config %q: %w", resolvedPath, err)
-	}
-	if userCfg == nil {
-		return nil, fmt.Errorf("custom fence config not found: %s", resolvedPath)
-	}
-	if err := validateReplayFenceConfig(userCfg); err != nil {
-		return nil, err
-	}
-
-	merged := fence.MergeConfigs(cfg, userCfg)
-	applyReplayFenceInvariants(merged)
-	return merged, nil
-}
-
-func baseReplayFenceConfig() *fence.Config {
-	f := false
-	return &fence.Config{
-		Network: fence.NetworkConfig{
-			AllowedDomains: []string{
-				// Allow localhost for the service's own health checks
-				"localhost",
-				"127.0.0.1",
-			},
-			AllowLocalBinding:   true, // Allow service to bind to its port
-			AllowLocalOutbound:  &f,   // Block outbound to localhost (Postgres, Redis, etc.)
-			AllowAllUnixSockets: true, // Allow SDK to connect to mock server via Unix socket
-		},
-		Filesystem: fence.FilesystemConfig{
-			AllowWrite: getAllowedWriteDirs(),
-		},
-	}
-}
-
-func validateReplayFenceConfig(cfg *fence.Config) error {
-	if cfg == nil {
-		return nil
-	}
-
-	requiredDomains := []string{"localhost", "127.0.0.1"}
-	for _, deniedDomain := range cfg.Network.DeniedDomains {
-		for _, requiredDomain := range requiredDomains {
-			if strings.EqualFold(deniedDomain, requiredDomain) {
-				return fmt.Errorf("custom replay fence config cannot deny %q because replay health checks require it", requiredDomain)
-			}
-		}
-	}
-
-	return nil
-}
-
-func applyReplayFenceInvariants(cfg *fence.Config) {
-	if cfg == nil {
-		return
-	}
-
-	f := false
-	cfg.Network.AllowedDomains = mergeUniqueStrings(
-		cfg.Network.AllowedDomains,
-		[]string{"localhost", "127.0.0.1"},
-	)
-	cfg.Network.AllowLocalBinding = true
-	cfg.Network.AllowLocalOutbound = &f
-	cfg.Network.AllowAllUnixSockets = true
-	cfg.Filesystem.AllowWrite = mergeUniqueStrings(cfg.Filesystem.AllowWrite, getAllowedWriteDirs())
-}
-
-func mergeUniqueStrings(existing, required []string) []string {
-	if len(required) == 0 {
-		return existing
-	}
-
-	seen := make(map[string]struct{}, len(existing)+len(required))
-	merged := make([]string, 0, len(existing)+len(required))
-	for _, value := range existing {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		merged = append(merged, value)
-	}
-	for _, value := range required {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		merged = append(merged, value)
-	}
-	return merged
-}
-
-// getAllowedWriteDirs returns the default writable paths for replay mode.
-// We allow broad local writes by default. Note that Fence still enforces
-// mandatory dangerous-path protections (see
-// https://github.com/Use-Tusk/fence/blob/main/internal/sandbox/dangerous.go).
-func getAllowedWriteDirs() []string {
-	return []string{
-		"/",
-	}
-}
-
 func (e *Executor) StopService() error {
 	cfg, _ := config.Get()
 
 	defer func() {
 		e.cleanupLogFiles()
-		if e.fenceManager != nil {
-			e.fenceManager.Cleanup()
-			e.fenceManager = nil
+		if e.sandbox != nil {
+			e.sandbox.Cleanup()
+			e.sandbox = nil
 		}
 		// Clean up V8 coverage temp directory
 		if e.coverageTempDir != "" {

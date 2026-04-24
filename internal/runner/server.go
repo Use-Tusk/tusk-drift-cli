@@ -119,7 +119,20 @@ type MockNotFoundEvent struct {
 	ReplaySpan  *core.Span `json:"replaySpan"` // The outbound span that failed to find a mock
 }
 
-func isDockerCommand(cmd string) bool {
+// serviceDelegatesToHostDaemon reports whether the configured service start
+// command delegates port binding / process execution to an external daemon
+// whose network listener lives on the host (outside any sandbox netns that
+// fence might set up). Today this covers the docker / docker-compose family;
+// extending to podman, nerdctl, or systemctl is a one-liner.
+//
+// This predicate is consulted in two places:
+//   - determineCommunicationType: daemon-delegated services cannot reach a
+//     Unix socket on the host filesystem from inside a container, so we must
+//     use TCP for the mock server ↔ SDK channel.
+//   - StartService: daemon-delegated services bind the host port via the
+//     daemon's own bind/iptables, so fence's reverse bridge would collide;
+//     fence is told ServiceBindsOnHost and skips it.
+func serviceDelegatesToHostDaemon(cmd string) bool {
 	cmd = strings.ToLower(cmd)
 	cmd = strings.Join(strings.Fields(cmd), " ")
 
@@ -134,8 +147,8 @@ func determineCommunicationType(cfg *config.ServiceConfig) CommunicationType {
 
 	// Auto-detect based on start command
 	if commType == "auto" {
-		if isDockerCommand(cfg.Start.Command) {
-			log.Debug("Auto-detected Docker command, using TCP communication")
+		if serviceDelegatesToHostDaemon(cfg.Start.Command) {
+			log.Debug("Auto-detected host-daemon-delegated service, using TCP communication")
 			return CommunicationTCP
 		}
 		return CommunicationUnix

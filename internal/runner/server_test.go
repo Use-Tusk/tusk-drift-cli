@@ -302,12 +302,12 @@ func TestDetermineCommunicationType(t *testing.T) {
 	}
 }
 
-func TestIsDockerCommand(t *testing.T) {
+func TestServiceDelegatesToHostDaemon(t *testing.T) {
 	tests := []struct {
 		command  string
 		expected bool
 	}{
-		// Docker commands
+		// Docker commands (host-daemon-delegated)
 		{"docker", true},
 		{"docker-compose", true},
 		{"docker compose up", true},
@@ -315,19 +315,20 @@ func TestIsDockerCommand(t *testing.T) {
 		{"docker run myimage", true},
 		{"ENV=test docker compose up", true},
 
-		// Non-Docker commands
+		// Directly-executed services (bind in-process)
 		{"npm run start", false},
 		{"node server.js", false},
 		{"python app.py", false},
 
-		// This is likely a docker-related script, but we don't make further assumptions.
-		// Users can explicitly set the communication type in the config.
+		// Likely a docker-related script, but we don't make further assumptions.
+		// Users can explicitly set the communication type / execution model
+		// in the config.
 		{"./start-docker.sh", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {
-			result := isDockerCommand(tt.command)
+			result := serviceDelegatesToHostDaemon(tt.command)
 			assert.Equal(t, tt.expected, result, "Command: %s", tt.command)
 		})
 	}

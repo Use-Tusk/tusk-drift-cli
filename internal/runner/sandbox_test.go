@@ -2,8 +2,6 @@ package runner
 
 import (
 	"testing"
-
-	"github.com/Use-Tusk/fence/pkg/fence"
 )
 
 // newExecutorForServiceLifecycleTests keeps generic lifecycle tests focused on
@@ -16,7 +14,7 @@ func newExecutorForServiceLifecycleTests() *Executor {
 
 func TestGetEffectiveSandboxMode(t *testing.T) {
 	e := NewExecutor()
-	if fence.IsSupported() {
+	if isSandboxSupported() {
 		if got := e.GetEffectiveSandboxMode(); got != SandboxModeStrict {
 			t.Fatalf("expected default sandbox mode %q on supported platform, got %q", SandboxModeStrict, got)
 		}
