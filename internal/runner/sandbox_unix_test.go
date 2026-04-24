@@ -3,6 +3,7 @@
 package runner
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,4 +50,53 @@ func TestCreateReplayFenceConfigRejectsDeniedLocalhost(t *testing.T) {
 
 	_, err = createReplayFenceConfig(customConfigPath)
 	require.ErrorContains(t, err, `cannot deny "localhost"`)
+}
+
+// Invalid user sandbox config must surface as *sandboxConfigError so
+// service.go keeps it fatal in auto mode (a broken user config shouldn't
+// silently degrade to "no sandbox").
+func TestNewReplaySandboxManagerWrapsConfigErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		configBody string
+	}{
+		{
+			name:       "denies_localhost",
+			configBody: `{"network": {"deniedDomains": ["localhost"]}}`,
+		},
+		{
+			name:       "malformed_json",
+			configBody: `{"network": {`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgPath := filepath.Join(t.TempDir(), "replay.fence.json")
+			require.NoError(t, os.WriteFile(cfgPath, []byte(tt.configBody), 0o600))
+
+			_, err := newReplaySandboxManager(replaySandboxOptions{
+				UserConfigPath: cfgPath,
+				ExposedPort:    3000,
+			})
+			require.Error(t, err)
+
+			var cfgErr *sandboxConfigError
+			require.Truef(t, errors.As(err, &cfgErr),
+				"expected error to be *sandboxConfigError so service.go treats it as fatal in auto mode; got %T: %v", err, err)
+		})
+	}
+}
+
+// A user-supplied config path that doesn't resolve is also a config mistake
+// (the user pointed at nothing), so must be *sandboxConfigError too.
+func TestNewReplaySandboxManagerMissingUserConfigIsConfigError(t *testing.T) {
+	_, err := newReplaySandboxManager(replaySandboxOptions{
+		UserConfigPath: filepath.Join(t.TempDir(), "does-not-exist.json"),
+		ExposedPort:    3000,
+	})
+	require.Error(t, err)
+	var cfgErr *sandboxConfigError
+	require.Truef(t, errors.As(err, &cfgErr),
+		"missing user config should be *sandboxConfigError; got %T: %v", err, err)
 }

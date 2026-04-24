@@ -37,14 +37,25 @@ func (s *fenceSandbox) Cleanup() {
 // newReplaySandboxManager builds the effective fence config for replay
 // mode, creates the fence.Manager, applies the requested service
 // execution model + exposed host paths, and initializes the manager.
-// On error, any partial state is cleaned up before returning.
+// On any error after fence.NewManager succeeds, the manager's Cleanup is
+// invoked before returning so no fence-allocated resources leak.
 func newReplaySandboxManager(opts replaySandboxOptions) (sandboxManager, error) {
 	fenceCfg, err := createReplayFenceConfig(opts.UserConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("prepare replay sandbox config: %w", err)
+		return nil, &sandboxConfigError{err: fmt.Errorf("prepare replay sandbox config: %w", err)}
 	}
 
 	mgr := fence.NewManager(fenceCfg, opts.Debug, false)
+	// Defensive: Cleanup is idempotent and fence's Initialize already
+	// unwinds its own partial state on failure, but this guards against
+	// future fence changes that add allocating steps between NewManager
+	// and Initialize (or between error returns inside Initialize).
+	success := false
+	defer func() {
+		if !success {
+			mgr.Cleanup()
+		}
+	}()
 
 	executionModel := fence.ServiceBindsInSandbox
 	if opts.BindsOnHost {
@@ -65,6 +76,7 @@ func newReplaySandboxManager(opts replaySandboxOptions) (sandboxManager, error) 
 		return nil, fmt.Errorf("initialize replay sandbox: %w", err)
 	}
 
+	success = true
 	return &fenceSandbox{mgr: mgr}, nil
 }
 

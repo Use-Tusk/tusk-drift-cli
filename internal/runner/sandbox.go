@@ -11,6 +11,17 @@ type sandboxManager interface {
 	Cleanup()
 }
 
+// sandboxConfigError marks errors that stem from invalid user sandbox config
+// (bad JSON, denied localhost, missing file). These are always fatal
+// regardless of sandbox mode — a user who supplied a broken config asked for
+// sandboxing and shouldn't silently get unisolated execution. Distinct from
+// runtime-availability errors (missing bwrap/socat, Initialize failure), which
+// auto mode treats as "fall back to no sandbox".
+type sandboxConfigError struct{ err error }
+
+func (e *sandboxConfigError) Error() string { return e.err.Error() }
+func (e *sandboxConfigError) Unwrap() error { return e.err }
+
 type replaySandboxOptions struct {
 	UserConfigPath string // optional fence config override (e.g. .tusk/replay.fence.json)
 	Debug          bool

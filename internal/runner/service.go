@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -109,6 +110,14 @@ func (e *Executor) StartService() error {
 				ExposedHostPaths: exposedHostPaths,
 			})
 			if sbxErr != nil {
+				// User-config errors (bad JSON, denied localhost, ...) are
+				// always fatal. User asked for a sandbox and got the config
+				// wrong; silently proceeding without isolation would violate
+				// that intent.
+				var cfgErr *sandboxConfigError
+				if errors.As(sbxErr, &cfgErr) {
+					return fmt.Errorf("failed to prepare replay sandbox config: %w", sbxErr)
+				}
 				if requireSandbox {
 					return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(sbxErr))
 				}
