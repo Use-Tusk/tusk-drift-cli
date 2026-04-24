@@ -87,32 +87,68 @@ func (e *Executor) StartService() error {
 				log.ServiceLog(fmt.Sprintf("🔧 Merged custom Fence config into replay sandbox: %s", utils.ResolveTuskPath(sandboxConfigPath)))
 			}
 			e.fenceManager = fence.NewManager(fenceCfg, e.debug, false)
-			e.fenceManager.SetExposedPorts([]int{cfg.Service.Port})
 
-			if err := e.fenceManager.Initialize(); err != nil {
+			// Tell fence how the sandboxed service binds its port. For
+			// docker / docker-compose / podman commands, the daemon binds
+			// the host port outside the sandbox netns, so fence must NOT
+			// set up a reverse bridge (it would collide with the daemon's
+			// bind). For everything else, fence proxies inbound traffic
+			// into the sandbox netns as usual.
+			executionModel := fence.ServiceBindsInSandbox
+			if serviceDelegatesToHostDaemon(cfg.Service.Start.Command) {
+				executionModel = fence.ServiceBindsOnHost
+			}
+			e.fenceManager.SetService(fence.ServiceOptions{
+				ExposedPorts:   []int{cfg.Service.Port},
+				ExecutionModel: executionModel,
+			})
+
+			// Hand any caller-generated host files the sandboxed process
+			// needs to see (e.g. the replay compose env-override YAML)
+			// to fence. Without this, a file created via
+			// os.CreateTemp("", ...) lives under /tmp, which fence
+			// tmpfs-overmounts — invisible to the sandboxed docker client.
+			exposeErr := error(nil)
+			if replayOverridePath != "" {
+				if err := e.fenceManager.ExposeHostPath(replayOverridePath, false); err != nil {
+					exposeErr = err
+				}
+			}
+			if exposeErr != nil {
 				if requireSandbox {
 					e.fenceManager = nil
-					return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(err))
+					return fmt.Errorf("strict replay sandbox unavailable: failed to expose replay override file to sandbox: %w", exposeErr)
 				}
-				log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
-				log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
+				log.UserWarn(fmt.Sprintf("⚠️  Sandbox: failed to expose replay override file (%v); proceeding without sandbox", exposeErr))
 				e.fenceManager = nil
-			} else {
-				wrappedCmd, err := e.fenceManager.WrapCommand(command)
-				if err != nil {
+			}
+
+			if e.fenceManager != nil {
+				if err := e.fenceManager.Initialize(); err != nil {
 					if requireSandbox {
-						e.fenceManager.Cleanup()
 						e.fenceManager = nil
 						return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(err))
 					}
 					log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
 					log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
-					e.fenceManager.Cleanup()
 					e.fenceManager = nil
 				} else {
-					command = wrappedCmd
-					e.lastServiceSandboxed = true
-					log.ServiceLog("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
+					wrappedCmd, err := e.fenceManager.WrapCommand(command)
+					if err != nil {
+						if requireSandbox {
+							e.fenceManager.Cleanup()
+							e.fenceManager = nil
+							return fmt.Errorf("strict replay sandbox unavailable: %s", friendlySandboxError(err))
+						}
+						log.UserWarn(fmt.Sprintf("⚠️  Sandbox unavailable: %s", friendlySandboxError(err)))
+						log.UserWarn("   Tests will run without network isolation (real connections allowed)\n")
+						e.fenceManager.Cleanup()
+						e.fenceManager = nil
+					} else {
+						command = wrappedCmd
+						e.lastServiceSandboxed = true
+						log.ServiceLog("🔒 Service sandboxed (localhost outbound blocked for replay isolation)")
+					}
 				}
 			}
 		}
