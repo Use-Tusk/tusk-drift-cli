@@ -42,7 +42,9 @@ func (s *fenceSandbox) Cleanup() {
 func newReplaySandboxManager(opts replaySandboxOptions) (sandboxManager, error) {
 	fenceCfg, err := createReplayFenceConfig(opts.UserConfigPath)
 	if err != nil {
-		return nil, &sandboxConfigError{err: fmt.Errorf("prepare replay sandbox config: %w", err)}
+		// No prefix here: service.go adds the user-facing
+		// "failed to prepare replay sandbox config:" framing.
+		return nil, &sandboxConfigError{err: err}
 	}
 
 	mgr := fence.NewManager(fenceCfg, opts.Debug, false)
