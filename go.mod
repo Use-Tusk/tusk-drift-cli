@@ -3,7 +3,7 @@ module github.com/Use-Tusk/tusk-cli
 go 1.25.0
 
 require (
-	github.com/Use-Tusk/fence v0.1.36
+	github.com/Use-Tusk/fence v0.1.51-0.20260424090401-5a2baad46be0
 	github.com/Use-Tusk/tusk-drift-schemas v0.1.36
 	github.com/agnivade/levenshtein v1.0.3
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
@@ -123,6 +123,3 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
-
-// TODO: remove before publishing.
-replace github.com/Use-Tusk/fence => ../fence
