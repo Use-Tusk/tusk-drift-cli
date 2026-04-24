@@ -17,9 +17,10 @@
 > [!IMPORTANT]
 > Previously used `tusk-drift-cli`? This repo has moved to `tusk-cli`, and older installed CLI versions may not auto-update across the rename. Please reinstall using the current install instructions below.
 
-The Tusk CLI provides tools for automated testing workflows. It supports two products:
+The Tusk CLI provides tools for automated testing workflows. It supports three products:
 
 - **[Tusk Drift](docs/drift/)** - Live traffic record/replay as API tests
+- **[Tusk Review](docs/review/)** - AI code review on your local working tree
 - **[Tusk Unit](docs/unit/)** - Automated unit tests
 
 ## Tusk Drift — API Record/Replay Testing
@@ -33,6 +34,18 @@ tusk drift run --cloud    # Run against Tusk Drift Cloud
 ```
 
 [Get started with Tusk Drift →](docs/drift/)
+
+## Tusk Review — AI Code Review
+
+Run Tusk's AI code review against your local working tree — including uncommitted and untracked changes — before you push or open a pull request. Results print to your terminal; nothing is posted to GitHub or GitLab.
+
+```bash
+tusk review run                         # Review current working tree
+tusk review run --no-poll               # Submit and exit with run id
+tusk review status <run-id> --watch     # Check a previously submitted run
+```
+
+[Get started with Tusk Review →](docs/review/)
 
 ## Tusk Unit — Automated Unit Tests
 
