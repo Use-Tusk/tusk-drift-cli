@@ -215,6 +215,8 @@ func SaveServiceIDToConfig(serviceID string) error {
 func SaveRecordingConfig(samplingRate float64, samplingMode string, exportSpans, enableEnvVarRecording bool) error {
 	if samplingMode == "" {
 		samplingMode = "adaptive"
+	} else if samplingMode != "adaptive" && samplingMode != "fixed" {
+		return fmt.Errorf("invalid sampling mode %q: must be 'adaptive' or 'fixed'", samplingMode)
 	}
 	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
 		cfg.Recording.SamplingRate = samplingRate

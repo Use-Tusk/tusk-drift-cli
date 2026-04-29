@@ -13,6 +13,7 @@ import (
 	"github.com/Use-Tusk/tusk-cli/internal/cliconfig"
 	"github.com/Use-Tusk/tusk-cli/internal/config"
 	"github.com/Use-Tusk/tusk-cli/internal/utils"
+	"gopkg.in/yaml.v3"
 )
 
 func listGitRemotes() (map[string]string, error) {
@@ -195,8 +196,13 @@ func loadExistingConfig(m *Model) error {
 	}
 
 	m.ServiceID = cfg.Service.ID
-	m.SamplingMode = cfg.Recording.Sampling.Mode
-	if m.SamplingMode == "" {
+	// Use the config's sampling mode, but default to "adaptive" when the
+	// config file doesn't contain an explicit sampling.mode key (the config
+	// parser normalizes absent mode to "fixed" for backward compatibility,
+	// but the wizard should default new setups to "adaptive").
+	if configHasExplicitSamplingMode() {
+		m.SamplingMode = cfg.Recording.Sampling.Mode
+	} else {
 		m.SamplingMode = "adaptive"
 	}
 	m.SamplingRate = fmt.Sprintf("%.2f", cfg.Recording.SamplingRate)
@@ -491,4 +497,25 @@ func detectShellConfig() string {
 
 	// Fallback to .profile
 	return filepath.Join(homeDir, ".profile")
+}
+
+// configHasExplicitSamplingMode checks the raw config file for an explicit
+// recording.sampling.mode key. Returns false if the key is absent or the
+// file can't be read, so the caller can fall back to the wizard default.
+func configHasExplicitSamplingMode() bool {
+	data, err := os.ReadFile(config.FindConfigFile())
+	if err != nil {
+		return false
+	}
+	var raw struct {
+		Recording struct {
+			Sampling struct {
+				Mode string `yaml:"mode"`
+			} `yaml:"sampling"`
+		} `yaml:"recording"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	return raw.Recording.Sampling.Mode != ""
 }
