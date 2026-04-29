@@ -526,7 +526,7 @@ func (RecordingConfigStep) Help(m *Model) string {
 	if m.RecordingConfigTable != nil && m.RecordingConfigTable.EditMode {
 		return "Type sampling rate (0.0-1.0) • tab/esc: done editing"
 	}
-	return "↑↓: navigate • tab/space: toggle/edit • enter: save"
+	return "↑↓: navigate • tab/space: toggle/edit value • enter: save"
 }
 
 func (RecordingConfigStep) Clear(m *Model) {
@@ -560,8 +560,13 @@ func (ReviewStep) Description(m *Model) string {
 	}
 
 	summary.WriteString("⚙️  Recording Configuration\n")
+	samplingMode := m.SamplingMode
+	if samplingMode == "" {
+		samplingMode = "adaptive"
+	}
+	summary.WriteString(fmt.Sprintf("  • Sampling mode: %s\n", samplingMode))
 	samplingRate, _ := strconv.ParseFloat(m.SamplingRate, 64)
-	summary.WriteString(fmt.Sprintf("  • Sampling rate: %.2f (%.0f%% of requests)\n", samplingRate, samplingRate*100))
+	summary.WriteString(fmt.Sprintf("  • Base sampling rate: %.2f (%.0f%% of requests)\n", samplingRate, samplingRate*100))
 	summary.WriteString(fmt.Sprintf("  • Export spans: %t\n", m.ExportSpans))
 	summary.WriteString(fmt.Sprintf("  • Record environment variables: %t\n\n", m.EnableEnvVarRecording))
 

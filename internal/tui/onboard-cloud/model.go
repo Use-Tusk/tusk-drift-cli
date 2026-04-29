@@ -65,6 +65,7 @@ type Model struct {
 	CreateApiKeyChoice bool
 
 	// State - Recording Config
+	SamplingMode          string
 	SamplingRate          string
 	ExportSpans           bool
 	EnableEnvVarRecording bool

@@ -781,6 +781,7 @@ func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 	var params struct {
 		ServiceID             string  `json:"service_id"`
 		SamplingRate          float64 `json:"sampling_rate"`
+		SamplingMode          string  `json:"sampling_mode"`
 		ExportSpans           bool    `json:"export_spans"`
 		EnableEnvVarRecording bool    `json:"enable_env_var_recording"`
 	}
@@ -796,7 +797,7 @@ func (ct *CloudTools) SaveCloudConfig(input json.RawMessage) (string, error) {
 	}
 
 	// Save recording config (preserves other fields like exclude_paths, transforms)
-	if err := onboardcloud.SaveRecordingConfig(params.SamplingRate, params.ExportSpans, params.EnableEnvVarRecording); err != nil {
+	if err := onboardcloud.SaveRecordingConfig(params.SamplingRate, params.SamplingMode, params.ExportSpans, params.EnableEnvVarRecording); err != nil {
 		return "", fmt.Errorf("failed to save recording config: %w", err)
 	}
 

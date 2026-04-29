@@ -42,6 +42,7 @@ Configure the recording parameters for Tusk Drift Cloud.
    Press Enter to accept defaults, or type 'custom' to customize:"
 
 3. **If customizing**: Ask for each value:
+   - Sampling mode (adaptive or fixed)
    - Base sampling rate (number between 0.0 and 1.0)
    - Export spans (yes/no)
    - Record env vars (yes/no)
@@ -49,11 +50,13 @@ Configure the recording parameters for Tusk Drift Cloud.
 4. **Save configuration**: Use `cloud_save_config` with:
    - `service_id`: from state.cloud_service_id
    - `sampling_rate`: the chosen rate
+   - `sampling_mode`: the chosen mode (adaptive or fixed)
    - `export_spans`: the chosen value
    - `enable_env_var_recording`: the chosen value
 
 5. **Transition**: Move to the next phase with:
    - `sampling_rate`: the chosen rate
+   - `sampling_mode`: the chosen mode
    - `export_spans`: the chosen value
    - `enable_env_var_recording`: the chosen value
 

@@ -111,6 +111,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if step.ID() == stepRecordingConfig {
 						// Initialize RecordingConfigTable when going BACK to that step
 						m.RecordingConfigTable = NewRecordingConfigTable(
+							m.SamplingMode,
 							m.SamplingRate,
 							m.ExportSpans,
 							m.EnableEnvVarRecording,
@@ -132,12 +133,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Only handle Enter for saving if not in edit mode
 				if msg.String() == "enter" && !m.RecordingConfigTable.EditMode {
-					samplingRate, exportSpans, enableEnvVarRecording := m.RecordingConfigTable.GetValues()
+					samplingMode, samplingRate, exportSpans, enableEnvVarRecording := m.RecordingConfigTable.GetValues()
+					m.SamplingMode = samplingMode
 					m.SamplingRate = fmt.Sprintf("%.2f", samplingRate)
 					m.ExportSpans = exportSpans
 					m.EnableEnvVarRecording = enableEnvVarRecording
 
-					if err := SaveRecordingConfig(samplingRate, exportSpans, enableEnvVarRecording); err != nil {
+					if err := SaveRecordingConfig(samplingRate, samplingMode, exportSpans, enableEnvVarRecording); err != nil {
 						m.Err = fmt.Errorf("failed to save: %w", err)
 					} else {
 						return m, func() tea.Msg { return stepCompleteMsg{} }
@@ -190,6 +192,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// always recreate the table
 			if step.ID() == stepRecordingConfig {
 				m.RecordingConfigTable = NewRecordingConfigTable(
+					m.SamplingMode,
 					m.SamplingRate,
 					m.ExportSpans,
 					m.EnableEnvVarRecording,

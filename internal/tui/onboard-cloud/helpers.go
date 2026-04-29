@@ -195,6 +195,10 @@ func loadExistingConfig(m *Model) error {
 	}
 
 	m.ServiceID = cfg.Service.ID
+	m.SamplingMode = cfg.Recording.Sampling.Mode
+	if m.SamplingMode == "" {
+		m.SamplingMode = "adaptive"
+	}
 	m.SamplingRate = fmt.Sprintf("%.2f", cfg.Recording.SamplingRate)
 
 	if cfg.Recording.ExportSpans != nil {
