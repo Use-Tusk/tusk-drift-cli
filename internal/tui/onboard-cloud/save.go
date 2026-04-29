@@ -215,10 +215,15 @@ func SaveServiceIDToConfig(serviceID string) error {
 func SaveRecordingConfig(samplingRate float64, exportSpans, enableEnvVarRecording bool) error {
 	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
 		cfg.Recording.SamplingRate = samplingRate
+		cfg.Recording.Sampling.Mode = "adaptive"
+		baseRate := samplingRate
+		cfg.Recording.Sampling.BaseRate = &baseRate
 		cfg.Recording.ExportSpans = &exportSpans
 		cfg.Recording.EnableEnvVarRecording = &enableEnvVarRecording
 
 		u.Set([]string{"recording", "sampling_rate"}, samplingRate)
+		u.Set([]string{"recording", "sampling", "mode"}, "adaptive")
+		u.Set([]string{"recording", "sampling", "base_rate"}, samplingRate)
 		u.Set([]string{"recording", "export_spans"}, exportSpans)
 		u.Set([]string{"recording", "enable_env_var_recording"}, enableEnvVarRecording)
 		return nil

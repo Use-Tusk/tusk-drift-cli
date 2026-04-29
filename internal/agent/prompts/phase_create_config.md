@@ -22,7 +22,9 @@ test_execution:
   timeout: 30s
 
 recording:
-  sampling_rate: 1.0
+  sampling:
+    mode: adaptive
+    base_rate: 1.0
   export_spans: false
   enable_env_var_recording: true
 ```
@@ -52,7 +54,9 @@ test_execution:
   timeout: 30s
 
 recording:
-  sampling_rate: 1.0
+  sampling:
+    mode: adaptive
+    base_rate: 1.0
   export_spans: false
   enable_env_var_recording: true
 ```

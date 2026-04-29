@@ -57,10 +57,15 @@ type TestExecution struct {
 	Timeout string `yaml:"timeout"`
 }
 
+type RecordingSampling struct {
+	Mode     string  `yaml:"mode"`
+	BaseRate float64 `yaml:"base_rate"`
+}
+
 type Recording struct {
-	SamplingRate          float64 `yaml:"sampling_rate"`
-	ExportSpans           bool    `yaml:"export_spans"`
-	EnableEnvVarRecording bool    `yaml:"enable_env_var_recording"`
+	Sampling              RecordingSampling `yaml:"sampling"`
+	ExportSpans           bool              `yaml:"export_spans"`
+	EnableEnvVarRecording bool              `yaml:"enable_env_var_recording"`
 }
 
 type Traces struct {
@@ -106,7 +111,10 @@ func (m *Model) getCurrentConfig() Config {
 			Timeout: "30s",
 		},
 		Recording: Recording{
-			SamplingRate:          samplingRate,
+			Sampling: RecordingSampling{
+				Mode:     "adaptive",
+				BaseRate: samplingRate,
+			},
 			ExportSpans:           false,
 			EnableEnvVarRecording: true,
 		},

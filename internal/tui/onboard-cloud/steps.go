@@ -508,9 +508,9 @@ func (RecordingConfigStep) Heading(*Model) string { return "Configure recording 
 func (RecordingConfigStep) Description(m *Model) string {
 	return `Configure how Tusk records execution traces from your application:
 
-• Sampling Rate: Percentage of requests to record (0.01 = 1%, 0.1 = 10%)
-  Lower rates reduce performance overhead. We recommend starting 10% for
-  dev/staging, and 1% for production environments.
+• Sampling Rate: Base percentage of requests to record (0.01 = 1%, 0.1 = 10%)
+  Adaptive sampling mode is used by default, which automatically adjusts the rate
+  under load. We recommend starting at 10% for dev/staging, and 1% for production.
 
 • Export Spans: Upload trace data to Tusk Drift Cloud (required for cloud features)
   Disable only if using Tusk Drift locally without cloud integration.

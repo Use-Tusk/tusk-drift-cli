@@ -172,6 +172,8 @@ recording:
 
 	result := string(data)
 	assert.Contains(t, result, "sampling_rate: 1")
+	assert.Contains(t, result, "mode: adaptive")
+	assert.Contains(t, result, "base_rate: 1")
 	assert.Contains(t, result, "export_spans: true")
 	assert.Contains(t, result, "enable_env_var_recording: true")
 	assert.NotContains(t, result, "!!float")
