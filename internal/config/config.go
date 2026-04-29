@@ -543,6 +543,12 @@ func getMinimalSchemaHint() string {
     interval: 1s`
 }
 
+// FindConfigFile returns the path to the config file found by traversing
+// upward from the current directory. Returns an empty string if not found.
+func FindConfigFile() string {
+	return findConfigFile()
+}
+
 func findConfigFile() string {
 	wd, err := os.Getwd()
 	if err != nil {

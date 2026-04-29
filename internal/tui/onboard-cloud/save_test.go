@@ -163,7 +163,7 @@ recording:
 	require.NoError(t, err)
 
 	// Save new recording config
-	err = SaveRecordingConfig(1.0, true, true)
+	err = SaveRecordingConfig(1.0, "adaptive", true, true)
 	require.NoError(t, err)
 
 	// Read the file back
@@ -172,10 +172,93 @@ recording:
 
 	result := string(data)
 	assert.Contains(t, result, "sampling_rate: 1")
+	assert.Contains(t, result, "mode: adaptive")
+	assert.Contains(t, result, "base_rate: 1")
 	assert.Contains(t, result, "export_spans: true")
 	assert.Contains(t, result, "enable_env_var_recording: true")
 	assert.NotContains(t, result, "!!float")
 	assert.NotContains(t, result, "!!bool")
+}
+
+func TestSaveRecordingConfig_FixedMode(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "tusk-test-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(tmpDir)
+		config.Invalidate()
+	})
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(originalWd) })
+
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
+	tuskDir := filepath.Join(tmpDir, ".tusk")
+	err = os.MkdirAll(tuskDir, 0o750)
+	require.NoError(t, err)
+
+	initialConfig := `service:
+  name: test-service
+
+recording:
+  sampling_rate: 0.5
+  export_spans: false
+  enable_env_var_recording: false
+`
+	err = os.WriteFile(filepath.Join(tuskDir, "config.yaml"), []byte(initialConfig), 0o600)
+	require.NoError(t, err)
+
+	err = SaveRecordingConfig(0.5, "fixed", false, false)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(tuskDir, "config.yaml")) // #nosec G304
+	require.NoError(t, err)
+
+	result := string(data)
+	assert.Contains(t, result, "mode: fixed")
+	assert.Contains(t, result, "base_rate: 0.5")
+	assert.Contains(t, result, "sampling_rate: 0.5")
+}
+
+func TestSaveRecordingConfig_DefaultsToAdaptive(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "tusk-test-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(tmpDir)
+		config.Invalidate()
+	})
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(originalWd) })
+
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
+	tuskDir := filepath.Join(tmpDir, ".tusk")
+	err = os.MkdirAll(tuskDir, 0o750)
+	require.NoError(t, err)
+
+	initialConfig := `service:
+  name: test-service
+
+recording:
+  sampling_rate: 1
+`
+	err = os.WriteFile(filepath.Join(tuskDir, "config.yaml"), []byte(initialConfig), 0o600)
+	require.NoError(t, err)
+
+	// Empty string should default to adaptive
+	err = SaveRecordingConfig(1.0, "", true, false)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(tuskDir, "config.yaml")) // #nosec G304
+	require.NoError(t, err)
+
+	result := string(data)
+	assert.Contains(t, result, "mode: adaptive")
 }
 
 // Helper function to test updateField without file I/O

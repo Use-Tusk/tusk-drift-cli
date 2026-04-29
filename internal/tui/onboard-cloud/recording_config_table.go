@@ -12,6 +12,7 @@ import (
 
 type RecordingConfigTable struct {
 	table                 table.Model
+	samplingMode          string
 	samplingRate          string
 	exportSpans           bool
 	enableEnvVarRecording bool
@@ -20,7 +21,7 @@ type RecordingConfigTable struct {
 	cursor                int
 }
 
-func NewRecordingConfigTable(samplingRate string, exportSpans, enableEnvVarRecording bool) *RecordingConfigTable {
+func NewRecordingConfigTable(samplingMode, samplingRate string, exportSpans, enableEnvVarRecording bool) *RecordingConfigTable {
 	columns := []table.Column{
 		{Title: "Setting", Width: 35},
 		{Title: "Value", Width: 25},
@@ -48,8 +49,12 @@ func NewRecordingConfigTable(samplingRate string, exportSpans, enableEnvVarRecor
 
 	t.SetStyles(s)
 
+	if samplingMode == "" {
+		samplingMode = "adaptive"
+	}
 	rct := &RecordingConfigTable{
 		table:                 t,
+		samplingMode:          samplingMode,
 		samplingRate:          samplingRate,
 		exportSpans:           true, // Required for cloud onboarding
 		enableEnvVarRecording: enableEnvVarRecording,
@@ -64,7 +69,7 @@ func NewRecordingConfigTable(samplingRate string, exportSpans, enableEnvVarRecor
 func (rct *RecordingConfigTable) updateRows() {
 	rate, _ := strconv.ParseFloat(rct.samplingRate, 64)
 	rateDisplay := fmt.Sprintf("%.2f (%.0f%%)", rate, rate*100)
-	if rct.EditMode && rct.cursor == 0 {
+	if rct.EditMode && rct.cursor == 1 {
 		rateDisplay = "→ " + rct.samplingRate + "_"
 	}
 
@@ -76,7 +81,8 @@ func (rct *RecordingConfigTable) updateRows() {
 	}
 
 	rows := []table.Row{
-		{"Sampling Rate", rateDisplay},
+		{"Sampling Mode", rct.samplingMode},
+		{"Base Sampling Rate", rateDisplay},
 		{"Export Spans", formatBool(rct.exportSpans)},
 		{"Record Environment Variables", formatBool(rct.enableEnvVarRecording)},
 	}
@@ -92,7 +98,7 @@ func (rct *RecordingConfigTable) Update(msg tea.Msg) (*RecordingConfigTable, tea
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// If in edit mode (typing sampling rate)
-		if rct.EditMode && rct.cursor == 0 {
+		if rct.EditMode && rct.cursor == 1 {
 			switch msg.String() {
 			case "tab", "esc":
 				rct.EditMode = false
@@ -127,7 +133,7 @@ func (rct *RecordingConfigTable) Update(msg tea.Msg) (*RecordingConfigTable, tea
 			return rct, nil
 
 		case "down", "j":
-			if rct.cursor < 2 {
+			if rct.cursor < 3 {
 				rct.cursor++
 				rct.table.MoveDown(1)
 			}
@@ -136,18 +142,24 @@ func (rct *RecordingConfigTable) Update(msg tea.Msg) (*RecordingConfigTable, tea
 
 		case "tab", " ":
 			switch rct.cursor {
-			case 1:
-				rct.exportSpans = !rct.exportSpans
-			case 2:
-				rct.enableEnvVarRecording = !rct.enableEnvVarRecording
 			case 0:
+				if rct.samplingMode == "adaptive" {
+					rct.samplingMode = "fixed"
+				} else {
+					rct.samplingMode = "adaptive"
+				}
+			case 1:
 				rct.EditMode = true
+			case 2:
+				rct.exportSpans = !rct.exportSpans
+			case 3:
+				rct.enableEnvVarRecording = !rct.enableEnvVarRecording
 			}
 			rct.updateRows()
 			return rct, nil
 
 		case "e":
-			if rct.cursor == 0 {
+			if rct.cursor == 1 {
 				rct.EditMode = true
 				rct.updateRows()
 				return rct, nil
@@ -169,9 +181,9 @@ func (rct *RecordingConfigTable) View() string {
 	)
 }
 
-func (rct *RecordingConfigTable) GetValues() (samplingRate float64, exportSpans, enableEnvVarRecording bool) {
+func (rct *RecordingConfigTable) GetValues() (samplingMode string, samplingRate float64, exportSpans, enableEnvVarRecording bool) {
 	rate, _ := strconv.ParseFloat(rct.samplingRate, 64)
-	return rate, rct.exportSpans, rct.enableEnvVarRecording
+	return rct.samplingMode, rate, rct.exportSpans, rct.enableEnvVarRecording
 }
 
 func (rct *RecordingConfigTable) SetFocused(focused bool) {

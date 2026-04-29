@@ -508,9 +508,9 @@ func (RecordingConfigStep) Heading(*Model) string { return "Configure recording 
 func (RecordingConfigStep) Description(m *Model) string {
 	return `Configure how Tusk records execution traces from your application:
 
-• Sampling Rate: Percentage of requests to record (0.01 = 1%, 0.1 = 10%)
-  Lower rates reduce performance overhead. We recommend starting 10% for
-  dev/staging, and 1% for production environments.
+• Sampling Rate: Base percentage of requests to record (0.01 = 1%, 0.1 = 10%)
+  Adaptive sampling mode is used by default, which automatically adjusts the rate
+  under load. We recommend starting at 10% for dev/staging, and 1% for production.
 
 • Export Spans: Upload trace data to Tusk Drift Cloud (required for cloud features)
   Disable only if using Tusk Drift locally without cloud integration.
@@ -526,7 +526,7 @@ func (RecordingConfigStep) Help(m *Model) string {
 	if m.RecordingConfigTable != nil && m.RecordingConfigTable.EditMode {
 		return "Type sampling rate (0.0-1.0) • tab/esc: done editing"
 	}
-	return "↑↓: navigate • tab/space: toggle/edit • enter: save"
+	return "↑↓: navigate • tab/space: toggle/edit value • enter: save"
 }
 
 func (RecordingConfigStep) Clear(m *Model) {
@@ -560,8 +560,13 @@ func (ReviewStep) Description(m *Model) string {
 	}
 
 	summary.WriteString("⚙️  Recording Configuration\n")
+	samplingMode := m.SamplingMode
+	if samplingMode == "" {
+		samplingMode = "adaptive"
+	}
+	summary.WriteString(fmt.Sprintf("  • Sampling mode: %s\n", samplingMode))
 	samplingRate, _ := strconv.ParseFloat(m.SamplingRate, 64)
-	summary.WriteString(fmt.Sprintf("  • Sampling rate: %.2f (%.0f%% of requests)\n", samplingRate, samplingRate*100))
+	summary.WriteString(fmt.Sprintf("  • Base sampling rate: %.2f (%.0f%% of requests)\n", samplingRate, samplingRate*100))
 	summary.WriteString(fmt.Sprintf("  • Export spans: %t\n", m.ExportSpans))
 	summary.WriteString(fmt.Sprintf("  • Record environment variables: %t\n\n", m.EnableEnvVarRecording))
 

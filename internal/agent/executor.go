@@ -657,7 +657,12 @@ func toolDefinitions() map[ToolName]*ToolDefinition {
 					},
 					"sampling_rate": {
 						"type": "number",
-						"description": "Sampling rate (0.0 to 1.0, e.g., 0.1 for 10%)"
+						"description": "Base sampling rate (0.0 to 1.0, e.g., 0.1 for 10%)"
+					},
+					"sampling_mode": {
+						"type": "string",
+						"description": "Sampling mode: 'adaptive' (adjusts under load) or 'fixed' (constant rate). Defaults to 'adaptive'.",
+						"enum": ["adaptive", "fixed"]
 					},
 					"export_spans": {
 						"type": "boolean",

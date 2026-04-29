@@ -212,13 +212,23 @@ func SaveServiceIDToConfig(serviceID string) error {
 // SaveRecordingConfig saves recording settings to .tusk/config.yaml.
 // Uses yaml.Node parsing to preserve file structure, comments, and unknown fields
 // (e.g., exclude_paths, transforms that the user may have configured).
-func SaveRecordingConfig(samplingRate float64, exportSpans, enableEnvVarRecording bool) error {
+func SaveRecordingConfig(samplingRate float64, samplingMode string, exportSpans, enableEnvVarRecording bool) error {
+	if samplingMode == "" {
+		samplingMode = "adaptive"
+	} else if samplingMode != "adaptive" && samplingMode != "fixed" {
+		return fmt.Errorf("invalid sampling mode %q: must be 'adaptive' or 'fixed'", samplingMode)
+	}
 	return saveToConfig(func(cfg *config.Config, u *ConfigUpdater) error {
 		cfg.Recording.SamplingRate = samplingRate
+		cfg.Recording.Sampling.Mode = samplingMode
+		baseRate := samplingRate
+		cfg.Recording.Sampling.BaseRate = &baseRate
 		cfg.Recording.ExportSpans = &exportSpans
 		cfg.Recording.EnableEnvVarRecording = &enableEnvVarRecording
 
 		u.Set([]string{"recording", "sampling_rate"}, samplingRate)
+		u.Set([]string{"recording", "sampling", "mode"}, samplingMode)
+		u.Set([]string{"recording", "sampling", "base_rate"}, samplingRate)
 		u.Set([]string{"recording", "export_spans"}, exportSpans)
 		u.Set([]string{"recording", "enable_env_var_recording"}, enableEnvVarRecording)
 		return nil
