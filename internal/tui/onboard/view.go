@@ -225,7 +225,7 @@ func (m *Model) confirmOutroText() string {
 	if m.DockerType == dockerTypeCompose {
 		b.WriteString("A docker-compose.tusk-override.yml file will be created.\n\n")
 	}
-	b.WriteString(fmt.Sprintf("Save this configuration to %s/%s? (y/n)\n", configDir, configFile))
+	fmt.Fprintf(&b, "Save this configuration to %s/%s? (y/n)\n", configDir, configFile)
 	return b.String()
 }
 
@@ -241,25 +241,25 @@ func (m *Model) currentFooter() string {
 func (m *Model) summary() string {
 	var b strings.Builder
 	if strings.TrimSpace(m.ServiceName) != "" {
-		b.WriteString(fmt.Sprintf("Service: %s\n", styles.SuccessStyle.Render(m.ServiceName)))
+		fmt.Fprintf(&b, "Service: %s\n", styles.SuccessStyle.Render(m.ServiceName))
 	}
 	if strings.TrimSpace(m.ServicePort) != "" {
-		b.WriteString(fmt.Sprintf("Port: %s\n", styles.SuccessStyle.Render(m.ServicePort)))
+		fmt.Fprintf(&b, "Port: %s\n", styles.SuccessStyle.Render(m.ServicePort))
 	}
 	if strings.TrimSpace(m.StartCmd) != "" {
-		b.WriteString(fmt.Sprintf("Start: %s\n", styles.SuccessStyle.Render(m.StartCmd)))
+		fmt.Fprintf(&b, "Start: %s\n", styles.SuccessStyle.Render(m.StartCmd))
 	}
 	if strings.TrimSpace(m.StopCmd) != "" {
-		b.WriteString(fmt.Sprintf("Stop: %s\n", styles.SuccessStyle.Render(m.StopCmd)))
+		fmt.Fprintf(&b, "Stop: %s\n", styles.SuccessStyle.Render(m.StopCmd))
 	}
 	if strings.TrimSpace(m.ReadinessCmd) != "" {
-		b.WriteString(fmt.Sprintf("Readiness command: %s\n", styles.SuccessStyle.Render(m.ReadinessCmd)))
+		fmt.Fprintf(&b, "Readiness command: %s\n", styles.SuccessStyle.Render(m.ReadinessCmd))
 	}
 	if strings.TrimSpace(m.ReadinessTimeout) != "" {
-		b.WriteString(fmt.Sprintf("Timeout: %s\n", styles.SuccessStyle.Render(m.ReadinessTimeout)))
+		fmt.Fprintf(&b, "Timeout: %s\n", styles.SuccessStyle.Render(m.ReadinessTimeout))
 	}
 	if strings.TrimSpace(m.ReadinessInterval) != "" {
-		b.WriteString(fmt.Sprintf("Interval: %s\n", styles.SuccessStyle.Render(m.ReadinessInterval)))
+		fmt.Fprintf(&b, "Interval: %s\n", styles.SuccessStyle.Render(m.ReadinessInterval))
 	}
 	if b.Len() > 0 {
 		b.WriteString("\n")

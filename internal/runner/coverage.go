@@ -655,7 +655,7 @@ func WriteCoverageLCOV(path string, aggregate CoverageSnapshot) error {
 		linesHit := 0
 		for _, line := range lineNums {
 			count := fileData.Lines[strconv.Itoa(line)]
-			b.WriteString(fmt.Sprintf("DA:%d,%d\n", line, count))
+			fmt.Fprintf(&b, "DA:%d,%d\n", line, count)
 			linesFound++
 			if count > 0 {
 				linesHit++
@@ -680,7 +680,7 @@ func WriteCoverageLCOV(path string, aggregate CoverageSnapshot) error {
 				if i < info.Covered {
 					count = 1
 				}
-				b.WriteString(fmt.Sprintf("BRDA:%d,0,%d,%d\n", line, i, count))
+				fmt.Fprintf(&b, "BRDA:%d,0,%d,%d\n", line, i, count)
 				branchesFound++
 				if count > 0 {
 					branchesHit++
@@ -688,11 +688,11 @@ func WriteCoverageLCOV(path string, aggregate CoverageSnapshot) error {
 			}
 		}
 
-		b.WriteString(fmt.Sprintf("LF:%d\n", linesFound))
-		b.WriteString(fmt.Sprintf("LH:%d\n", linesHit))
+		fmt.Fprintf(&b, "LF:%d\n", linesFound)
+		fmt.Fprintf(&b, "LH:%d\n", linesHit)
 		if branchesFound > 0 {
-			b.WriteString(fmt.Sprintf("BRF:%d\n", branchesFound))
-			b.WriteString(fmt.Sprintf("BRH:%d\n", branchesHit))
+			fmt.Fprintf(&b, "BRF:%d\n", branchesFound)
+			fmt.Fprintf(&b, "BRH:%d\n", branchesHit)
 		}
 		b.WriteString("end_of_record\n")
 	}

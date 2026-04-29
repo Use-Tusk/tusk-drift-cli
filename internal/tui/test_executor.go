@@ -385,14 +385,14 @@ func (h *tuiSlogHandler) Handle(_ context.Context, r slog.Record) error {
 		b.WriteString(" ")
 		b.WriteString(a.Key)
 		b.WriteString("=")
-		b.WriteString(fmt.Sprintf("%v", a.Value.Any()))
+		fmt.Fprintf(&b, "%v", a.Value.Any())
 	}
 	// Append record attrs
 	r.Attrs(func(a slog.Attr) bool {
 		b.WriteString(" ")
 		b.WriteString(a.Key)
 		b.WriteString("=")
-		b.WriteString(fmt.Sprintf("%v", a.Value.Any()))
+		fmt.Fprintf(&b, "%v", a.Value.Any())
 		return true
 	})
 	_, err := h.writer.Write([]byte(b.String()))

@@ -543,20 +543,20 @@ func (ReviewStep) Description(m *Model) string {
 
 	summary.WriteString("Here's what was configured:\n\n")
 
-	summary.WriteString(fmt.Sprintf("📦 Repository: %s/%s\n\n", m.GitRepoOwner, m.GitRepoName))
+	fmt.Fprintf(&summary, "📦 Repository: %s/%s\n\n", m.GitRepoOwner, m.GitRepoName)
 
-	summary.WriteString(fmt.Sprintf("💻 Service ID: %s\n\n", m.ServiceID))
+	fmt.Fprintf(&summary, "💻 Service ID: %s\n\n", m.ServiceID)
 
 	summary.WriteString("🔑 API Key\n")
 	switch {
 	case m.HasApiKey:
 		summary.WriteString("  ✓ Already configured (TUSK_API_KEY environment variable)\n\n")
 	case m.ApiKey != "":
-		summary.WriteString(fmt.Sprintf("  ✓ Created new API key (%s)\n", m.ApiKeyName))
+		fmt.Fprintf(&summary, "  ✓ Created new API key (%s)\n", m.ApiKeyName)
 		summary.WriteString("     Remember to set TUSK_API_KEY in your environment\n\n")
 	default:
-		summary.WriteString(fmt.Sprintf("  ⊘ Skipped (you can create one later at %s)\n\n",
-			styles.LinkStyle.Render("https://app.usetusk.ai/app/settings/api-keys")))
+		fmt.Fprintf(&summary, "  ⊘ Skipped (you can create one later at %s)\n\n",
+			styles.LinkStyle.Render("https://app.usetusk.ai/app/settings/api-keys"))
 	}
 
 	summary.WriteString("⚙️  Recording Configuration\n")
@@ -564,11 +564,11 @@ func (ReviewStep) Description(m *Model) string {
 	if samplingMode == "" {
 		samplingMode = "adaptive"
 	}
-	summary.WriteString(fmt.Sprintf("  • Sampling mode: %s\n", samplingMode))
+	fmt.Fprintf(&summary, "  • Sampling mode: %s\n", samplingMode)
 	samplingRate, _ := strconv.ParseFloat(m.SamplingRate, 64)
-	summary.WriteString(fmt.Sprintf("  • Base sampling rate: %.2f (%.0f%% of requests)\n", samplingRate, samplingRate*100))
-	summary.WriteString(fmt.Sprintf("  • Export spans: %t\n", m.ExportSpans))
-	summary.WriteString(fmt.Sprintf("  • Record environment variables: %t\n\n", m.EnableEnvVarRecording))
+	fmt.Fprintf(&summary, "  • Base sampling rate: %.2f (%.0f%% of requests)\n", samplingRate, samplingRate*100)
+	fmt.Fprintf(&summary, "  • Export spans: %t\n", m.ExportSpans)
+	fmt.Fprintf(&summary, "  • Record environment variables: %t\n\n", m.EnableEnvVarRecording)
 
 	summary.WriteString("All settings have been saved to .tusk/config.yaml.\n")
 	summary.WriteString("\nPress [enter] to continue...")

@@ -45,11 +45,13 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Install linters
+        run: make install-lint-tools
+
       - name: Lint
-        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6
+        uses: golangci/golangci-lint-action@0a35821d5c230e903fcfe077583637dea1b27b47 # v9
         with:
-          install-mode: goinstall
-          version: v1.64.8
+          install-mode: "none"
 
   test:
     name: Test

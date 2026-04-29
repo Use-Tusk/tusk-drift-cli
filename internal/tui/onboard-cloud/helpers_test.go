@@ -730,7 +730,7 @@ func setupGitRepoWithRemote(t *testing.T, remoteURL string) string {
 	cmd.Dir = tmpDir
 	_ = cmd.Run()
 
-	cmd = exec.Command("git", "remote", "add", "origin", remoteURL)
+	cmd = exec.Command("git", "remote", "add", "origin", remoteURL) //nolint:gosec // test helper, remoteURL is test-controlled
 	cmd.Dir = tmpDir
 	err = cmd.Run()
 	require.NoError(t, err)

@@ -7,6 +7,9 @@ GOMOD=$(GOCMD) mod
 BINARY_NAME=tusk
 BINARY_UNIX=$(BINARY_NAME)_unix
 
+# Tool versions
+GOLANGCI_LINT_VERSION=v2.11.4
+
 
 .PHONY: all build build-ci build-linux test test-ci clean deps install-buf install-lint-tools setup setup-ci run fmt lint help
 
@@ -54,7 +57,7 @@ install-buf:
 install-lint-tools:
 	@echo "📦 Installing linting tools..."
 	GOTOOLCHAIN=local go install mvdan.cc/gofumpt@latest
-	GOTOOLCHAIN=local go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	GOTOOLCHAIN=local go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	@echo "✅ Linting tools installed"
 
 setup: install-buf deps install-lint-tools

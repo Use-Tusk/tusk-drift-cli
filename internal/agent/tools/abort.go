@@ -104,7 +104,7 @@ func ResetPhaseProgress(workDir string) func(json.RawMessage) (string, error) {
 		}
 
 		newContent := strings.Join(newLines, "\n")
-		if err := os.WriteFile(progressPath, []byte(newContent), 0o600); err != nil {
+		if err := os.WriteFile(progressPath, []byte(newContent), 0o600); err != nil { //nolint:gosec // path is constructed internally for agent progress tracking
 			return "", err
 		}
 

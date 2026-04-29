@@ -54,10 +54,10 @@ func (m *Model) createDockerComposeOverrideFile() error {
 
 	var buf strings.Builder
 	buf.WriteString("# Tusk Drift override file for Docker Compose\n")
-	buf.WriteString(fmt.Sprintf("# Environment variables for service: %s\n", targetService))
+	fmt.Fprintf(&buf, "# Environment variables for service: %s\n", targetService)
 	buf.WriteString("# Please double check that this is the correct service.\n\n")
 	buf.WriteString("services:\n")
-	buf.WriteString(fmt.Sprintf("  %s:\n", targetService))
+	fmt.Fprintf(&buf, "  %s:\n", targetService)
 	buf.WriteString("    environment:\n")
 	buf.WriteString("      TUSK_DRIFT_MODE: ${TUSK_DRIFT_MODE:-REPLAY}\n")
 	buf.WriteString("      TUSK_MOCK_HOST: ${TUSK_MOCK_HOST:-host.docker.internal}\n")
