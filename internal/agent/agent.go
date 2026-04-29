@@ -200,7 +200,7 @@ func (a *Agent) trackInterrupted(phaseName string, phasesCompleted int) {
 // Run executes the agent with TUI or in headless mode
 func (a *Agent) Run(parentCtx context.Context) error {
 	// Create cancellable context
-	a.ctx, a.cancel = context.WithCancel(parentCtx)
+	a.ctx, a.cancel = context.WithCancel(parentCtx) //nolint:gosec // cancel is invoked via defer below
 	defer a.cancel()
 
 	if a.logger != nil {
@@ -1659,31 +1659,31 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 	sb.WriteString("## Discovered Information\n\n")
 	if state != nil && (state.ProjectType != "" || state.PackageManager != "" || state.EntryPoint != "") {
 		if state.ServiceName != "" {
-			sb.WriteString(fmt.Sprintf("- **Service Name**: %s\n", state.ServiceName))
+			fmt.Fprintf(&sb, "- **Service Name**: %s\n", state.ServiceName)
 		}
 		if state.ProjectType != "" {
-			sb.WriteString(fmt.Sprintf("- **Project Type**: %s\n", state.ProjectType))
+			fmt.Fprintf(&sb, "- **Project Type**: %s\n", state.ProjectType)
 		}
 		if state.PackageManager != "" {
-			sb.WriteString(fmt.Sprintf("- **Package Manager**: %s\n", state.PackageManager))
+			fmt.Fprintf(&sb, "- **Package Manager**: %s\n", state.PackageManager)
 		}
 		if state.ModuleSystem != "" {
-			sb.WriteString(fmt.Sprintf("- **Module System**: %s\n", state.ModuleSystem))
+			fmt.Fprintf(&sb, "- **Module System**: %s\n", state.ModuleSystem)
 		}
 		if state.EntryPoint != "" {
-			sb.WriteString(fmt.Sprintf("- **Entry Point**: %s\n", state.EntryPoint))
+			fmt.Fprintf(&sb, "- **Entry Point**: %s\n", state.EntryPoint)
 		}
 		if state.StartCommand != "" {
-			sb.WriteString(fmt.Sprintf("- **Start Command**: `%s`\n", state.StartCommand))
+			fmt.Fprintf(&sb, "- **Start Command**: `%s`\n", state.StartCommand)
 		}
 		if state.Port != "" {
-			sb.WriteString(fmt.Sprintf("- **Port**: %s\n", state.Port))
+			fmt.Fprintf(&sb, "- **Port**: %s\n", state.Port)
 		}
 		if state.HealthEndpoint != "" {
-			sb.WriteString(fmt.Sprintf("- **Health Endpoint**: %s\n", state.HealthEndpoint))
+			fmt.Fprintf(&sb, "- **Health Endpoint**: %s\n", state.HealthEndpoint)
 		}
 		if state.DockerType != "" && state.DockerType != "none" {
-			sb.WriteString(fmt.Sprintf("- **Docker**: %s\n", state.DockerType))
+			fmt.Fprintf(&sb, "- **Docker**: %s\n", state.DockerType)
 		}
 		sb.WriteString("\n")
 	} else {
@@ -1695,7 +1695,7 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 		sb.WriteString("The following packages are used but not instrumented by the SDK.\n")
 		sb.WriteString("Recording/replay may not capture these calls:\n\n")
 		for _, warning := range state.CompatibilityWarnings {
-			sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", warning))
+			fmt.Fprintf(&sb, "- ⚠️ %s\n", warning)
 		}
 		sb.WriteString("\n")
 	}
@@ -1725,10 +1725,10 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 			sb.WriteString("- ✓ Authenticated with Tusk Cloud\n")
 		}
 		if state.GitRepoOwner != "" && state.GitRepoName != "" {
-			sb.WriteString(fmt.Sprintf("- ✓ Repository detected: %s/%s\n", state.GitRepoOwner, state.GitRepoName))
+			fmt.Fprintf(&sb, "- ✓ Repository detected: %s/%s\n", state.GitRepoOwner, state.GitRepoName)
 		}
 		if state.CloudServiceID != "" {
-			sb.WriteString(fmt.Sprintf("- ✓ Cloud service created (ID: %s)\n", state.CloudServiceID))
+			fmt.Fprintf(&sb, "- ✓ Cloud service created (ID: %s)\n", state.CloudServiceID)
 		}
 		if state.ApiKeyCreated {
 			sb.WriteString("- ✓ API key created\n")
@@ -1741,13 +1741,13 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 		sb.WriteString("None yet.\n\n")
 	} else {
 		for _, phase := range completedPhases {
-			sb.WriteString(fmt.Sprintf("- ✓ %s\n", phase))
+			fmt.Fprintf(&sb, "- ✓ %s\n", phase)
 		}
 		sb.WriteString("\n")
 	}
 
 	if currentPhase != "" {
-		sb.WriteString(fmt.Sprintf("## Current Phase\n\n%s (in progress)\n\n", currentPhase))
+		fmt.Fprintf(&sb, "## Current Phase\n\n%s (in progress)\n\n", currentPhase)
 	}
 
 	if state != nil && (len(state.Errors) > 0 || len(state.Warnings) > 0) {
@@ -1755,9 +1755,9 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 			sb.WriteString("## Errors Encountered\n\n")
 			for _, err := range state.Errors {
 				if err.Fatal {
-					sb.WriteString(fmt.Sprintf("- ❌ [%s] %s (fatal)\n", err.Phase, err.Message))
+					fmt.Fprintf(&sb, "- ❌ [%s] %s (fatal)\n", err.Phase, err.Message)
 				} else {
-					sb.WriteString(fmt.Sprintf("- ⚠️ [%s] %s\n", err.Phase, err.Message))
+					fmt.Fprintf(&sb, "- ⚠️ [%s] %s\n", err.Phase, err.Message)
 				}
 			}
 			sb.WriteString("\n")
@@ -1765,7 +1765,7 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 		if len(state.Warnings) > 0 {
 			sb.WriteString("## Warnings\n\n")
 			for _, w := range state.Warnings {
-				sb.WriteString(fmt.Sprintf("- %s\n", w))
+				fmt.Fprintf(&sb, "- %s\n", w)
 			}
 			sb.WriteString("\n")
 		}
@@ -1777,7 +1777,7 @@ func (a *Agent) saveProgress(completedPhases []string, currentPhase string, note
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("---\nLast updated: %s\n", time.Now().Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "---\nLast updated: %s\n", time.Now().Format(time.RFC3339))
 
 	return os.WriteFile(a.progressFilePath(), []byte(sb.String()), 0o600)
 }

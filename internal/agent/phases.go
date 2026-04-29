@@ -228,7 +228,7 @@ func (pm *PhaseManager) UpdateState(results map[string]interface{}) {
 
 // StateAsContext returns the current state as a string for the prompt
 func (pm *PhaseManager) StateAsContext() string {
-	data, _ := json.MarshalIndent(pm.state, "", "  ")
+	data, _ := json.MarshalIndent(pm.state, "", "  ") //nolint:gosec // intentional serialization of agent state
 	result := string(data)
 
 	// Include previous progress if available
@@ -1027,10 +1027,10 @@ func eligibilityCheckPhase() *Phase {
 				}
 				manifest, err := tools.FetchManifestFromURL(url)
 				if err != nil {
-					extra.WriteString(fmt.Sprintf("**%s**: Failed to fetch manifest - %s\n\n", lang, err))
+					fmt.Fprintf(&extra, "**%s**: Failed to fetch manifest - %s\n\n", lang, err)
 					continue
 				}
-				extra.WriteString(fmt.Sprintf("**%s Manifest**:\n```json\n%s\n```\n\n", lang, manifest))
+				fmt.Fprintf(&extra, "**%s Manifest**:\n```json\n%s\n```\n\n", lang, manifest)
 			}
 
 			// Add user guidance if provided

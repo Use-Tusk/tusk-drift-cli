@@ -52,11 +52,11 @@ func formatManifestForDisplay(manifest *Manifest, projectType string) string {
 	if projectType == "python" {
 		sdkName = "Python"
 	}
-	sb.WriteString(fmt.Sprintf("Tusk Drift %s SDK (v%s) currently supports:\n", sdkName, manifest.SDKVersion))
+	fmt.Fprintf(&sb, "Tusk Drift %s SDK (v%s) currently supports:\n", sdkName, manifest.SDKVersion)
 
 	for _, inst := range manifest.Instrumentations {
 		versions := formatVersions(inst.SupportedVersions)
-		sb.WriteString(fmt.Sprintf("  • %s: %s\n", inst.PackageName, versions))
+		fmt.Fprintf(&sb, "  • %s: %s\n", inst.PackageName, versions)
 	}
 
 	return sb.String()

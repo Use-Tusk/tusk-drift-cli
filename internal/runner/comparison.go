@@ -22,7 +22,7 @@ func (e *Executor) compareAndGenerateResult(test Test, actualResp *http.Response
 
 	// Extract decodedType from the server span's output schema
 	// This ensures we parse the actual response the same way we parsed the expected value
-	var decodedType core.DecodedType = core.DecodedType_DECODED_TYPE_UNSPECIFIED
+	decodedType := core.DecodedType_DECODED_TYPE_UNSPECIFIED
 	for _, span := range test.Spans {
 		if span.IsRootSpan && span.OutputSchema != nil && span.OutputSchema.Properties != nil {
 			bodySchema := span.OutputSchema.Properties["body"]

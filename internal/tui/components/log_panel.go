@@ -45,7 +45,7 @@ func (lp *LogPanelComponent) View(width, height int) string {
 	defer lp.logMutex.Unlock()
 
 	// Only rebuild content if something actually changed
-	currentWrapWidth := lp.ContentPanel.GetViewportWidth() - 2
+	currentWrapWidth := lp.GetViewportWidth() - 2
 	if currentWrapWidth <= 0 {
 		currentWrapWidth = 70
 	}
@@ -138,7 +138,7 @@ func (lp *LogPanelComponent) SetOffset(x, y int) {
 
 // rebuildContent rebuilds the viewport content from logs
 func (lp *LogPanelComponent) rebuildContent(gotoBottom bool) {
-	wrapWidth := lp.ContentPanel.GetViewportWidth() - 2
+	wrapWidth := lp.GetViewportWidth() - 2
 	if wrapWidth <= 0 {
 		wrapWidth = 70
 	}
@@ -150,25 +150,25 @@ func (lp *LogPanelComponent) rebuildContent(gotoBottom bool) {
 		if logs, exists := lp.testLogs[lp.currentTestID]; exists {
 			sourceLogs = logs
 		} else {
-			lp.ContentPanel.UpdateContentLines([]string{"No logs available for this test yet..."})
+			lp.UpdateContentLines([]string{"No logs available for this test yet..."})
 			if gotoBottom {
-				lp.ContentPanel.GotoBottom()
+				lp.GotoBottom()
 			}
 			return
 		}
 	}
 
-	lp.ContentPanel.UpdateContentLines(utils.WrapLines(sourceLogs, wrapWidth))
+	lp.UpdateContentLines(utils.WrapLines(sourceLogs, wrapWidth))
 
 	if gotoBottom {
-		lp.ContentPanel.GotoBottom()
+		lp.GotoBottom()
 	}
 }
 
 // updateTitle updates the panel title based on current state
 func (lp *LogPanelComponent) updateTitle() {
 	if lp.currentTestID == "" {
-		lp.ContentPanel.SetTitle("Logs")
+		lp.SetTitle("Logs")
 	} else {
 		title := "Test Logs"
 		if len(lp.currentTestID) > 35 {
@@ -176,12 +176,12 @@ func (lp *LogPanelComponent) updateTitle() {
 		} else {
 			title += ": " + lp.currentTestID
 		}
-		lp.ContentPanel.SetTitle(title)
+		lp.SetTitle(title)
 	}
 }
 
 // CopyAllLogs copies all currently visible logs to the clipboard
 func (lp *LogPanelComponent) CopyAllLogs() tea.Cmd {
 	text := lp.GetRawLogs()
-	return lp.ContentPanel.CopyText(text)
+	return lp.CopyText(text)
 }

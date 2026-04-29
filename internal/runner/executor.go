@@ -1083,7 +1083,7 @@ func OutputResultsSummary(results []TestResult, format string, quiet bool) error
 // Priority: server/root span > earliest non-server span.
 // Root span is preferred for inbound-level determinism (e.g., caching keys derived from time).
 func GetFirstSpanTimestamp(spans []*core.Span) (float64, string) {
-	var firstTimestamp float64 = math.MaxFloat64
+	firstTimestamp := math.MaxFloat64
 	var serverSpanTimestamp float64 = 0
 	var foundNonServerSpan bool
 

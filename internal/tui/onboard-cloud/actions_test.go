@@ -382,7 +382,7 @@ func TestCreateApiKey_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/protobuf")
 		resp := &backend.CreateApiKeyResponse{
 			Response: &backend.CreateApiKeyResponse_Success{
-				Success: &backend.CreateApiKeyResponseSuccess{
+				Success: &backend.CreateApiKeyResponseSuccess{ //nolint:gosec // test fixture, not a real credential
 					ApiKeyId: "new-api-key-id",
 					ApiKey:   "tusk_api_key_12345",
 				},
@@ -396,7 +396,7 @@ func TestCreateApiKey_Success(t *testing.T) {
 	setupTestEnvironment(t, server.URL)
 	setupTestAuth(t)
 
-	model := &Model{
+	model := &Model{ //nolint:gosec // test fixture, not a real credential
 		ApiKeyName: "Test API Key",
 	}
 
@@ -433,7 +433,7 @@ func TestCreateApiKey_NotAuthorized(t *testing.T) {
 	setupTestEnvironment(t, server.URL)
 	setupTestAuth(t)
 
-	model := &Model{
+	model := &Model{ //nolint:gosec // test fixture, not a real credential
 		ApiKeyName: "Test API Key",
 	}
 
@@ -462,7 +462,7 @@ func TestCreateApiKey_InvalidResponse(t *testing.T) {
 	setupTestEnvironment(t, server.URL)
 	setupTestAuth(t)
 
-	model := &Model{
+	model := &Model{ //nolint:gosec // test fixture, not a real credential
 		ApiKeyName: "Test API Key",
 	}
 
@@ -571,7 +571,7 @@ func TestCreateApiKey_MissingConfig(t *testing.T) {
 
 	setupTestAuth(t)
 
-	model := &Model{
+	model := &Model{ //nolint:gosec // test fixture, not a real credential
 		ApiKeyName: "Test API Key",
 	}
 
@@ -686,7 +686,7 @@ func TestCreateApiKey_RequestBody(t *testing.T) {
 		w.Header().Set("Content-Type", "application/protobuf")
 		resp := &backend.CreateApiKeyResponse{
 			Response: &backend.CreateApiKeyResponse_Success{
-				Success: &backend.CreateApiKeyResponseSuccess{
+				Success: &backend.CreateApiKeyResponseSuccess{ //nolint:gosec // test fixture, not a real credential
 					ApiKeyId: "new-api-key-id",
 					ApiKey:   "tusk_api_key_12345",
 				},

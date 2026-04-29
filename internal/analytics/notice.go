@@ -29,7 +29,7 @@ func ShowFirstRunNotice(cmd *cobra.Command) bool {
 	}
 
 	// Skip if not a TTY (piped output)
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec // file descriptor fits in int
 		return false
 	}
 

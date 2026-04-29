@@ -225,7 +225,7 @@ func (ft *FilesystemTools) PatchFile(input json.RawMessage) (string, error) {
 		modified += "\n"
 	}
 
-	if err := os.WriteFile(fullPath, []byte(modified), 0o600); err != nil {
+	if err := os.WriteFile(fullPath, []byte(modified), 0o600); err != nil { //nolint:gosec // agent tool deliberately writes to user-specified paths
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 

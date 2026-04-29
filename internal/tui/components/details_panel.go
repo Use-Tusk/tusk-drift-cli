@@ -74,6 +74,6 @@ func (dp *DetailsPanel) View() string {
 
 // CopyAllContent copies all panel content to the clipboard
 func (dp *DetailsPanel) CopyAllContent() tea.Cmd {
-	text := dp.ContentPanel.GetRawContent()
-	return dp.ContentPanel.CopyText(text)
+	text := dp.GetRawContent()
+	return dp.CopyText(text)
 }

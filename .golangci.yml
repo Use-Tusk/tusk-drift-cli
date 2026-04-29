@@ -1,41 +1,59 @@
+version: "2"
 run:
-  timeout: 5m
   modules-download-mode: readonly
-
-linters-settings:
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(github.com/Use-Tusk/tusk-cli)
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/Use-Tusk/tusk-cli
-  gocritic:
-    disabled-checks:
-      - singleCaseSwitch
-  revive:
-    rules:
-      - name: exported
-        disabled: true
-
 linters:
-  enable-all: false
-  disable-all: true
+  default: none
   enable:
-    - staticcheck
     - errcheck
-    - gosimple
-    - govet
-    - unused
-    - ineffassign
-    - gosec
     - gocritic
-    - revive
-    - gofumpt
+    - gosec
+    - govet
     - ineffassign
     - misspell
-
-issues:
-  exclude-use-default: false
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    gocritic:
+      disabled-checks:
+        - singleCaseSwitch
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1005
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/Use-Tusk/tusk-cli)
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/Use-Tusk/tusk-cli
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

@@ -431,13 +431,13 @@ func (e *Executor) setupServiceLogging() error {
 				logsDir = testLogsDir
 			}
 
-			if err := os.MkdirAll(logsDir, 0o750); err != nil {
+			if err := os.MkdirAll(logsDir, 0o750); err != nil { //nolint:gosec // logsDir is configured by the user
 				return fmt.Errorf("failed to create logs directory: %w", err)
 			}
 
 			timestamp := time.Now().Format("20060102-150405")
 			logPath := filepath.Join(logsDir, fmt.Sprintf("tusk-replay-%s.log", timestamp))
-			logFile, err := os.Create(logPath) // #nosec G304
+			logFile, err := os.Create(logPath) //nolint:gosec // logsDir is configured by the user
 			if err != nil {
 				return fmt.Errorf("failed to create service log file: %w", err)
 			}

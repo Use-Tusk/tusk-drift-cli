@@ -103,10 +103,10 @@ func (w *AgentWriter) WriteIndex(totalTests int, passedTests int) error {
 
 	var sb strings.Builder
 	sb.WriteString("# Tusk Drift Agent Deviation Report\n\n")
-	sb.WriteString(fmt.Sprintf("Run: %s\n", time.Now().Format("2006-01-02 15:04:05")))
-	sb.WriteString(fmt.Sprintf("Tests: %d total, %d passed, %d failed\n", totalTests, passedTests, failedTests))
+	fmt.Fprintf(&sb, "Run: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&sb, "Tests: %d total, %d passed, %d failed\n", totalTests, passedTests, failedTests)
 	if w.baseBranch != "" {
-		sb.WriteString(fmt.Sprintf("Base Branch: %s\n", w.baseBranch))
+		fmt.Fprintf(&sb, "Base Branch: %s\n", w.baseBranch)
 	}
 
 	// Deviations table
@@ -125,15 +125,15 @@ func (w *AgentWriter) WriteIndex(totalTests int, passedTests int) error {
 		sb.WriteString("| # | Test ID | Endpoint | Failure Reason | File |\n")
 		sb.WriteString("|---|---------|----------|----------------|------|\n")
 		for i, d := range deviations {
-			sb.WriteString(fmt.Sprintf("| %d | %s | %s %s | %s | %s |\n",
-				i+1, d.testID, d.method, d.path, d.failureType, d.fileName))
+			fmt.Fprintf(&sb, "| %d | %s | %s %s | %s | %s |\n",
+				i+1, d.testID, d.method, d.path, d.failureType, d.fileName)
 		}
 	}
 
 	if len(passed) > 0 {
 		sb.WriteString("\n## Passing Tests\n")
 		for _, p := range passed {
-			sb.WriteString(fmt.Sprintf("- %s: %s %s\n", p.testID, p.method, p.path))
+			fmt.Fprintf(&sb, "- %s: %s %s\n", p.testID, p.method, p.path)
 		}
 	}
 
@@ -176,15 +176,15 @@ func buildFrontmatter(test Test, result TestResult, server *Server, failureType 
 
 	var sb strings.Builder
 	sb.WriteString("---\n")
-	sb.WriteString(fmt.Sprintf("deviation_id: %s\n", result.TestID))
-	sb.WriteString(fmt.Sprintf("endpoint: %s %s\n", test.Method, test.Path))
-	sb.WriteString(fmt.Sprintf("method: %s\n", test.Method))
-	sb.WriteString(fmt.Sprintf("path: %s\n", test.Path))
-	sb.WriteString(fmt.Sprintf("failure_type: %s\n", failureType))
-	sb.WriteString(fmt.Sprintf("status_expected: %d\n", statusExpected))
-	sb.WriteString(fmt.Sprintf("status_actual: %d\n", statusActual))
-	sb.WriteString(fmt.Sprintf("has_mock_not_found: %t\n", hasMockNotFound))
-	sb.WriteString(fmt.Sprintf("duration_ms: %d\n", result.Duration))
+	fmt.Fprintf(&sb, "deviation_id: %s\n", result.TestID)
+	fmt.Fprintf(&sb, "endpoint: %s %s\n", test.Method, test.Path)
+	fmt.Fprintf(&sb, "method: %s\n", test.Method)
+	fmt.Fprintf(&sb, "path: %s\n", test.Path)
+	fmt.Fprintf(&sb, "failure_type: %s\n", failureType)
+	fmt.Fprintf(&sb, "status_expected: %d\n", statusExpected)
+	fmt.Fprintf(&sb, "status_actual: %d\n", statusActual)
+	fmt.Fprintf(&sb, "has_mock_not_found: %t\n", hasMockNotFound)
+	fmt.Fprintf(&sb, "duration_ms: %d\n", result.Duration)
 	sb.WriteString("---\n\n")
 
 	return sb.String()
@@ -200,7 +200,7 @@ func buildDeviationBody(test Test, result TestResult, server *Server) string {
 
 	// Request section
 	sb.WriteString("## Request\n")
-	sb.WriteString(fmt.Sprintf("%s %s\n", test.Request.Method, test.Request.Path))
+	fmt.Fprintf(&sb, "%s %s\n", test.Request.Method, test.Request.Path)
 	sb.WriteString("Body:\n")
 	sb.WriteString(formatBodyForAgent(test.Request.Body))
 	sb.WriteString("\n\n")
@@ -232,9 +232,9 @@ func buildDeviationBody(test Test, result TestResult, server *Server) string {
 		}
 
 		if statusExpected != statusActual {
-			sb.WriteString(fmt.Sprintf("Status: %d -> %d (CHANGED)\n", statusExpected, statusActual))
+			fmt.Fprintf(&sb, "Status: %d -> %d (CHANGED)\n", statusExpected, statusActual)
 		} else {
-			sb.WriteString(fmt.Sprintf("Status: %d (OK)\n", statusExpected))
+			fmt.Fprintf(&sb, "Status: %d (OK)\n", statusExpected)
 		}
 
 		// Body diff
@@ -271,12 +271,12 @@ func buildDeviationBody(test Test, result TestResult, server *Server) string {
 			for _, ev := range matchEvents {
 				opName := matchEventOperationName(ev)
 				quality, scope := matchLevelToStrings(ev.MatchLevel)
-				sb.WriteString(fmt.Sprintf("| %d | %s | %s | %s | |\n", idx, opName, quality, scope))
+				fmt.Fprintf(&sb, "| %d | %s | %s | %s | |\n", idx, opName, quality, scope)
 				idx++
 			}
 			for _, ev := range mockNotFoundEvents {
 				opName := mockNotFoundOperationName(ev)
-				sb.WriteString(fmt.Sprintf("| %d | %s | MOCK NOT FOUND | — | No matching recording |\n", idx, opName))
+				fmt.Fprintf(&sb, "| %d | %s | MOCK NOT FOUND | — | No matching recording |\n", idx, opName)
 				idx++
 			}
 			sb.WriteString("\n")
@@ -287,12 +287,12 @@ func buildDeviationBody(test Test, result TestResult, server *Server) string {
 			sb.WriteString("## Mock Not Found Events\n")
 			for _, ev := range mockNotFoundEvents {
 				opName := mockNotFoundOperationName(ev)
-				sb.WriteString(fmt.Sprintf("- %s\n", opName))
+				fmt.Fprintf(&sb, "- %s\n", opName)
 				if ev.SpanName != "" {
-					sb.WriteString(fmt.Sprintf("  Request: %s\n", ev.SpanName))
+					fmt.Fprintf(&sb, "  Request: %s\n", ev.SpanName)
 				}
 				if ev.StackTrace != "" {
-					sb.WriteString(fmt.Sprintf("  Stack: %s\n", ev.StackTrace))
+					fmt.Fprintf(&sb, "  Stack: %s\n", ev.StackTrace)
 				}
 				sb.WriteString("  This outbound call had no matching recording.\n")
 			}
@@ -383,7 +383,7 @@ func formatTruncatedDiff(expected, actual any) string {
 	aStr := string(aBytes)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Body diff too large to display (%dKB expected, %dKB actual).\n\n", len(eBytes)/1024, len(aBytes)/1024))
+	fmt.Fprintf(&sb, "Body diff too large to display (%dKB expected, %dKB actual).\n\n", len(eBytes)/1024, len(aBytes)/1024)
 	sb.WriteString("### Expected (truncated)\n")
 	if len(eStr) > 1000 {
 		sb.WriteString(eStr[:1000])

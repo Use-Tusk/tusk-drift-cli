@@ -95,7 +95,7 @@ func getAnthropicAPIConfig() (*APIConfig, error) {
 
 	if envKey := os.Getenv("ANTHROPIC_API_KEY"); envKey != "" {
 		// In non-interactive mode (CI/scripts), default to BYOK to avoid hanging
-		if !term.IsTerminal(int(os.Stdin.Fd())) {
+		if !term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // file descriptor fits in int
 			return &APIConfig{
 				Mode:   agent.APIModeDirect,
 				APIKey: envKey,

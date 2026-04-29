@@ -232,9 +232,10 @@ func TestParseSpansFromFile_MapsOTelSpanKindsToProto(t *testing.T) {
 	// After mapping: OTel SERVER (1) → Proto SERVER (2), OTel CLIENT (2) → Proto CLIENT (3)
 	var server, client *core.Span
 	for _, s := range spans {
-		if s.Name == "server" {
+		switch s.Name {
+		case "server":
 			server = s
-		} else if s.Name == "client" {
+		case "client":
 			client = s
 		}
 	}
@@ -286,9 +287,10 @@ func TestParseSpansFromFile_DoesNotMapProtoSpanKinds(t *testing.T) {
 	// Values should remain unchanged since they're already Proto format
 	var server, client *core.Span
 	for _, s := range spans {
-		if s.Name == "server" {
+		switch s.Name {
+		case "server":
 			server = s
-		} else if s.Name == "client" {
+		case "client":
 			client = s
 		}
 	}
@@ -338,9 +340,10 @@ func TestParseSpansFromFile_FixesEnvVarsSnapshotSpan(t *testing.T) {
 
 	var server, env *core.Span
 	for _, s := range spans {
-		if s.Name == "server" {
+		switch s.Name {
+		case "server":
 			server = s
-		} else if s.Name == "ENV_VARS_SNAPSHOT" {
+		case "ENV_VARS_SNAPSHOT":
 			env = s
 		}
 	}

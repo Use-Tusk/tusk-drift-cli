@@ -62,7 +62,7 @@ func (ve *ValidateExecutor) validateSingleTrace(ctx context.Context, test *Test)
 	start := time.Now()
 
 	// Run the test using existing executor logic
-	testResult, runErr := ve.Executor.RunSingleTest(*test)
+	testResult, runErr := ve.RunSingleTest(*test)
 
 	result := ValidationResult{
 		TraceID:     test.TraceID,

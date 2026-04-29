@@ -145,7 +145,7 @@ func buildAuthenticatedRequest(
 }
 
 func (c *TuskClient) executeRequest(httpReq *http.Request) ([]byte, *http.Response, error) {
-	httpResp, err := c.httpClient.Do(httpReq)
+	httpResp, err := c.httpClient.Do(httpReq) //nolint:gosec // request URL is configured by the CLI, not user-controlled input
 	if err != nil {
 		return nil, nil, fmt.Errorf("http error: %w", err)
 	}

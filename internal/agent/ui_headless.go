@@ -102,7 +102,7 @@ func (u *HeadlessUI) AgentText(text string, streaming bool) {
 	if strings.TrimSpace(text) != "" {
 		width := 90
 		if utils.IsTerminal() {
-			if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
+			if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 { //nolint:gosec // file descriptor fits in int
 				width = max(w-4, 40)
 			}
 		}

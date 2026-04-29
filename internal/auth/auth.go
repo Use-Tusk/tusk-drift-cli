@@ -100,7 +100,7 @@ func (a *Authenticator) SaveTokenFile() error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cannot create config dir %q: %w", dir, err)
 	}
-	b, err := json.MarshalIndent(a.Token, "", "  ")
+	b, err := json.MarshalIndent(a.Token, "", "  ") //nolint:gosec // intentional persistence of auth token to user config dir
 	if err != nil {
 		return err
 	}
@@ -113,11 +113,11 @@ func (a *Authenticator) SaveTokenFile() error {
 func openBrowser(link string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", link).Start()
+		return exec.Command("open", link).Start() //nolint:gosec // opening URL in browser is intentional
 	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", link).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", link).Start() //nolint:gosec // opening URL in browser is intentional
 	default:
-		return exec.Command("xdg-open", link).Start()
+		return exec.Command("xdg-open", link).Start() //nolint:gosec // opening URL in browser is intentional
 	}
 }
 
